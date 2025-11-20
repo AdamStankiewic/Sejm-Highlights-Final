@@ -216,31 +216,265 @@ class YouTubeConfig:
             self.credentials_path = Path("client_secret.json")
 
 @dataclass
+class ThumbnailFrameSelectionConfig:
+    """Thumbnail frame selection config"""
+    strategy: str = 'face_priority'
+    quality_check: bool = True
+    prefer_open_mouth: bool = True
+    sample_frames: int = 20
+
+
+@dataclass
+class ThumbnailTemplateConfig:
+    """Single thumbnail template config"""
+    description: str = ""
+    text_position: str = 'center'
+    primary_color: str = '#FFFF00'
+    secondary_color: str = '#FF0000'
+    outline_color: str = '#000000'
+    outline_width: int = 8
+    emoji_pool: list = None
+    gradient_direction: str = 'both'
+    font_size_multiplier: float = 1.0
+
+    def __post_init__(self):
+        if self.emoji_pool is None:
+            self.emoji_pool = ['🔥', '💥', '😱']
+
+
+@dataclass
+class ThumbnailEnhancementsConfig:
+    """Thumbnail visual enhancements config"""
+    contrast: float = 1.3
+    saturation: float = 1.2
+    sharpness: float = 1.1
+    add_arrows: bool = False
+    add_circles: bool = False
+
+
+@dataclass
+class ThumbnailMobileTestConfig:
+    """Mobile readability test config"""
+    enabled: bool = True
+    test_width: int = 320
+    test_height: int = 180
+    min_readability: float = 0.8
+
+
+@dataclass
+class ThumbnailConfig:
+    """Thumbnail generation config"""
+    enabled: bool = True
+    generate_variants: bool = True
+    num_variants: int = 3
+
+    # Wymiary
+    width: int = 1920
+    height: int = 1080
+    quality: int = 92
+
+    # GPT
+    use_gpt_titles: bool = True
+    gpt_temperature: float = 0.8
+    max_title_length: int = 25
+
+    # Nested configs
+    frame_selection: ThumbnailFrameSelectionConfig = None
+    templates: Dict[str, Any] = None
+    enhancements: ThumbnailEnhancementsConfig = None
+    mobile_test: ThumbnailMobileTestConfig = None
+
+    # Output
+    output_format: str = 'jpg'
+    save_metadata: bool = True
+
+    def __post_init__(self):
+        if self.frame_selection is None:
+            self.frame_selection = ThumbnailFrameSelectionConfig()
+        elif isinstance(self.frame_selection, dict):
+            self.frame_selection = ThumbnailFrameSelectionConfig(**self.frame_selection)
+
+        if self.templates is None:
+            # Default templates
+            self.templates = {
+                'aggressive': ThumbnailTemplateConfig(
+                    description="Maksymalny clickbait",
+                    text_position='top_bottom',
+                    primary_color='#FFFF00',
+                    secondary_color='#FF0000',
+                    outline_width=8,
+                    emoji_pool=['🔥', '💥', '😱', '⚡', '🚨'],
+                    font_size_multiplier=1.2
+                ),
+                'question': ThumbnailTemplateConfig(
+                    description="Pytający",
+                    text_position='center',
+                    primary_color='#FFFF00',
+                    secondary_color='#FF6600',
+                    outline_width=7,
+                    emoji_pool=['🤔', '❓', '😱', '🔥'],
+                    font_size_multiplier=1.1
+                ),
+                'viral': ThumbnailTemplateConfig(
+                    description="Viralowy",
+                    text_position='split',
+                    primary_color='#FF00FF',
+                    secondary_color='#00FFFF',
+                    outline_width=9,
+                    emoji_pool=['😱', '🤯', '💀', '🔥', '⚡'],
+                    font_size_multiplier=1.15
+                )
+            }
+        elif isinstance(self.templates, dict):
+            # Parse dict templates to ThumbnailTemplateConfig
+            parsed_templates = {}
+            for name, tmpl in self.templates.items():
+                if isinstance(tmpl, dict):
+                    parsed_templates[name] = ThumbnailTemplateConfig(**tmpl)
+                else:
+                    parsed_templates[name] = tmpl
+            self.templates = parsed_templates
+
+        if self.enhancements is None:
+            self.enhancements = ThumbnailEnhancementsConfig()
+        elif isinstance(self.enhancements, dict):
+            self.enhancements = ThumbnailEnhancementsConfig(**self.enhancements)
+
+        if self.mobile_test is None:
+            self.mobile_test = ThumbnailMobileTestConfig()
+        elif isinstance(self.mobile_test, dict):
+            self.mobile_test = ThumbnailMobileTestConfig(**self.mobile_test)
+
+
+@dataclass
+class IntroTextEmojiTopConfig:
+    """Emoji top positioning config"""
+    enabled: bool = True
+    position_y: int = 200
+    size: int = 140
+    count: int = 2
+
+
+@dataclass
+class IntroTextTitleBottomConfig:
+    """Title bottom positioning config"""
+    position_y: int = 1600
+    font_size: int = 90
+    max_lines: int = 2
+    alignment: str = 'center'
+
+
+@dataclass
+class IntroTextConfig:
+    """Text layout config"""
+    emoji_top: IntroTextEmojiTopConfig = None
+    title_bottom: IntroTextTitleBottomConfig = None
+
+    def __post_init__(self):
+        if self.emoji_top is None:
+            self.emoji_top = IntroTextEmojiTopConfig()
+        elif isinstance(self.emoji_top, dict):
+            self.emoji_top = IntroTextEmojiTopConfig(**self.emoji_top)
+
+        if self.title_bottom is None:
+            self.title_bottom = IntroTextTitleBottomConfig()
+        elif isinstance(self.title_bottom, dict):
+            self.title_bottom = IntroTextTitleBottomConfig(**self.title_bottom)
+
+
+@dataclass
+class IntroColorsConfig:
+    """Intro colors config"""
+    text: str = '#FFFF00'
+    outline: str = '#000000'
+    outline_width: int = 10
+    glow: bool = False
+
+
+@dataclass
+class IntroSafeZonesConfig:
+    """Safe zones config"""
+    avoid_top: int = 150
+    avoid_bottom: int = 250
+
+
+@dataclass
+class IntroConfig:
+    """Intro overlay config"""
+    enabled: bool = True
+    style: str = 'overlay'
+    duration: float = 2.5
+    fade_in: float = 0.3
+    fade_out: float = 0.5
+
+    # GPT titles
+    use_gpt_titles: bool = True
+    title_max_length: int = 15
+    gpt_temperature: float = 0.9
+
+    # Nested configs
+    text: IntroTextConfig = None
+    colors: IntroColorsConfig = None
+    safe_zones: IntroSafeZonesConfig = None
+
+    # Emoji pool
+    emoji_pool: list = None
+
+    def __post_init__(self):
+        if self.text is None:
+            self.text = IntroTextConfig()
+        elif isinstance(self.text, dict):
+            self.text = IntroTextConfig(**self.text)
+
+        if self.colors is None:
+            self.colors = IntroColorsConfig()
+        elif isinstance(self.colors, dict):
+            self.colors = IntroColorsConfig(**self.colors)
+
+        if self.safe_zones is None:
+            self.safe_zones = IntroSafeZonesConfig()
+        elif isinstance(self.safe_zones, dict):
+            self.safe_zones = IntroSafeZonesConfig(**self.safe_zones)
+
+        if self.emoji_pool is None:
+            self.emoji_pool = ['💥', '😱', '🔥', '⚡', '🤯', '💀', '👀', '🚨']
+
+
+@dataclass
 class ShortsConfig:
     """YouTube Shorts generation settings"""
     enabled: bool = False
-    
+
     # Selection criteria
     min_duration: float = 15.0  # Min 15s
     max_duration: float = 60.0  # Max 60s (YouTube limit)
     max_shorts_count: int = 10
-    
+
     # Video format (9:16 vertical)
     width: int = 1080
     height: int = 1920
-    
+
     # Timing
     pre_roll: float = 0.5
     post_roll: float = 0.5
-    
+
+    # Intro overlay
+    intro: IntroConfig = None
+
     # Subtitles styling
     subtitle_fontsize: int = 48
     subtitle_position: str = "center"
-    
+
     # Upload settings
     upload_to_youtube: bool = False
     shorts_category_id: str = "25"
     add_hashtags: bool = True
+
+    def __post_init__(self):
+        if self.intro is None:
+            self.intro = IntroConfig()
+        elif isinstance(self.intro, dict):
+            self.intro = IntroConfig(**self.intro)
 
 
 @dataclass
@@ -256,6 +490,7 @@ class Config:
     export: ExportConfig = None
     splitter: SmartSplitterConfig = None
     youtube: YouTubeConfig = None
+    thumbnails: ThumbnailConfig = None
     shorts: ShortsConfig = None
     
     # General settings
@@ -288,10 +523,12 @@ class Config:
             self.selection = SelectionConfig()
         if self.export is None:
             self.export = ExportConfig()
-        if self.splitter is None:  # ← TO POWINNO BYĆ TUTAJ
-            self.splitter = SmartSplitterConfig()  # ← TO POWINNO BYĆ TUTAJ
+        if self.splitter is None:
+            self.splitter = SmartSplitterConfig()
         if self.youtube is None:
             self.youtube = YouTubeConfig()
+        if self.thumbnails is None:
+            self.thumbnails = ThumbnailConfig()
         if self.shorts is None:
             self.shorts = ShortsConfig()
         
@@ -308,7 +545,7 @@ class Config:
         """Load config z pliku YAML"""
         with open(yaml_path, 'r', encoding='utf-8') as f:
             data = yaml.safe_load(f)
-        
+
         # Parse sub-configs
         audio = AudioConfig(**data.get('audio', {}))
         vad = VADConfig(**data.get('vad', {}))
@@ -319,11 +556,12 @@ class Config:
         export = ExportConfig(**data.get('export', {}))
         youtube = YouTubeConfig(**data.get('youtube', {}))
         splitter = SmartSplitterConfig(**data.get('splitter', {}))
+        thumbnails = ThumbnailConfig(**data.get('thumbnails', {}))
         shorts = ShortsConfig(**data.get('shorts', {}))
-        
+
         # General settings
         general = data.get('general', {})
-        
+
         return cls(
             audio=audio,
             vad=vad,
@@ -334,6 +572,7 @@ class Config:
             export=export,
             youtube=youtube,
             splitter=splitter,
+            thumbnails=thumbnails,
             shorts=shorts,
             **general
         )
