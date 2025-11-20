@@ -241,10 +241,16 @@ class ShortsStage:
 
                     if overlay_added:
                         print(f"      ✅ Intro overlay dodany!")
-                        # Cleanup temp files
+                        print(f"      📍 Layout: Emoji (y=200px), Title (y=1600px)")
+                        print(f"      ⏱️  Timing: Fade in 0.3s, visible 2.5s, fade out 0.5s")
+                        print(f"      📝 Tekst: '{ultra_short_title}' z emoji {emoji_list}")
+
+                        # Cleanup temp files (zachowaj PNG dla debug przez 5s)
                         try:
                             temp_video.unlink()
-                            overlay_png.unlink()
+                            # Nie usuwamy overlay_png - zachowaj dla weryfikacji!
+                            # overlay_png.unlink()
+                            print(f"      💾 DEBUG: PNG overlay zachowany w {overlay_png}")
                         except:
                             pass
                     else:
@@ -759,11 +765,13 @@ WAŻNE: NAPRAWDĘ max 15 znaków! To overlay na 1 sekundę, musi być BŁYSKAWIC
 
             fade_out_start = duration - fade_out
 
-            # ffmpeg filter: overlay z fade
+            # ffmpeg filter: overlay z fade (alpha channel aware)
+            # fade=t=in:st=0:d=0.3:alpha=1 - fade in alpha channel
+            # fade=t=out:st=2.0:d=0.5:alpha=1 - fade out alpha channel
             filter_complex = (
-                f"[1:v]fade=in:st=0:d={fade_in}:alpha=1,"
-                f"fade=out:st={fade_out_start}:d={fade_out}:alpha=1[ovr];"
-                f"[0:v][ovr]overlay=0:0"
+                f"[1:v]fade=t=in:st=0:d={fade_in}:alpha=1,"
+                f"fade=t=out:st={fade_out_start}:d={fade_out}:alpha=1[ovr];"
+                f"[0:v][ovr]overlay=0:0:format=auto:shortest=1"
             )
 
             cmd = [
@@ -779,6 +787,9 @@ WAŻNE: NAPRAWDĘ max 15 znaków! To overlay na 1 sekundę, musi być BŁYSKAWIC
                 str(output_video)
             ]
 
+            print(f"      🔧 ffmpeg overlay command:")
+            print(f"         Filter: {filter_complex}")
+
             result = subprocess.run(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -787,11 +798,17 @@ WAŻNE: NAPRAWDĘ max 15 znaków! To overlay na 1 sekundę, musi być BŁYSKAWIC
                 encoding='utf-8'
             )
 
+            # Check output for warnings
+            if result.stderr and 'error' in result.stderr.lower():
+                print(f"      ⚠️  ffmpeg warnings: {result.stderr[:300]}")
+            else:
+                print(f"      ✓ ffmpeg overlay successful")
+
             return True
 
         except subprocess.CalledProcessError as e:
             error_msg = e.stderr if e.stderr else str(e)
-            print(f"      ❌ Overlay ffmpeg error: {error_msg[:200]}")
+            print(f"      ❌ Overlay ffmpeg error: {error_msg[:500]}")
             return False
         except Exception as e:
             print(f"      ❌ Overlay error: {e}")
