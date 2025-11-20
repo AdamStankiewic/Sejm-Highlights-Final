@@ -196,6 +196,83 @@ youtube:
   auto_description: true
   auto_tags: true
 
+# === AI Thumbnail Generation ===
+thumbnails:
+  enabled: true
+  generate_variants: true  # Generuj kilka wersji
+  num_variants: 3
+
+  # Wymiary YouTube
+  width: 1920  # 1920x1080 dla lepszej jakości
+  height: 1080
+  quality: 92  # JPEG quality (92-95 optimal)
+
+  # GPT Integration dla tytułów
+  use_gpt_titles: true
+  gpt_temperature: 0.8  # Wyższa kreatywność dla tytułów
+  max_title_length: 25  # Max znaków (z emoji!)
+
+  # Strategia wyboru klatki
+  frame_selection:
+    strategy: 'face_priority'  # Opcje: face_priority, best_score, emotional, multi_criteria
+    quality_check: true
+    prefer_open_mouth: true  # Preferuj emocjonalne ekspresje
+    sample_frames: 20  # Ile klatek sprawdzić w klipie
+
+  # Predefiniowane style/templates
+  templates:
+    aggressive:
+      description: "Maksymalny clickbait, emocje, CAPS"
+      text_position: 'top_bottom'
+      primary_color: '#FFFF00'  # Żółty
+      secondary_color: '#FF0000'  # Czerwony
+      outline_color: '#000000'
+      outline_width: 8
+      emoji_pool: ['🔥', '💥', '😱', '⚡', '🚨']
+      gradient_direction: 'both'
+      font_size_multiplier: 1.2
+
+    question:
+      description: "Pytający, ciekawość"
+      text_position: 'center'
+      primary_color: '#FFFF00'  # Żółty
+      secondary_color: '#FF6600'  # Pomarańczowy
+      outline_color: '#000000'
+      outline_width: 7
+      emoji_pool: ['🤔', '❓', '😱', '🔥']
+      gradient_direction: 'bottom'
+      font_size_multiplier: 1.1
+
+    viral:
+      description: "Neonowy, viralowy, TikTok style"
+      text_position: 'split'
+      primary_color: '#FF00FF'  # Magenta
+      secondary_color: '#00FFFF'  # Cyan
+      outline_color: '#000000'
+      outline_width: 9
+      emoji_pool: ['😱', '🤯', '💀', '🔥', '⚡']
+      gradient_direction: 'both'
+      font_size_multiplier: 1.15
+
+  # Visual enhancements
+  enhancements:
+    contrast: 1.3  # Zwiększ kontrast
+    saturation: 1.2  # Zwiększ saturację
+    sharpness: 1.1  # Lekkie wyostrzenie
+    add_arrows: false  # Strzałki wskazujące (opcjonalne)
+    add_circles: false  # Koła wskazujące (opcjonalne)
+
+  # Mobile optimization
+  mobile_test:
+    enabled: true
+    test_width: 320  # Test w rozmiarze mobile
+    test_height: 180
+    min_readability: 0.8  # Min 80% czytelności
+
+  # Output
+  output_format: 'jpg'
+  save_metadata: true  # Zapisz metadata.json z wariantami
+
 # Pozostałe sekcje (audio, vad, asr, etc.) użyją domyślnych wartości
 # === YouTube Shorts ===
 shorts:
