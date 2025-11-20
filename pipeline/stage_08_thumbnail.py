@@ -482,7 +482,7 @@ Format JSON:
             bottom_text: Opcjonalny tekst dolny (data)
         """
         # Load template config
-        template = getattr(self.config.thumbnails.templates, template_name)
+        template = self.config.thumbnails.templates[template_name]
 
         # Enhance
         image = self._enhance_image(base_image)

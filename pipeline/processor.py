@@ -327,7 +327,7 @@ class PipelineProcessor:
                         # Generate thumbnail z numerem części
                         if hasattr(self, 'thumbnail_stage'):
                             part_thumbnail = self._generate_thumbnail_with_part_number(
-                                part_export['output_file'],
+                                input_file,  # ✅ ORYGINALNE video (nie part export!)
                                 part_meta['part_number'],
                                 part_meta['total_parts'],
                                 part_meta['clips']  # ✅ Przekazanie klipów dla tej części
@@ -346,7 +346,7 @@ class PipelineProcessor:
                     
                     # Standard thumbnail
                     if hasattr(self, 'thumbnail_stage'):
-                        thumbnail_result = self._generate_standard_thumbnail(export_result['output_file'], selection_result['clips'])
+                        thumbnail_result = self._generate_standard_thumbnail(input_file, selection_result['clips'])
                         thumbnail_results.append(thumbnail_result)
                 
                 # === ETAP 9: YouTube Upload (dla każdej części z premiere scheduling) ===
