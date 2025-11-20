@@ -278,19 +278,61 @@ thumbnails:
 shorts:
   # Enable/disable Shorts generation
   enabled: true  # Domyślnie wyłączone
-  
+
   # Selection criteria
   min_duration: 15.0  # Min 15s dla Shorts
   max_duration: 60.0  # Max 60s (YouTube Shorts limit)
   max_shorts_count: 10  # Max liczba Shorts do wygenerowania
-  
+
   # Video format (9:16 vertical)
   width: 1080
   height: 1920
-  
+
   # Timing
   pre_roll: 0.5  # Sekund przed klipem
   post_roll: 0.5  # Sekund po klipie
+
+  # === INTRO OVERLAY SYSTEM ===
+  intro:
+    enabled: true  # Włącz intro overlay
+    style: 'overlay'  # Style: overlay, title_card (future)
+    duration: 2.5  # Jak długo intro jest widoczne (sekundy)
+    fade_in: 0.3  # Fade in animation (sekundy)
+    fade_out: 0.5  # Fade out animation (sekundy)
+
+    # GPT Ultra-Short Titles
+    use_gpt_titles: true
+    title_max_length: 15  # ULTRA KRÓTKIE! (z emoji)
+    gpt_temperature: 0.9  # Wysoka kreatywność
+
+    # Text Layout (1080x1920 vertical)
+    text:
+      emoji_top:
+        enabled: true
+        position_y: 200  # Y position (from top)
+        size: 140  # Emoji size (px)
+        count: 2  # Max 2 emoji
+
+      title_bottom:
+        position_y: 1600  # Y position (from top, above UI zone)
+        font_size: 90  # Large for readability (70-110px)
+        max_lines: 2  # Max lines
+        alignment: 'center'
+
+    # Colors (Shorts = więcej neon/aggressive)
+    colors:
+      text: '#FFFF00'  # Żółty (najbardziej czytelny)
+      outline: '#000000'  # Czarny outline
+      outline_width: 10  # Gruby outline (8-12px)
+      glow: false  # Neon glow effect (future)
+
+    # Emoji pool dla Shorts (bardziej Gen-Z)
+    emoji_pool: ['💥', '😱', '🔥', '⚡', '🤯', '💀', '👀', '🚨']
+
+    # Safe zones (avoid YouTube UI)
+    safe_zones:
+      avoid_top: 150  # Top UI (channel name, time)
+      avoid_bottom: 250  # Bottom UI (like/comment/share buttons)
   
   # Subtitles (UWAGA: wyłączone przez problemy z fontconfig na Windows)
   # Pliki SRT są generowane osobno i można je:

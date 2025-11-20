@@ -1,17 +1,27 @@
 """
-Stage 10: YouTube Shorts Generator (ENHANCED)
+Stage 10: YouTube Shorts Generator (ENHANCED v2.0)
 - Format pionowy 9:16 (1080x1920)
 - Żółte napisy z safe zones
 - AI-generowane viralne tytuły
+- INTRO OVERLAY: Ultra-clickable first frame z GPT titles
 - Stały opis zoptymalizowany pod Shorts
 """
 
 import subprocess
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 import os
+import random
+
+# PIL dla intro overlay
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+    print("⚠️ PIL nie zainstalowany - intro overlay wyłączony")
 
 from .config import Config
 
@@ -193,11 +203,61 @@ class ShortsStage:
             error_msg = e.stderr if e.stderr else str(e)
             print(f"      ⚠️ FFmpeg error: {error_msg[:200]}")
             raise
-        
+
         # Generate AI title and metadata
         title = self._generate_ai_short_title(clip, segments)
         description = self._generate_short_description_fixed()
-        
+
+        # === INTRO OVERLAY SYSTEM ===
+        intro_enabled = getattr(self.config.shorts.intro, 'enabled', False)
+
+        if intro_enabled and PIL_AVAILABLE:
+            print(f"      🎨 Dodaję intro overlay...")
+
+            try:
+                # 1. Generuj ultra-short title z GPT
+                ultra_short_title, emoji_list = self._generate_ultra_short_title_gpt(clip, segments)
+
+                # 2. Stwórz overlay PNG
+                overlay_png = output_dir / f"short_{index:02d}_overlay.png"
+                overlay_created = self._create_intro_overlay_image(
+                    ultra_short_title,
+                    emoji_list,
+                    overlay_png
+                )
+
+                if overlay_created:
+                    # 3. Dodaj overlay do video
+                    # Rename original video to temp
+                    temp_video = output_dir / f"short_{index:02d}_temp.mp4"
+                    output_file.rename(temp_video)
+
+                    # Add overlay
+                    overlay_added = self._add_intro_overlay_to_video(
+                        temp_video,
+                        overlay_png,
+                        output_file
+                    )
+
+                    if overlay_added:
+                        print(f"      ✅ Intro overlay dodany!")
+                        # Cleanup temp files
+                        try:
+                            temp_video.unlink()
+                            overlay_png.unlink()
+                        except:
+                            pass
+                    else:
+                        # Fallback - użyj video bez overlay
+                        print(f"      ⚠️ Overlay failed, używam video bez intro")
+                        temp_video.rename(output_file)
+
+            except Exception as e:
+                print(f"      ⚠️ Intro overlay error: {e}")
+                # Video bez overlay nadal działa
+        elif intro_enabled and not PIL_AVAILABLE:
+            print(f"      ⚠️ PIL niedostępny - pomijam intro overlay")
+
         return {
             'file': str(output_file),
             'filename': output_file.name,
@@ -451,18 +511,288 @@ Tylko tytuł, bez cudzysłowów, bez wyjaśnień:"""
         """Generuj tagi dla Short"""
         tags = [
             'Sejm',
-            'Polska', 
+            'Polska',
             'Polityka',
             'Shorts',
             'PolskaPolityka',
             'DebataSejmowa',
             'Parlament'
         ]
-        
+
         # Dodaj keywords z clipu
         keywords = clip.get('keywords', [])
         for kw in keywords[:3]:  # Max 3 dodatkowe
             if kw not in tags:
                 tags.append(kw)
-        
+
         return tags[:15]  # YouTube limit
+
+    # ==========================================
+    # INTRO OVERLAY SYSTEM (v2.0)
+    # ==========================================
+
+    def _generate_ultra_short_title_gpt(self, clip: Dict, segments: List[Dict]) -> Tuple[str, List[str]]:
+        """
+        Generuj ULTRA-KRÓTKI tytuł dla Shorts intro (max 15 znaków z emoji!)
+
+        Returns:
+            (title, [emoji1, emoji2])
+        """
+        if not self.gpt_client or not getattr(self.config.shorts.intro, 'use_gpt_titles', True):
+            return self._generate_ultra_short_fallback(clip)
+
+        # Context
+        segment = None
+        for seg in segments:
+            if abs(seg['t0'] - clip['t0']) < 1.0:
+                segment = seg
+                break
+
+        transcript = segment.get('transcript', '')[:200] if segment else ''
+        keywords = ', '.join(clip.get('keywords', [])[:3])
+
+        prompt = f"""Wygeneruj ULTRA-KRÓTKI tytuł dla YouTube Short intro overlay (MAX 15 ZNAKÓW z emoji!):
+
+KONTEKST:
+- Fragment: "{transcript}"
+- Keywords: {keywords}
+- To jest PIERWSZY SCREEN (0.5s) Shorts - musi ZAHACZYĆ!
+
+WYMAGANIA:
+- MAX 15 ZNAKÓW ŁĄCZNIE (z emoji i spacjami!)
+- 1-3 słowa + 1-2 emoji
+- ALL CAPS dla efektu
+- MEGA clickbait
+- Gen-Z style
+
+PRZYKŁADY (DOBRE):
+"SZOK! 😱💥"    (10 znaków)
+"CO?! 🤯"        (7 znaków)
+"TUSK! 🔥"      (8 znaków)
+"NIE! 💀😱"     (9 znaków)
+"WOW! ⚡"        (7 znaków)
+
+PRZYKŁADY (ZŁE - za długie):
+"TUSK ATAKUJE! 💥" (17 - ZA DŁUGIE!)
+"SEJM W SZOKU!" (14 - OK ale można krócej)
+
+Format JSON:
+{{
+  "title": "SZOK! 😱",
+  "emoji": ["😱", "💥"]
+}}
+
+WAŻNE: NAPRAWDĘ max 15 znaków! To overlay na 1 sekundę, musi być BŁYSKAWICZNE!"""
+
+        try:
+            response = self.gpt_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "Jesteś ekspertem od ultra-krótkich, viralowych hook'ów dla Shorts/TikTok."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                temperature=getattr(self.config.shorts.intro, 'gpt_temperature', 0.9),
+                max_tokens=50
+            )
+
+            result = json.loads(response.choices[0].message.content)
+            title = result.get('title', 'SZOK! 😱').strip()
+            emoji = result.get('emoji', ['😱', '💥'])
+
+            # Validacja długości
+            max_len = getattr(self.config.shorts.intro, 'title_max_length', 15)
+            if len(title) > max_len:
+                title = title[:max_len-3] + "..."
+
+            print(f"      🎨 GPT Ultra-Short: '{title}' ({len(title)} znaków)")
+
+            return title, emoji[:2]  # Max 2 emoji
+
+        except Exception as e:
+            print(f"      ⚠️ GPT ultra-short error: {e}")
+            return self._generate_ultra_short_fallback(clip)
+
+    def _generate_ultra_short_fallback(self, clip: Dict) -> Tuple[str, List[str]]:
+        """Fallback ultra-short title"""
+        keywords = clip.get('keywords', [])
+
+        templates = [
+            ("SZOK! 😱", ['😱', '💥']),
+            ("CO?! 🤯", ['🤯', '🔥']),
+            ("WOW! ⚡", ['⚡', '💥']),
+            ("NIE! 💀", ['💀', '😱']),
+        ]
+
+        if keywords:
+            kw = keywords[0].upper()[:8]  # Max 8 znaków keyword
+            return (f"{kw}! 🔥", ['🔥', '💥'])
+
+        # Random z templates
+        return random.choice(templates)
+
+    def _create_intro_overlay_image(
+        self,
+        title: str,
+        emoji_list: List[str],
+        output_path: Path
+    ) -> bool:
+        """
+        Stwórz PNG overlay z tytułem i emoji (transparent background)
+
+        Layout (1080x1920):
+        ┌─────────────────────┐
+        │        🔥💥         │  ← Top emoji (y=200)
+        │                     │
+        │                     │
+        │                     │
+        │   (transparent)     │  ← Middle: przezroczysty (video widoczny)
+        │                     │
+        │                     │
+        │     SZOK! 😱        │  ← Bottom title (y=1600)
+        └─────────────────────┘
+        """
+        if not PIL_AVAILABLE:
+            print("      ⚠️ PIL niedostępny, pomijam intro overlay")
+            return False
+
+        try:
+            width = self.config.shorts.width
+            height = self.config.shorts.height
+
+            # Create transparent image
+            overlay = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(overlay)
+
+            # Config
+            intro_config = self.config.shorts.intro
+
+            # === TOP EMOJI ===
+            if getattr(intro_config.text.emoji_top, 'enabled', True) and emoji_list:
+                try:
+                    emoji_size = getattr(intro_config.text.emoji_top, 'size', 140)
+                    emoji_y = getattr(intro_config.text.emoji_top, 'position_y', 200)
+                    emoji_font = ImageFont.truetype("C:/Windows/Fonts/seguiemj.ttf", emoji_size)
+
+                    # Center emoji(s)
+                    emoji_text = ' '.join(emoji_list[:2])  # Max 2
+                    bbox = draw.textbbox((0, 0), emoji_text, font=emoji_font)
+                    emoji_width = bbox[2] - bbox[0]
+                    emoji_x = (width - emoji_width) // 2
+
+                    draw.text((emoji_x, emoji_y), emoji_text, font=emoji_font, fill=(255, 255, 255, 255))
+                except Exception as e:
+                    print(f"      ⚠️ Emoji error: {e}")
+
+            # === BOTTOM TITLE ===
+            try:
+                title_y = getattr(intro_config.text.title_bottom, 'position_y', 1600)
+                title_size = getattr(intro_config.text.title_bottom, 'font_size', 90)
+                title_font = ImageFont.truetype("C:/Windows/Fonts/impact.ttf", title_size)
+
+                # Colors
+                text_color = getattr(intro_config.colors, 'text', '#FFFF00')
+                outline_color = getattr(intro_config.colors, 'outline', '#000000')
+                outline_width = getattr(intro_config.colors, 'outline_width', 10)
+
+                # Parse colors
+                if text_color.startswith('#'):
+                    r, g, b = int(text_color[1:3], 16), int(text_color[3:5], 16), int(text_color[5:7], 16)
+                    text_color_rgb = (r, g, b, 255)
+                else:
+                    text_color_rgb = (255, 255, 0, 255)
+
+                if outline_color.startswith('#'):
+                    r, g, b = int(outline_color[1:3], 16), int(outline_color[3:5], 16), int(outline_color[5:7], 16)
+                    outline_color_rgb = (r, g, b, 255)
+                else:
+                    outline_color_rgb = (0, 0, 0, 255)
+
+                # Center title
+                bbox = draw.textbbox((0, 0), title, font=title_font)
+                title_width = bbox[2] - bbox[0]
+                title_x = (width - title_width) // 2
+
+                # Draw outline
+                for adj_x in range(-outline_width, outline_width + 1):
+                    for adj_y in range(-outline_width, outline_width + 1):
+                        if adj_x != 0 or adj_y != 0:
+                            draw.text((title_x + adj_x, title_y + adj_y), title, font=title_font, fill=outline_color_rgb)
+
+                # Draw text
+                draw.text((title_x, title_y), title, font=title_font, fill=text_color_rgb)
+
+            except Exception as e:
+                print(f"      ⚠️ Title text error: {e}")
+                return False
+
+            # Save overlay
+            overlay.save(output_path, 'PNG')
+            print(f"      💾 Overlay PNG: {output_path.name}")
+            return True
+
+        except Exception as e:
+            print(f"      ❌ Overlay creation error: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def _add_intro_overlay_to_video(
+        self,
+        input_video: Path,
+        overlay_png: Path,
+        output_video: Path
+    ) -> bool:
+        """
+        Dodaj intro overlay do video z fade in/out
+
+        ffmpeg overlay z fade:
+        - 0.0-0.3s: Fade in
+        - 0.3-2.5s: Full visible
+        - 2.5-3.0s: Fade out
+        """
+        try:
+            intro_config = self.config.shorts.intro
+            duration = getattr(intro_config, 'duration', 2.5)
+            fade_in = getattr(intro_config, 'fade_in', 0.3)
+            fade_out = getattr(intro_config, 'fade_out', 0.5)
+
+            fade_out_start = duration - fade_out
+
+            # ffmpeg filter: overlay z fade
+            filter_complex = (
+                f"[1:v]fade=in:st=0:d={fade_in}:alpha=1,"
+                f"fade=out:st={fade_out_start}:d={fade_out}:alpha=1[ovr];"
+                f"[0:v][ovr]overlay=0:0"
+            )
+
+            cmd = [
+                'ffmpeg',
+                '-i', str(input_video),
+                '-i', str(overlay_png),
+                '-filter_complex', filter_complex,
+                '-c:a', 'copy',
+                '-c:v', 'libx264',
+                '-preset', 'medium',
+                '-crf', '23',
+                '-y',
+                str(output_video)
+            ]
+
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+                encoding='utf-8'
+            )
+
+            return True
+
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr if e.stderr else str(e)
+            print(f"      ❌ Overlay ffmpeg error: {error_msg[:200]}")
+            return False
+        except Exception as e:
+            print(f"      ❌ Overlay error: {e}")
+            return False
