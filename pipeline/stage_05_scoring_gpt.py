@@ -59,15 +59,18 @@ class ScoringStage:
     ) -> Dict[str, Any]:
         """
         Główna metoda przetwarzania
-        
+
         Returns:
             Dict zawierający segments z finalnym scoring
         """
         print(f"🧠 AI Semantic Scoring dla {len(segments)} segmentów...")
-        
+
         # STAGE 1: Pre-filtering (acoustic + keyword heuristics)
         print("📊 Stage 1: Pre-filtering...")
-        candidates = self._prefilter_candidates(segments)
+        # Dynamiczne skalowanie dla długich materiałów
+        num_segments = len(segments)
+        dynamic_top_n = self._calculate_dynamic_prefilter_top_n(num_segments)
+        candidates = self._prefilter_candidates(segments, dynamic_top_n)
         
         print(f"   ✓ Wybrano {len(candidates)} kandydatów do AI eval")
         
@@ -106,8 +109,43 @@ class ScoringStage:
             'num_ai_evaluated': len(candidates),
             'output_file': str(output_file)
         }
-    
-    def _prefilter_candidates(self, segments: List[Dict]) -> List[Dict]:
+
+    def _calculate_dynamic_prefilter_top_n(self, num_segments: int) -> int:
+        """
+        Dynamicznie oblicz prefilter_top_n na podstawie liczby segmentów
+
+        LOGIKA:
+        - Krótkie materiały (< 100 seg): min 60% pokrycia
+        - Średnie materiały (100-200 seg): 50-60% pokrycia
+        - Długie materiały (200-400 seg): 45-50% pokrycia
+        - Bardzo długie (> 400 seg): min 150 kandydatów (max cost control)
+
+        Args:
+            num_segments: Liczba segmentów do przetworzenia
+
+        Returns:
+            Dynamicznie obliczona wartość prefilter_top_n
+        """
+        base_top_n = self.config.scoring.prefilter_top_n  # 100 z config
+
+        if num_segments < 100:
+            # Krótkie materiały: min 60% lub base (co większe)
+            dynamic_top_n = max(base_top_n, int(num_segments * 0.6))
+        elif num_segments < 200:
+            # Średnie materiały: 50-60%
+            dynamic_top_n = max(base_top_n, int(num_segments * 0.55))
+        elif num_segments < 400:
+            # Długie materiały: 45-50%
+            dynamic_top_n = max(base_top_n, int(num_segments * 0.47))
+        else:
+            # Bardzo długie: cap na 200 (cost control dla GPT API)
+            dynamic_top_n = min(200, int(num_segments * 0.4))
+
+        print(f"   📊 Dynamiczne skalowanie: {num_segments} segmentów → top {dynamic_top_n} kandydatów ({dynamic_top_n/num_segments*100:.1f}% pokrycia)")
+
+        return dynamic_top_n
+
+    def _prefilter_candidates(self, segments: List[Dict], prefilter_top_n: int = None) -> List[Dict]:
         """Pre-filtering: wybierz top-N segmentów do GPT evaluation"""
         candidates = []
         
@@ -137,9 +175,10 @@ class ScoringStage:
         
         # Sort by pre_score
         segments_sorted = sorted(segments, key=lambda x: x.get('pre_score', 0), reverse=True)
-        
-        # Take top-N
-        top_n = segments_sorted[:self.config.scoring.prefilter_top_n]
+
+        # Take top-N (użyj przekazanej wartości lub domyślnej z config)
+        top_n_value = prefilter_top_n if prefilter_top_n is not None else self.config.scoring.prefilter_top_n
+        top_n = segments_sorted[:top_n_value]
         
         # Merge with force-included (deduplicate)
         candidate_ids = {c['id'] for c in candidates}
@@ -181,22 +220,26 @@ class ScoringStage:
                 transcript = seg.get('transcript', '')[:400]  # Max 400 chars
                 transcripts_text += f"\n[{i}] {transcript}\n"
             
-            prompt = f"""Oceń te fragmenty debaty sejmowej pod kątem INTERESANTOŚCI dla widza YouTube (0.0-1.0):
+            prompt = f"""Oceń te fragmenty wydarzenia politycznego (debata sejmowa, konferencja prasowa, wywiad, spotkanie) pod kątem INTERESANTOŚCI dla widza YouTube (0.0-1.0):
 
 {transcripts_text}
 
 Kryteria WYSOKIEGO score (0.7-1.0):
 - Ostra polemika, kłótnie, wymiana oskarżeń
 - Emocje, podniesiony głos, sarkazm, ironia
-- Kontrowersje, skandale, zaskakujące stwierdzenia
+- Kontrowersje, skandale, zaskakujące stwierdzenia lub deklaracje
 - Momenty memiczne, śmieszne, absurdalne
 - Przerwania, reakcje sali, oklaski/buczenie
+- Ważne ogłoszenia, zapowiedzi, deklaracje
+- Pytania dziennikarzy i konfrontacyjne odpowiedzi
+- Konkretne fakty, liczby, oskarżenia
 
 Kryteria NISKIEGO score (0.0-0.3):
 - Formalne procedury, regulaminy
 - Monotonne odczytywanie list, liczb
-- Podziękowania, grzeczności
-- Nudne, techniczne szczegóły
+- Podziękowania, grzeczności, formalne powitania
+- Nudne, techniczne szczegóły bez kontekstu
+- Ogólniki bez konkretów
 
 Odpowiedz TYLKO w formacie JSON:
 {{"scores": [0.8, 0.3, 0.9, ...]}}
@@ -207,7 +250,7 @@ Tablica ma {len(batch)} elementów - po jednym score dla każdego [N]."""
                 response = self.openai_client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[
-                        {"role": "system", "content": "Jesteś ekspertem od analizy politycznych debat i treści viralowych."},
+                        {"role": "system", "content": "Jesteś ekspertem od analizy wydarzeń politycznych (debaty, konferencje, wywiady) i treści viralowych."},
                         {"role": "user", "content": prompt}
                     ],
                     response_format={"type": "json_object"},

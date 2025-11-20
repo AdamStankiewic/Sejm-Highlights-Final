@@ -117,14 +117,15 @@ class TranscribeStage:
         import subprocess
         import tempfile
         import os
-        
+        import time
+
         t0 = float(segment['t0'])
         t1 = float(segment['t1'])
         duration = t1 - t0
-        
+
         temp_fd, temp_audio = tempfile.mkstemp(suffix='.wav', prefix='whisper_')
         os.close(temp_fd)
-        
+
         try:
             # Extract segment
             cmd = [
@@ -132,10 +133,10 @@ class TranscribeStage:
                 '-i', str(audio_path), '-ar', '16000', '-ac', '1',
                 '-y', temp_audio
             ]
-            
-            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
+
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                          check=True, timeout=60)
-            
+
             # Transcribe
             segments_iter, info = self.model.transcribe(
                 temp_audio,
@@ -147,12 +148,31 @@ class TranscribeStage:
                 word_timestamps=True,
                 vad_filter=False
             )
-            
+
             full_text = []
             all_words = []
             confidence_scores = []
-            
+
+            # ZABEZPIECZENIE: Limit iteracji + timeout
+            # Normalny segment (~3 min audio) powinien dać max ~30 Whisper segments
+            # Dodajemy 10x buffer = 300 max iterations
+            max_iterations = 300
+            iteration_start_time = time.time()
+            iteration_timeout = 120  # 2 minuty timeout na całą iterację
+            iteration_count = 0
+
             for whisper_seg in segments_iter:
+                # Check iteration limit
+                iteration_count += 1
+                if iteration_count > max_iterations:
+                    print(f"      ⚠️ OSTRZEŻENIE: Przekroczono max iteracji ({max_iterations}) - przerywam transkrypcję")
+                    break
+
+                # Check timeout
+                elapsed = time.time() - iteration_start_time
+                if elapsed > iteration_timeout:
+                    print(f"      ⚠️ OSTRZEŻENIE: Timeout iteracji ({iteration_timeout}s) - przerywam transkrypcję")
+                    break
                 full_text.append(whisper_seg.text.strip())
                 
                 if whisper_seg.words:
@@ -166,7 +186,11 @@ class TranscribeStage:
                 
                 if hasattr(whisper_seg, 'avg_logprob'):
                     confidence_scores.append(whisper_seg.avg_logprob)
-            
+
+            # Debug info jeśli była bliska przekroczenia
+            if iteration_count > max_iterations * 0.8:
+                print(f"      ℹ️ Info: Segment wygenerował {iteration_count} Whisper segments (limit: {max_iterations})")
+
             transcript = " ".join(full_text)
             avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.0
             

@@ -176,4 +176,144 @@ debil,2.1,strong
 łajdak,2.0,strong
 łotr,1.9,strong
 bandzior,1.9,strong
-# (rozszerz według potrzeb, ale ostrożnie z moderacją)
+
+# === Konferencje prasowe i eventy ===
+konferencja,1.6,event
+konferencja prasowa,1.8,event
+briefing,1.7,event
+oświadczenie,1.6,event
+komunikat,1.4,event
+wystąpienie,1.5,event
+przemówienie,1.5,event
+pytania dziennikarzy,1.7,event
+pytanie dziennikarza,1.6,event
+odpowiedź na pytanie,1.4,event
+sala konferencyjna,1.3,event
+na żywo,1.5,event
+transmisja,1.4,event
+relacja,1.3,event
+
+# === Spotkania i negocjacje ===
+spotkanie,1.5,meeting
+szczyt,1.7,meeting
+rozmowy,1.5,meeting
+negocjacje,1.7,meeting
+konsultacje,1.4,meeting
+narada,1.4,meeting
+posiedzenie,1.3,meeting
+zebranie,1.2,meeting
+debata,1.7,meeting
+dyskusja,1.5,meeting
+panel,1.4,meeting
+forum,1.5,meeting
+kongres,1.6,meeting
+konwencja,1.7,meeting
+zjazd,1.6,meeting
+
+# === Wydarzenia publiczne ===
+wiec,1.7,public_event
+manifestacja,1.8,public_event
+protest,1.7,public_event
+demonstracja,1.7,public_event
+marsz,1.6,public_event
+zgromadzenie,1.5,public_event
+pikieta,1.6,public_event
+blokada,1.7,public_event
+strajk,1.8,public_event
+akcja protestacyjna,1.7,public_event
+
+# === Wywiady i media ===
+wywiad,1.6,media
+rozmowa,1.4,media
+studio,1.4,media
+redakcja,1.3,media
+dziennikarz,1.4,media
+reporter,1.3,media
+korespondent,1.3,media
+telewizja,1.4,media
+radio,1.3,media
+prasa,1.3,media
+portal,1.3,media
+social media,1.4,media
+Twitter,1.5,media
+Facebook,1.4,media
+Instagram,1.4,media
+YouTube,1.4,media
+TikTok,1.5,media
+
+# === Deklaracje i zapowiedzi ===
+zapowiadam,1.6,declaration
+ogłaszam,1.7,declaration
+deklaruję,1.6,declaration
+obiecuję,1.5,declaration
+gwarantuję,1.6,declaration
+zapewniam,1.5,declaration
+potwierdzam,1.4,declaration
+zaprzeczam,1.6,declaration
+dementi,1.7,declaration
+sprostowanie,1.6,declaration
+oficjalnie,1.5,declaration
+publicznie,1.5,declaration
+
+# === Reakcje i komentarze ===
+komentarz,1.5,reaction
+reakcja,1.6,reaction
+odpowiedź,1.4,reaction
+stanowisko,1.5,reaction
+opinia,1.4,reaction
+ocena,1.4,reaction
+krytyka,1.6,reaction
+krytykuję,1.7,reaction
+popieram,1.4,reaction
+sprzeciwiam się,1.6,reaction
+odrzucam,1.6,reaction
+akceptuję,1.3,reaction
+zgadzam się,1.3,reaction
+
+# === Terminy i decyzje ===
+termin,1.4,timing
+deadline,1.5,timing
+pilne,1.6,timing
+natychmiast,1.7,timing
+dziś,1.5,timing
+jutro,1.4,timing
+wczoraj,1.4,timing
+dzisiaj,1.4,timing
+teraz,1.5,timing
+moment,1.3,timing
+czas,1.3,timing
+decyzja,1.6,decision
+postanowienie,1.5,decision
+uchwała,1.4,decision
+wyrok,1.7,decision
+orzeczenie,1.6,decision
+werdykt,1.7,decision
+rozstrzygnięcie,1.6,decision
+
+# === Polityka międzynarodowa ===
+Bruksela,1.6,international
+Komisja Europejska,1.6,international
+Parlament Europejski,1.5,international
+szczyt UE,1.7,international
+Waszyngton,1.5,international
+Biały Dom,1.6,international
+Kreml,1.7,international
+Berlin,1.4,international
+Paryż,1.4,international
+Londyn,1.4,international
+Kijów,1.7,international
+Mińsk,1.5,international
+Biden,1.6,international
+Trump,1.7,international
+Zełenski,1.8,international
+sankcje,1.7,international
+embargo,1.6,international
+traktat,1.5,international
+porozumienie,1.5,international
+pakt,1.5,international
+umowa,1.5,international
+sojusz,1.5,international
+konflikt,1.7,international
+wojna,1.8,international
+pokój,1.5,international
+zawieszenie broni,1.7,international

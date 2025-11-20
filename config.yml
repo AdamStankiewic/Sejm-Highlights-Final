@@ -27,11 +27,12 @@ asr:
   
   # Initial prompt for better name accuracy
   initial_prompt: |
-    Posiedzenie Sejmu Rzeczypospolitej Polskiej.
-    Posłowie: Donald Tusk, Jarosław Kaczyński, Szymon Hołownia,
+    Wydarzenie polityczne: posiedzenie Sejmu, konferencja prasowa, spotkanie polityków, debata.
+    Politycy: Donald Tusk, Jarosław Kaczyński, Szymon Hołownia,
     Krzysztof Bosak, Władysław Kosiniak-Kamysz, Przemysław Czarnek,
-    Borys Budka, Bartłomiej Sienkiewicz, Radosław Fogiel.
-    Tematy: budżet państwa, polityka zagraniczna, sprawy wewnętrzne.
+    Borys Budka, Bartłomiej Sienkiewicz, Radosław Fogiel, Mateusz Morawiecki,
+    Andrzej Duda, Rafał Trzaskowski, Zbigniew Ziobro.
+    Tematy: budżet, polityka zagraniczna, sprawy wewnętrzne, Unia Europejska, Ukraina.
   
   batch_size: 10
 
