@@ -748,32 +748,40 @@ Format JSON:
         Pierwsza klatka (t=0) = pełny clickbait = IDEALNA miniaturka! ✅
         """
         temp_video = None
+        text_file = None
         try:
-            # Escape text dla ffmpeg (polskie znaki wymagają text_shaping!)
-            safe_line1 = line1.replace("'", "'\\''").replace(":", "\\:").replace("ł", "l").replace("ą", "a").replace("ę", "e").replace("ć", "c").replace("ź", "z").replace("ż", "z").replace("ń", "n").replace("ó", "o").replace("ś", "s")
-            safe_line2 = line2.replace("'", "'\\''").replace(":", "\\:").replace("ł", "l").replace("ą", "a").replace("ę", "e").replace("ć", "c").replace("ź", "z").replace("ż", "z").replace("ń", "n").replace("ó", "o").replace("ś", "s")
+            # Zapisz tekst do pliku (unika problemów z cudzysłowami w ffmpeg!)
+            # Polskie znaki - zamieniamy na ASCII bo ffmpeg drawtext ma problemy
+            safe_line1 = line1.replace("ł", "l").replace("ą", "a").replace("ę", "e").replace("ć", "c").replace("ź", "z").replace("ż", "z").replace("ń", "n").replace("ó", "o").replace("ś", "s").replace("Ł", "L").replace("Ą", "A").replace("Ę", "E").replace("Ć", "C").replace("Ź", "Z").replace("Ż", "Z").replace("Ń", "N").replace("Ó", "O").replace("Ś", "S")
 
-            # ffmpeg complex filter chain (UPROSZCZONY - najpierw sprawdźmy czy działa):
-            # TYLKO Line 1 + czerwona ramka (bez Line 2 na razie)
-            # WAŻNE: enable=between(t\,0\,3) - bez cudzysłowów, przecinki escape'owane!
+            text_file = output_dir / f"short_{index:02d}_intro.txt"
+            with open(text_file, 'w', encoding='utf-8') as f:
+                f.write(safe_line1)
+
+            # Ścieżka do pliku tekstowego (forward slashes dla ffmpeg)
+            text_file_path = str(text_file).replace('\\', '/')
+            font_path = "C\\\\:/Windows/Fonts/arial.ttf"
+
+            # ffmpeg filter: czerwona ramka + tekst z pliku
+            # Bez enable - tekst ZAWSZE widoczny (prostsze!)
             filter_complex = (
-                # Czerwona ramka (10px thick)
-                f"drawbox=x=10:y=10:w=iw-20:h=ih-20:color=red:t=10:enable=between(t\\,0\\,3),"
-
-                # Line 1 - DUŻY hook (środek, Arial dla lepszego UTF-8)
+                # Czerwona ramka (10px thick) - tylko pierwsze 3s
+                f"drawbox=x=10:y=10:w=iw-20:h=ih-20:color=red:t=10:enable='between(t,0,3)',"
+                # Line 1 - DUŻY hook (środek) - tylko pierwsze 3s
                 f"drawtext="
-                f"text='{safe_line1}':"
-                f"fontfile=C\\:/Windows/Fonts/arial.ttf:"
+                f"textfile='{text_file_path}':"
+                f"fontfile={font_path}:"
                 f"fontsize=140:"
                 f"fontcolor=yellow:"
                 f"borderw=10:"
                 f"bordercolor=black:"
                 f"x=(w-text_w)/2:"
                 f"y=(h-text_h)/2:"
-                f"enable=between(t\\,0\\,3)"
+                f"enable='between(t,0,3)'"
             )
 
-            print(f"      🔧 DEBUG filter: {filter_complex[:200]}...")
+            print(f"      🔧 Text file: {text_file.name}")
+            print(f"      🔧 Filter: ramka + tekst (pierwsze 3s)")
 
             # Temp files
             temp_video = output_dir / f"short_{index:02d}_temp.mp4"
@@ -801,8 +809,10 @@ Format JSON:
                 encoding='utf-8'
             )
 
-            # Cleanup temp
+            # Cleanup temp files
             temp_video.unlink()
+            if text_file and text_file.exists():
+                text_file.unlink()
 
             return True
 
@@ -819,12 +829,18 @@ Format JSON:
             # Restore original if failed
             if temp_video and temp_video.exists():
                 temp_video.rename(video_file)
+            # Cleanup text file
+            if text_file and text_file.exists():
+                text_file.unlink()
             return False
         except Exception as e:
             print(f"      ❌ FAZA 1 error: {e}")
             # Restore original if failed
             if temp_video and temp_video.exists():
                 temp_video.rename(video_file)
+            # Cleanup text file
+            if text_file and text_file.exists():
+                text_file.unlink()
             return False
 
     def _add_intro_overlay_to_video_OLD(
