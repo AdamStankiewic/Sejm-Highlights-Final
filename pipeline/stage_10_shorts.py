@@ -748,40 +748,66 @@ Format JSON:
         Pierwsza klatka (t=0) = pełny clickbait = IDEALNA miniaturka! ✅
         """
         temp_video = None
-        text_file = None
+        text_file1 = None
+        text_file2 = None
         try:
-            # Zapisz tekst do pliku (unika problemów z cudzysłowami w ffmpeg!)
+            # Zapisz tekst do plików (unika problemów z cudzysłowami w ffmpeg!)
             # Polskie znaki - zamieniamy na ASCII bo ffmpeg drawtext ma problemy
-            safe_line1 = line1.replace("ł", "l").replace("ą", "a").replace("ę", "e").replace("ć", "c").replace("ź", "z").replace("ż", "z").replace("ń", "n").replace("ó", "o").replace("ś", "s").replace("Ł", "L").replace("Ą", "A").replace("Ę", "E").replace("Ć", "C").replace("Ź", "Z").replace("Ż", "Z").replace("Ń", "N").replace("Ó", "O").replace("Ś", "S")
+            def sanitize_pl(text):
+                return text.replace("ł", "l").replace("ą", "a").replace("ę", "e").replace("ć", "c").replace("ź", "z").replace("ż", "z").replace("ń", "n").replace("ó", "o").replace("ś", "s").replace("Ł", "L").replace("Ą", "A").replace("Ę", "E").replace("Ć", "C").replace("Ź", "Z").replace("Ż", "Z").replace("Ń", "N").replace("Ó", "O").replace("Ś", "S")
 
-            text_file = output_dir / f"short_{index:02d}_intro.txt"
-            with open(text_file, 'w', encoding='utf-8') as f:
+            safe_line1 = sanitize_pl(line1)
+            safe_line2 = sanitize_pl(line2)
+
+            # Zapisz do plików
+            text_file1 = output_dir / f"short_{index:02d}_line1.txt"
+            text_file2 = output_dir / f"short_{index:02d}_line2.txt"
+            with open(text_file1, 'w', encoding='utf-8') as f:
                 f.write(safe_line1)
+            with open(text_file2, 'w', encoding='utf-8') as f:
+                f.write(safe_line2)
 
-            # Ścieżka do pliku tekstowego (forward slashes dla ffmpeg)
-            text_file_path = str(text_file).replace('\\', '/')
-            font_path = "C\\\\:/Windows/Fonts/arial.ttf"
+            # Ścieżki (forward slashes dla ffmpeg)
+            text_file1_path = str(text_file1).replace('\\', '/')
+            text_file2_path = str(text_file2).replace('\\', '/')
+            font_path = "C\\\\:/Windows/Fonts/arialbd.ttf"  # Arial BOLD!
 
-            # ffmpeg filter: czerwona ramka + tekst z pliku
-            # Bez enable - tekst ZAWSZE widoczny (prostsze!)
+            # ffmpeg filter: czerwona ramka + 2 linie tekstu
+            # Format 9:16 (1080x1920) - tekst musi się mieścić!
+            # Line 1: fontsize=80, gruba czcionka (borderw=8)
+            # Line 2: fontsize=50, mniejsza
             filter_complex = (
-                # Czerwona ramka (10px thick) - tylko pierwsze 3s
-                f"drawbox=x=10:y=10:w=iw-20:h=ih-20:color=red:t=10:enable='between(t,0,3)',"
-                # Line 1 - DUŻY hook (środek) - tylko pierwsze 3s
+                # Czerwona ramka (15px thick) - tylko pierwsze 3s
+                f"drawbox=x=15:y=15:w=iw-30:h=ih-30:color=red:t=15:enable='between(t,0,3)',"
+
+                # Line 1 - DUŻY hook (góra środka, y=h/2-120)
                 f"drawtext="
-                f"textfile='{text_file_path}':"
+                f"textfile='{text_file1_path}':"
                 f"fontfile={font_path}:"
-                f"fontsize=140:"
+                f"fontsize=80:"
                 f"fontcolor=yellow:"
-                f"borderw=10:"
+                f"borderw=8:"
                 f"bordercolor=black:"
                 f"x=(w-text_w)/2:"
-                f"y=(h-text_h)/2:"
+                f"y=(h/2)-120:"
+                f"enable='between(t,0,3)',"
+
+                # Line 2 - mniejszy subtext (pod line1, y=h/2+20)
+                f"drawtext="
+                f"textfile='{text_file2_path}':"
+                f"fontfile={font_path}:"
+                f"fontsize=50:"
+                f"fontcolor=white:"
+                f"borderw=5:"
+                f"bordercolor=black:"
+                f"x=(w-text_w)/2:"
+                f"y=(h/2)+20:"
                 f"enable='between(t,0,3)'"
             )
 
-            print(f"      🔧 Text file: {text_file.name}")
-            print(f"      🔧 Filter: ramka + tekst (pierwsze 3s)")
+            print(f"      🔧 Line 1: {safe_line1[:30]}...")
+            print(f"      🔧 Line 2: {safe_line2[:30]}...")
+            print(f"      🔧 Filter: ramka + 2 linie (pierwsze 3s)")
 
             # Temp files
             temp_video = output_dir / f"short_{index:02d}_temp.mp4"
@@ -811,8 +837,9 @@ Format JSON:
 
             # Cleanup temp files
             temp_video.unlink()
-            if text_file and text_file.exists():
-                text_file.unlink()
+            for tf in [text_file1, text_file2]:
+                if tf and tf.exists():
+                    tf.unlink()
 
             return True
 
@@ -829,18 +856,20 @@ Format JSON:
             # Restore original if failed
             if temp_video and temp_video.exists():
                 temp_video.rename(video_file)
-            # Cleanup text file
-            if text_file and text_file.exists():
-                text_file.unlink()
+            # Cleanup text files
+            for tf in [text_file1, text_file2]:
+                if tf and tf.exists():
+                    tf.unlink()
             return False
         except Exception as e:
             print(f"      ❌ FAZA 1 error: {e}")
             # Restore original if failed
             if temp_video and temp_video.exists():
                 temp_video.rename(video_file)
-            # Cleanup text file
-            if text_file and text_file.exists():
-                text_file.unlink()
+            # Cleanup text files
+            for tf in [text_file1, text_file2]:
+                if tf and tf.exists():
+                    tf.unlink()
             return False
 
     def _add_intro_overlay_to_video_OLD(
