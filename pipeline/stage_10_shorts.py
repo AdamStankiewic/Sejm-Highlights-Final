@@ -230,7 +230,7 @@ class ShortsStage:
                 )
 
                 if success:
-                    print(f"      ✅ FAZA 1 intro dodany! (2 linie + emoji + ramka)")
+                    print(f"      ✅ FAZA 1 intro dodany! (2 linie tekstu + czerwona ramka)")
                 else:
                     print(f"      ⚠️ Intro failed, Short bez intro")
 
@@ -730,17 +730,17 @@ Format JSON:
         index: int
     ) -> bool:
         """
-        FAZA 1: Dodaj clickbait intro (pierwsze 3s) - idealne dla miniaturki!
+        FAZA 1: Dodaj clickbait intro (pierwsze 3s) - PROSTY i DZIAŁAJĄCY!
 
         Layout (9:16, 1080x1920):
         ┌─────────────────────┐
-        │ 🔥            😱    │  ← Emoji w rogach (góra)
+        │                     │
         │                     │
         │  SZOK W SEJMIE!     │  ← Line 1 (duży, żółty, 140px)
         │                     │
         │  Posłowie oszaleli  │  ← Line 2 (mniejszy, biały, 80px)
         │                     │
-        │ 💥            🚨    │  ← Emoji w rogach (dół)
+        │                     │
         └─────────────────────┘
         └───── Czerwona ─────┘  ← Czerwona ramka (10px)
 
@@ -753,17 +753,10 @@ Format JSON:
             safe_line1 = line1.replace("'", "'\\''").replace(":", "\\:")
             safe_line2 = line2.replace("'", "'\\''").replace(":", "\\:")
 
-            # Prepare emoji (max 4)
-            e1 = emoji_list[0] if len(emoji_list) > 0 else '🔥'
-            e2 = emoji_list[1] if len(emoji_list) > 1 else '😱'
-            e3 = emoji_list[2] if len(emoji_list) > 2 else '💥'
-            e4 = emoji_list[3] if len(emoji_list) > 3 else '🚨'
-
-            # ffmpeg complex filter chain:
+            # ffmpeg complex filter chain (BEZ EMOJI - nie działają w drawtext):
             # 1. Czerwona ramka (drawbox)
             # 2. Line 1 - duży hook (140px, żółty)
             # 3. Line 2 - mniejszy subtext (80px, biały)
-            # 4-7. 4 emoji w rogach
             filter_complex = (
                 # Czerwona ramka (10px thick)
                 f"drawbox=x=10:y=10:w=iw-20:h=ih-20:color=red:t=10:enable='between(t,0,3)',"
@@ -790,42 +783,6 @@ Format JSON:
                 f"bordercolor=black:"
                 f"x=(w-text_w)/2:"
                 f"y=900:"
-                f"enable='between(t,0,3)',"
-
-                # Emoji 1 - góra lewo (100, 150)
-                f"drawtext="
-                f"text='{e1}':"
-                f"fontfile=C\\:/Windows/Fonts/seguiemj.ttf:"
-                f"fontsize=100:"
-                f"x=100:"
-                f"y=150:"
-                f"enable='between(t,0,3)',"
-
-                # Emoji 2 - góra prawo (w-200, 150)
-                f"drawtext="
-                f"text='{e2}':"
-                f"fontfile=C\\:/Windows/Fonts/seguiemj.ttf:"
-                f"fontsize=100:"
-                f"x=w-200:"
-                f"y=150:"
-                f"enable='between(t,0,3)',"
-
-                # Emoji 3 - dół lewo (100, h-250)
-                f"drawtext="
-                f"text='{e3}':"
-                f"fontfile=C\\:/Windows/Fonts/seguiemj.ttf:"
-                f"fontsize=100:"
-                f"x=100:"
-                f"y=h-250:"
-                f"enable='between(t,0,3)',"
-
-                # Emoji 4 - dół prawo (w-200, h-250)
-                f"drawtext="
-                f"text='{e4}':"
-                f"fontfile=C\\:/Windows/Fonts/seguiemj.ttf:"
-                f"fontsize=100:"
-                f"x=w-200:"
-                f"y=h-250:"
                 f"enable='between(t,0,3)'"
             )
 
@@ -845,7 +802,7 @@ Format JSON:
                 str(video_file)
             ]
 
-            print(f"      🔧 FAZA 1 filter: 2 linie + 4 emoji + czerwona ramka")
+            print(f"      🔧 FAZA 1 filter: 2 linie tekstu + czerwona ramka")
 
             result = subprocess.run(
                 cmd,
