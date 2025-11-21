@@ -216,25 +216,26 @@ class ShortsStage:
         if intro_enabled:
             print(f"      📝 Napisy ASS: {ass_file.name}")
             try:
-                # Generuj clickbait title dla pierwszej klatki
-                intro_title, emoji_list = self._generate_ultra_short_title_gpt(clip, segments)
-                print(f"      🎨 Intro title: '{intro_title}' ({len(intro_title)} znaków)")
+                # Generuj clickbait dwu-liniowy title (FAZA 1!)
+                line1, line2, emoji_list = self._generate_ultra_short_title_gpt(clip, segments)
 
-                # Dodaj drawtext overlay do video (pierwsze 3 sekundy)
+                # Dodaj FAZA 1 overlay: 2 linie + emoji + ramka (pierwsze 3 sekundy)
                 success = self._add_intro_drawtext_to_video(
                     output_file,
-                    intro_title,
+                    line1,
+                    line2,
+                    emoji_list,
                     output_dir,
                     index
                 )
 
                 if success:
-                    print(f"      ✅ Intro title dodany na pierwszych 3s!")
+                    print(f"      ✅ FAZA 1 intro dodany! (2 linie + emoji + ramka)")
                 else:
-                    print(f"      ⚠️ Intro title failed, Short bez intro")
+                    print(f"      ⚠️ Intro failed, Short bez intro")
 
             except Exception as e:
-                print(f"      ⚠️ Intro title error: {e}")
+                print(f"      ⚠️ Intro error: {e}")
                 # Video bez intro nadal działa
         else:
             print(f"      📝 Napisy ASS: {ass_file.name}")
@@ -512,12 +513,12 @@ Tylko tytuł, bez cudzysłowów, bez wyjaśnień:"""
     # INTRO OVERLAY SYSTEM (v2.0)
     # ==========================================
 
-    def _generate_ultra_short_title_gpt(self, clip: Dict, segments: List[Dict]) -> Tuple[str, List[str]]:
+    def _generate_ultra_short_title_gpt(self, clip: Dict, segments: List[Dict]) -> Tuple[str, str, List[str]]:
         """
-        Generuj ULTRA-KRÓTKI tytuł dla Shorts intro (max 15 znaków z emoji!)
+        Generuj dwu-liniowy clickbait title dla Shorts miniaturki (FAZA 1 upgrade!)
 
         Returns:
-            (title, [emoji1, emoji2])
+            (line1_hook, line2_subtext, [emoji1, emoji2, emoji3, emoji4])
         """
         if not self.gpt_client or not getattr(self.config.shorts.intro, 'use_gpt_titles', True):
             return self._generate_ultra_short_fallback(clip)
@@ -532,82 +533,83 @@ Tylko tytuł, bez cudzysłowów, bez wyjaśnień:"""
         transcript = segment.get('transcript', '')[:200] if segment else ''
         keywords = ', '.join(clip.get('keywords', [])[:3])
 
-        prompt = f"""Wygeneruj ULTRA-KRÓTKI tytuł dla YouTube Short intro overlay (MAX 15 ZNAKÓW z emoji!):
+        prompt = f"""Wygeneruj DWU-LINIOWY clickbait title dla YouTube Shorts miniaturki (polska polityka):
 
 KONTEKST:
 - Fragment: "{transcript}"
 - Keywords: {keywords}
-- To jest PIERWSZY SCREEN (0.5s) Shorts - musi ZAHACZYĆ!
+- To jest MINIATURKA Shorts (pierwsza klatka) - musi być ULTRA clickbait jak Onet/WP!
 
 WYMAGANIA:
-- MAX 15 ZNAKÓW ŁĄCZNIE (z emoji i spacjami!)
-- 1-3 słowa + 1-2 emoji
-- ALL CAPS dla efektu
-- MEGA clickbait
-- Gen-Z style
+- 2 LINIE tekstu
+- LINE 1 (hook): 3-7 słów, ALL CAPS, krzykliwy (jak nagłówki Onetu)
+- LINE 2 (subtext): 2-5 słów, doprecyzowanie
 
-PRZYKŁADY (DOBRE):
-"SZOK! 😱💥"    (10 znaków)
-"CO?! 🤯"        (7 znaków)
-"TUSK! 🔥"      (8 znaków)
-"NIE! 💀😱"     (9 znaków)
-"WOW! ⚡"        (7 znaków)
+PRZYKŁADY (IDEALNE dla polskiej polityki):
+Line 1: "KŁAMSTWO STULECIA W SEJMIE!"
+Line 2: "Tusk w szoku"
 
-PRZYKŁADY (ZŁE - za długie):
-"TUSK ATAKUJE! 💥" (17 - ZA DŁUGIE!)
-"SEJM W SZOKU!" (14 - OK ale można krócej)
+Line 1: "POSEŁ OSZALAŁ!"
+Line 2: "Nikt tego nie widział"
+
+Line 1: "TO KONIEC PIS-u?!"
+Line 2: "Kaczyński milczy"
+
+Line 1: "AWANTURA! BIJATYKA!"
+Line 2: "Zamknęli Sejm"
+
+EMOJI: Daj 4 emoji (polityczne shock value)
+Najlepsze: 🔥😱💥🚨⚡🤯💀👀
 
 Format JSON:
 {{
-  "title": "SZOK! 😱",
-  "emoji": ["😱", "💥"]
-}}
-
-WAŻNE: NAPRAWDĘ max 15 znaków! To overlay na 1 sekundę, musi być BŁYSKAWICZNE!"""
+  "line1": "SZOK W SEJMIE!",
+  "line2": "Posłowie oszaleli",
+  "emoji": ["🔥", "😱", "💥", "🚨"]
+}}"""
 
         try:
             response = self.gpt_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "Jesteś ekspertem od ultra-krótkich, viralowych hook'ów dla Shorts/TikTok."},
+                    {"role": "system", "content": "Jesteś ekspertem od clickbaitowych miniaturek YouTube w polskiej niszy politycznej. Znasz styl Onetu, WP, Super Expressu."},
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
                 temperature=getattr(self.config.shorts.intro, 'gpt_temperature', 0.9),
-                max_tokens=50
+                max_tokens=100
             )
 
             result = json.loads(response.choices[0].message.content)
-            title = result.get('title', 'SZOK! 😱').strip()
-            emoji = result.get('emoji', ['😱', '💥'])
+            line1 = result.get('line1', 'SZOK W SEJMIE!').strip().upper()
+            line2 = result.get('line2', 'Posłowie oszaleli').strip()
+            emoji = result.get('emoji', ['🔥', '😱', '💥', '🚨'])
 
-            # Validacja długości
-            max_len = getattr(self.config.shorts.intro, 'title_max_length', 15)
-            if len(title) > max_len:
-                title = title[:max_len-3] + "..."
+            print(f"      🎨 GPT Clickbait:")
+            print(f"         Line 1: '{line1}'")
+            print(f"         Line 2: '{line2}'")
+            print(f"         Emoji: {emoji[:4]}")
 
-            print(f"      🎨 GPT Ultra-Short: '{title}' ({len(title)} znaków)")
-
-            return title, emoji[:2]  # Max 2 emoji
+            return line1, line2, emoji[:4]  # Max 4 emoji dla 4 rogów
 
         except Exception as e:
-            print(f"      ⚠️ GPT ultra-short error: {e}")
+            print(f"      ⚠️ GPT clickbait error: {e}")
             return self._generate_ultra_short_fallback(clip)
 
-    def _generate_ultra_short_fallback(self, clip: Dict) -> Tuple[str, List[str]]:
-        """Fallback ultra-short title"""
+    def _generate_ultra_short_fallback(self, clip: Dict) -> Tuple[str, str, List[str]]:
+        """Fallback dwu-liniowy title"""
         keywords = clip.get('keywords', [])
 
         templates = [
-            ("SZOK! 😱", ['😱', '💥']),
-            ("CO?! 🤯", ['🤯', '🔥']),
-            ("WOW! ⚡", ['⚡', '💥']),
-            ("NIE! 💀", ['💀', '😱']),
+            ("SZOK W SEJMIE!", "Posłowie oszaleli", ['🔥', '😱', '💥', '🚨']),
+            ("AWANTURA!", "Nikt tego nie widział", ['😱', '🤯', '💥', '🔥']),
+            ("TO KONIEC?!", "Politycy w szoku", ['💥', '😱', '⚡', '🚨']),
+            ("SKANDAL!", "Zamknęli Sejm", ['🚨', '😱', '🔥', '💀']),
         ]
 
         if keywords:
-            kw = keywords[0].upper()[:8]  # Max 8 znaków keyword
-            return (f"{kw}! 🔥", ['🔥', '💥'])
+            kw = keywords[0].upper()[:15]
+            return (f"{kw}!", "Zobacz co się stało", ['🔥', '😱', '💥', '⚡'])
 
         # Random z templates
         return random.choice(templates)
@@ -721,45 +723,109 @@ WAŻNE: NAPRAWDĘ max 15 znaków! To overlay na 1 sekundę, musi być BŁYSKAWIC
     def _add_intro_drawtext_to_video(
         self,
         video_file: Path,
-        intro_title: str,
+        line1: str,
+        line2: str,
+        emoji_list: List[str],
         output_dir: Path,
         index: int
     ) -> bool:
         """
-        Dodaj DUŻY clickbait title na środku ekranu (pierwsze 3s) - idealne dla miniaturki!
+        FAZA 1: Dodaj clickbait intro (pierwsze 3s) - idealne dla miniaturki!
 
-        Layout:
+        Layout (9:16, 1080x1920):
         ┌─────────────────────┐
+        │ 🔥            😱    │  ← Emoji w rogach (góra)
         │                     │
-        │    SZOK! 😱💥      │  ← DUŻY, CENTRALNY tytuł
-        │                     │  ← Font ~120px, żółty + czarny outline
+        │  SZOK W SEJMIE!     │  ← Line 1 (duży, żółty, 140px)
+        │                     │
+        │  Posłowie oszaleli  │  ← Line 2 (mniejszy, biały, 80px)
+        │                     │
+        │ 💥            🚨    │  ← Emoji w rogach (dół)
         └─────────────────────┘
+        └───── Czerwona ─────┘  ← Czerwona ramka (10px)
 
-        enable='between(t,0,3)' - widoczny tylko pierwsze 3s
-        Pierwsza klatka (t=0) = pełny tytuł = clickbait miniaturka!
+        enable='between(t,0,3)' - wszystko widoczne tylko pierwsze 3s
+        Pierwsza klatka (t=0) = pełny clickbait = IDEALNA miniaturka! ✅
         """
         temp_video = None
         try:
-            # Escape single quotes dla ffmpeg (replace ' -> \\')
-            safe_title = intro_title.replace("'", "'\\''").replace(":", "\\:")
+            # Escape text dla ffmpeg
+            safe_line1 = line1.replace("'", "'\\''").replace(":", "\\:")
+            safe_line2 = line2.replace("'", "'\\''").replace(":", "\\:")
 
-            # ffmpeg drawtext filter
-            # - fontsize=120: DUŻY tekst czytelny na mobile
-            # - x=(w-text_w)/2: wycentrowany horizontal
-            # - y=(h-text_h)/2-200: lekko powyżej środka
-            # - fontcolor=yellow: żółty tekst (clickbait!)
-            # - borderw=8: gruby czarny outline
-            # - enable='between(t,0,3)': tylko pierwsze 3 sekundy
-            drawtext_filter = (
+            # Prepare emoji (max 4)
+            e1 = emoji_list[0] if len(emoji_list) > 0 else '🔥'
+            e2 = emoji_list[1] if len(emoji_list) > 1 else '😱'
+            e3 = emoji_list[2] if len(emoji_list) > 2 else '💥'
+            e4 = emoji_list[3] if len(emoji_list) > 3 else '🚨'
+
+            # ffmpeg complex filter chain:
+            # 1. Czerwona ramka (drawbox)
+            # 2. Line 1 - duży hook (140px, żółty)
+            # 3. Line 2 - mniejszy subtext (80px, biały)
+            # 4-7. 4 emoji w rogach
+            filter_complex = (
+                # Czerwona ramka (10px thick)
+                f"drawbox=x=10:y=10:w=iw-20:h=ih-20:color=red:t=10:enable='between(t,0,3)',"
+
+                # Line 1 - DUŻY hook (środek górny, y=700)
                 f"drawtext="
-                f"text='{safe_title}':"
+                f"text='{safe_line1}':"
                 f"fontfile=C\\:/Windows/Fonts/impact.ttf:"
-                f"fontsize=120:"
+                f"fontsize=140:"
                 f"fontcolor=yellow:"
-                f"borderw=8:"
+                f"borderw=10:"
                 f"bordercolor=black:"
                 f"x=(w-text_w)/2:"
-                f"y=(h-text_h)/2-200:"
+                f"y=700:"
+                f"enable='between(t,0,3)',"
+
+                # Line 2 - mniejszy subtext (środek dolny, y=900)
+                f"drawtext="
+                f"text='{safe_line2}':"
+                f"fontfile=C\\:/Windows/Fonts/impact.ttf:"
+                f"fontsize=80:"
+                f"fontcolor=white:"
+                f"borderw=6:"
+                f"bordercolor=black:"
+                f"x=(w-text_w)/2:"
+                f"y=900:"
+                f"enable='between(t,0,3)',"
+
+                # Emoji 1 - góra lewo (100, 150)
+                f"drawtext="
+                f"text='{e1}':"
+                f"fontfile=C\\:/Windows/Fonts/seguiemj.ttf:"
+                f"fontsize=100:"
+                f"x=100:"
+                f"y=150:"
+                f"enable='between(t,0,3)',"
+
+                # Emoji 2 - góra prawo (w-200, 150)
+                f"drawtext="
+                f"text='{e2}':"
+                f"fontfile=C\\:/Windows/Fonts/seguiemj.ttf:"
+                f"fontsize=100:"
+                f"x=w-200:"
+                f"y=150:"
+                f"enable='between(t,0,3)',"
+
+                # Emoji 3 - dół lewo (100, h-250)
+                f"drawtext="
+                f"text='{e3}':"
+                f"fontfile=C\\:/Windows/Fonts/seguiemj.ttf:"
+                f"fontsize=100:"
+                f"x=100:"
+                f"y=h-250:"
+                f"enable='between(t,0,3)',"
+
+                # Emoji 4 - dół prawo (w-200, h-250)
+                f"drawtext="
+                f"text='{e4}':"
+                f"fontfile=C\\:/Windows/Fonts/seguiemj.ttf:"
+                f"fontsize=100:"
+                f"x=w-200:"
+                f"y=h-250:"
                 f"enable='between(t,0,3)'"
             )
 
@@ -770,7 +836,7 @@ WAŻNE: NAPRAWDĘ max 15 znaków! To overlay na 1 sekundę, musi być BŁYSKAWIC
             cmd = [
                 'ffmpeg',
                 '-i', str(temp_video),
-                '-vf', drawtext_filter,
+                '-vf', filter_complex,
                 '-c:a', 'copy',  # Copy audio (szybsze)
                 '-c:v', 'libx264',
                 '-preset', 'medium',
@@ -778,6 +844,8 @@ WAŻNE: NAPRAWDĘ max 15 znaków! To overlay na 1 sekundę, musi być BŁYSKAWIC
                 '-y',
                 str(video_file)
             ]
+
+            print(f"      🔧 FAZA 1 filter: 2 linie + 4 emoji + czerwona ramka")
 
             result = subprocess.run(
                 cmd,
@@ -794,13 +862,13 @@ WAŻNE: NAPRAWDĘ max 15 znaków! To overlay na 1 sekundę, musi być BŁYSKAWIC
 
         except subprocess.CalledProcessError as e:
             error_msg = e.stderr if e.stderr else str(e)
-            print(f"      ❌ Drawtext error: {error_msg[:500]}")
+            print(f"      ❌ FAZA 1 error: {error_msg[:500]}")
             # Restore original if failed
             if temp_video and temp_video.exists():
                 temp_video.rename(video_file)
             return False
         except Exception as e:
-            print(f"      ❌ Intro drawtext error: {e}")
+            print(f"      ❌ FAZA 1 error: {e}")
             # Restore original if failed
             if temp_video and temp_video.exists():
                 temp_video.rename(video_file)
