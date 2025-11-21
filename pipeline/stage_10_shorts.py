@@ -755,9 +755,10 @@ Format JSON:
 
             # ffmpeg complex filter chain (UPROSZCZONY - najpierw sprawdźmy czy działa):
             # TYLKO Line 1 + czerwona ramka (bez Line 2 na razie)
+            # WAŻNE: enable=between(t\,0\,3) - bez cudzysłowów, przecinki escape'owane!
             filter_complex = (
                 # Czerwona ramka (10px thick)
-                f"drawbox=x=10:y=10:w=iw-20:h=ih-20:color=red:t=10:enable='between(t,0,3)',"
+                f"drawbox=x=10:y=10:w=iw-20:h=ih-20:color=red:t=10:enable=between(t\\,0\\,3),"
 
                 # Line 1 - DUŻY hook (środek, Arial dla lepszego UTF-8)
                 f"drawtext="
@@ -769,7 +770,7 @@ Format JSON:
                 f"bordercolor=black:"
                 f"x=(w-text_w)/2:"
                 f"y=(h-text_h)/2:"
-                f"enable='between(t,0,3)'"
+                f"enable=between(t\\,0\\,3)"
             )
 
             print(f"      🔧 DEBUG filter: {filter_complex[:200]}...")
