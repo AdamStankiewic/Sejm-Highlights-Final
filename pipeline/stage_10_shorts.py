@@ -776,13 +776,14 @@ Format JSON:
             # Format 9:16 (1080x1920) - tekst musi się mieścić!
             # Line 1: fontsize=80, gruba czcionka (borderw=8)
             # Line 2: fontsize=50, mniejsza
+            # WAŻNE: enable=between(t\,0\,3) - BEZ cudzysłowów, przecinki escape'owane!
             filter_complex = (
                 # Czerwona ramka (15px thick) - tylko pierwsze 3s
-                f"drawbox=x=15:y=15:w=iw-30:h=ih-30:color=red:t=15:enable='between(t,0,3)',"
+                f"drawbox=x=15:y=15:w=iw-30:h=ih-30:color=red:t=15:enable=between(t\\,0\\,3),"
 
                 # Line 1 - DUŻY hook (góra środka, y=h/2-120)
                 f"drawtext="
-                f"textfile='{text_file1_path}':"
+                f"textfile={text_file1_path}:"
                 f"fontfile={font_path}:"
                 f"fontsize=80:"
                 f"fontcolor=yellow:"
@@ -790,11 +791,11 @@ Format JSON:
                 f"bordercolor=black:"
                 f"x=(w-text_w)/2:"
                 f"y=(h/2)-120:"
-                f"enable='between(t,0,3)',"
+                f"enable=between(t\\,0\\,3),"
 
                 # Line 2 - mniejszy subtext (pod line1, y=h/2+20)
                 f"drawtext="
-                f"textfile='{text_file2_path}':"
+                f"textfile={text_file2_path}:"
                 f"fontfile={font_path}:"
                 f"fontsize=50:"
                 f"fontcolor=white:"
@@ -802,7 +803,7 @@ Format JSON:
                 f"bordercolor=black:"
                 f"x=(w-text_w)/2:"
                 f"y=(h/2)+20:"
-                f"enable='between(t,0,3)'"
+                f"enable=between(t\\,0\\,3)"
             )
 
             print(f"      🔧 Line 1: {safe_line1[:30]}...")
