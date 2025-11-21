@@ -168,19 +168,21 @@ class ShortsStage:
         # Filter complex:
         # 1. Scale + crop do 9:16
         # 2. Dodaj napisy z ASS (żółte, centered, safe zone)
+        # Output: [vout] = video z napisami
         filter_complex = (
             f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
-            f"crop={width}:{height}[v];"
-            f"[v]ass='{str(ass_file).replace('\\', '/')}'"
+            f"crop={width}:{height},"
+            f"ass='{str(ass_file).replace('\\', '/')}' [vout]"
         )
-        
+
         cmd = [
             'ffmpeg',
             '-ss', str(t0),
             '-to', str(t1),
             '-i', str(input_file),
             '-filter_complex', filter_complex,
-            '-map', '0:a',
+            '-map', '[vout]',  # ✅ Video z filtra (z napisami!)
+            '-map', '0:a',     # ✅ Audio z oryginału
             '-c:v', 'libx264',
             '-preset', 'medium',
             '-crf', '23',
@@ -208,61 +210,34 @@ class ShortsStage:
         title = self._generate_ai_short_title(clip, segments)
         description = self._generate_short_description_fixed()
 
-        # === INTRO OVERLAY SYSTEM ===
+        # === INTRO TITLE SYSTEM (drawtext zamiast PNG overlay) ===
         intro_enabled = getattr(self.config.shorts.intro, 'enabled', False)
 
-        if intro_enabled and PIL_AVAILABLE:
-            print(f"      🎨 Dodaję intro overlay...")
-
+        if intro_enabled:
+            print(f"      📝 Napisy ASS: {ass_file.name}")
             try:
-                # 1. Generuj ultra-short title z GPT
-                ultra_short_title, emoji_list = self._generate_ultra_short_title_gpt(clip, segments)
+                # Generuj clickbait title dla pierwszej klatki
+                intro_title, emoji_list = self._generate_ultra_short_title_gpt(clip, segments)
+                print(f"      🎨 Intro title: '{intro_title}' ({len(intro_title)} znaków)")
 
-                # 2. Stwórz overlay PNG
-                overlay_png = output_dir / f"short_{index:02d}_overlay.png"
-                overlay_created = self._create_intro_overlay_image(
-                    ultra_short_title,
-                    emoji_list,
-                    overlay_png
+                # Dodaj drawtext overlay do video (pierwsze 3 sekundy)
+                success = self._add_intro_drawtext_to_video(
+                    output_file,
+                    intro_title,
+                    output_dir,
+                    index
                 )
 
-                if overlay_created:
-                    # 3. Dodaj overlay do video
-                    # Rename original video to temp
-                    temp_video = output_dir / f"short_{index:02d}_temp.mp4"
-                    output_file.rename(temp_video)
-
-                    # Add overlay
-                    overlay_added = self._add_intro_overlay_to_video(
-                        temp_video,
-                        overlay_png,
-                        output_file
-                    )
-
-                    if overlay_added:
-                        print(f"      ✅ Intro overlay dodany!")
-                        print(f"      📍 Layout: Emoji (y=200px), Title (y=1600px)")
-                        print(f"      ⏱️  Timing: Fade in 0.3s, visible 2.5s, fade out 0.5s")
-                        print(f"      📝 Tekst: '{ultra_short_title}' z emoji {emoji_list}")
-
-                        # Cleanup temp files (zachowaj PNG dla debug przez 5s)
-                        try:
-                            temp_video.unlink()
-                            # Nie usuwamy overlay_png - zachowaj dla weryfikacji!
-                            # overlay_png.unlink()
-                            print(f"      💾 DEBUG: PNG overlay zachowany w {overlay_png}")
-                        except:
-                            pass
-                    else:
-                        # Fallback - użyj video bez overlay
-                        print(f"      ⚠️ Overlay failed, używam video bez intro")
-                        temp_video.rename(output_file)
+                if success:
+                    print(f"      ✅ Intro title dodany na pierwszych 3s!")
+                else:
+                    print(f"      ⚠️ Intro title failed, Short bez intro")
 
             except Exception as e:
-                print(f"      ⚠️ Intro overlay error: {e}")
-                # Video bez overlay nadal działa
-        elif intro_enabled and not PIL_AVAILABLE:
-            print(f"      ⚠️ PIL niedostępny - pomijam intro overlay")
+                print(f"      ⚠️ Intro title error: {e}")
+                # Video bez intro nadal działa
+        else:
+            print(f"      📝 Napisy ASS: {ass_file.name}")
 
         return {
             'file': str(output_file),
@@ -743,7 +718,95 @@ WAŻNE: NAPRAWDĘ max 15 znaków! To overlay na 1 sekundę, musi być BŁYSKAWIC
             traceback.print_exc()
             return False
 
-    def _add_intro_overlay_to_video(
+    def _add_intro_drawtext_to_video(
+        self,
+        video_file: Path,
+        intro_title: str,
+        output_dir: Path,
+        index: int
+    ) -> bool:
+        """
+        Dodaj DUŻY clickbait title na środku ekranu (pierwsze 3s) - idealne dla miniaturki!
+
+        Layout:
+        ┌─────────────────────┐
+        │                     │
+        │    SZOK! 😱💥      │  ← DUŻY, CENTRALNY tytuł
+        │                     │  ← Font ~120px, żółty + czarny outline
+        └─────────────────────┘
+
+        enable='between(t,0,3)' - widoczny tylko pierwsze 3s
+        Pierwsza klatka (t=0) = pełny tytuł = clickbait miniaturka!
+        """
+        temp_video = None
+        try:
+            # Escape single quotes dla ffmpeg (replace ' -> \\')
+            safe_title = intro_title.replace("'", "'\\''").replace(":", "\\:")
+
+            # ffmpeg drawtext filter
+            # - fontsize=120: DUŻY tekst czytelny na mobile
+            # - x=(w-text_w)/2: wycentrowany horizontal
+            # - y=(h-text_h)/2-200: lekko powyżej środka
+            # - fontcolor=yellow: żółty tekst (clickbait!)
+            # - borderw=8: gruby czarny outline
+            # - enable='between(t,0,3)': tylko pierwsze 3 sekundy
+            drawtext_filter = (
+                f"drawtext="
+                f"text='{safe_title}':"
+                f"fontfile=C\\:/Windows/Fonts/impact.ttf:"
+                f"fontsize=120:"
+                f"fontcolor=yellow:"
+                f"borderw=8:"
+                f"bordercolor=black:"
+                f"x=(w-text_w)/2:"
+                f"y=(h-text_h)/2-200:"
+                f"enable='between(t,0,3)'"
+            )
+
+            # Temp files
+            temp_video = output_dir / f"short_{index:02d}_temp.mp4"
+            video_file.rename(temp_video)
+
+            cmd = [
+                'ffmpeg',
+                '-i', str(temp_video),
+                '-vf', drawtext_filter,
+                '-c:a', 'copy',  # Copy audio (szybsze)
+                '-c:v', 'libx264',
+                '-preset', 'medium',
+                '-crf', '23',
+                '-y',
+                str(video_file)
+            ]
+
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+                encoding='utf-8'
+            )
+
+            # Cleanup temp
+            temp_video.unlink()
+
+            return True
+
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr if e.stderr else str(e)
+            print(f"      ❌ Drawtext error: {error_msg[:500]}")
+            # Restore original if failed
+            if temp_video and temp_video.exists():
+                temp_video.rename(video_file)
+            return False
+        except Exception as e:
+            print(f"      ❌ Intro drawtext error: {e}")
+            # Restore original if failed
+            if temp_video and temp_video.exists():
+                temp_video.rename(video_file)
+            return False
+
+    def _add_intro_overlay_to_video_OLD(
         self,
         input_video: Path,
         overlay_png: Path,
