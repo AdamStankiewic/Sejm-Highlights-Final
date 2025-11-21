@@ -749,42 +749,30 @@ Format JSON:
         """
         temp_video = None
         try:
-            # Escape text dla ffmpeg
-            safe_line1 = line1.replace("'", "'\\''").replace(":", "\\:")
-            safe_line2 = line2.replace("'", "'\\''").replace(":", "\\:")
+            # Escape text dla ffmpeg (polskie znaki wymagają text_shaping!)
+            safe_line1 = line1.replace("'", "'\\''").replace(":", "\\:").replace("ł", "l").replace("ą", "a").replace("ę", "e").replace("ć", "c").replace("ź", "z").replace("ż", "z").replace("ń", "n").replace("ó", "o").replace("ś", "s")
+            safe_line2 = line2.replace("'", "'\\''").replace(":", "\\:").replace("ł", "l").replace("ą", "a").replace("ę", "e").replace("ć", "c").replace("ź", "z").replace("ż", "z").replace("ń", "n").replace("ó", "o").replace("ś", "s")
 
-            # ffmpeg complex filter chain (BEZ EMOJI - nie działają w drawtext):
-            # 1. Czerwona ramka (drawbox)
-            # 2. Line 1 - duży hook (140px, żółty)
-            # 3. Line 2 - mniejszy subtext (80px, biały)
+            # ffmpeg complex filter chain (UPROSZCZONY - najpierw sprawdźmy czy działa):
+            # TYLKO Line 1 + czerwona ramka (bez Line 2 na razie)
             filter_complex = (
                 # Czerwona ramka (10px thick)
                 f"drawbox=x=10:y=10:w=iw-20:h=ih-20:color=red:t=10:enable='between(t,0,3)',"
 
-                # Line 1 - DUŻY hook (środek górny, y=700)
+                # Line 1 - DUŻY hook (środek, Arial dla lepszego UTF-8)
                 f"drawtext="
                 f"text='{safe_line1}':"
-                f"fontfile=C\\:/Windows/Fonts/impact.ttf:"
+                f"fontfile=C\\:/Windows/Fonts/arial.ttf:"
                 f"fontsize=140:"
                 f"fontcolor=yellow:"
                 f"borderw=10:"
                 f"bordercolor=black:"
                 f"x=(w-text_w)/2:"
-                f"y=700:"
-                f"enable='between(t,0,3)',"
-
-                # Line 2 - mniejszy subtext (środek dolny, y=900)
-                f"drawtext="
-                f"text='{safe_line2}':"
-                f"fontfile=C\\:/Windows/Fonts/impact.ttf:"
-                f"fontsize=80:"
-                f"fontcolor=white:"
-                f"borderw=6:"
-                f"bordercolor=black:"
-                f"x=(w-text_w)/2:"
-                f"y=900:"
+                f"y=(h-text_h)/2:"
                 f"enable='between(t,0,3)'"
             )
+
+            print(f"      🔧 DEBUG filter: {filter_complex[:200]}...")
 
             # Temp files
             temp_video = output_dir / f"short_{index:02d}_temp.mp4"
@@ -819,7 +807,14 @@ Format JSON:
 
         except subprocess.CalledProcessError as e:
             error_msg = e.stderr if e.stderr else str(e)
-            print(f"      ❌ FAZA 1 error: {error_msg[:500]}")
+            # Pokaż TYLKO faktyczny błąd (ostatnie linie stderr zawierają prawdziwy error)
+            if error_msg:
+                lines = error_msg.split('\n')
+                # Ostatnie 5 linii zwykle zawierają error
+                relevant_lines = [l.strip() for l in lines[-5:] if l.strip()]
+                print(f"      ❌ ffmpeg error:")
+                for line in relevant_lines:
+                    print(f"         {line}")
             # Restore original if failed
             if temp_video and temp_video.exists():
                 temp_video.rename(video_file)
