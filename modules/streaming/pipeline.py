@@ -21,11 +21,16 @@ class StreamingPipeline(BasePipeline):
     - Twitch clip integration (optional)
     """
 
+    _instance_count = 0  # Debug counter
+
     def __init__(
         self,
         config: Optional[StreamingConfig] = None,
         chat_data: Optional[List[Dict]] = None
     ):
+        StreamingPipeline._instance_count += 1
+        print(f"\n   [DEBUG] StreamingPipeline created (instance #{StreamingPipeline._instance_count})")
+
         if config is None:
             config = StreamingConfig()
 

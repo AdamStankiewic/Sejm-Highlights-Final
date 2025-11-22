@@ -35,6 +35,8 @@ class StreamingScorer:
     LOCAL_WINDOW_SIZE = 30 * 60  # 30 minutes each side
 
     def __init__(self, config: StreamingConfig, chat_data: List[Dict]):
+        print(f"   [DEBUG] StreamingScorer created with {len(chat_data) if chat_data else 0} messages")
+
         self.config = config
         self.chat_parser = ChatParser(config.popular_emotes)
         self.chat_data = chat_data
