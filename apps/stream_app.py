@@ -117,6 +117,15 @@ class StreamHighlightsApp(QMainWindow):
         self.chat_stats_label = QLabel("")
         chat_layout.addWidget(self.chat_stats_label)
 
+        # Preview spikes button
+        preview_row = QHBoxLayout()
+        self.preview_btn = QPushButton("Preview Chat Spikes")
+        self.preview_btn.clicked.connect(self.preview_chat_spikes)
+        self.preview_btn.setEnabled(False)
+        preview_row.addWidget(self.preview_btn)
+        preview_row.addStretch()
+        chat_layout.addLayout(preview_row)
+
         layout.addWidget(chat_group)
 
         # Settings
@@ -146,10 +155,11 @@ class StreamHighlightsApp(QMainWindow):
         self.status_label = QLabel("Gotowy - wybierz VOD i plik czatu")
         layout.addWidget(self.status_label)
 
-        # Log
+        # Log (bigger for more info)
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setMaximumHeight(100)
+        self.log_text.setMaximumHeight(200)
+        self.log_text.setStyleSheet("font-family: monospace; font-size: 11px;")
         layout.addWidget(self.log_text)
 
         # Buttons
@@ -210,6 +220,10 @@ class StreamHighlightsApp(QMainWindow):
                     f"{stats.get('messages_per_minute', 0):.1f} msg/min"
                 )
                 self.log(f"Chat zaladowany: {count} wiadomosci")
+
+                # Store pipeline for preview
+                self._chat_pipeline = pipeline
+                self.preview_btn.setEnabled(True)
 
             except Exception as e:
                 self.chat_stats_label.setText(f"Blad ladowania: {e}")
@@ -292,6 +306,31 @@ class StreamHighlightsApp(QMainWindow):
     def log(self, message: str):
         """Add to log"""
         self.log_text.append(message)
+
+    def preview_chat_spikes(self):
+        """Preview top chat activity moments"""
+        if not hasattr(self, '_chat_pipeline') or not self._chat_pipeline.scorer:
+            self.log("Najpierw zaladuj chat!")
+            return
+
+        self.log("\n=== TOP CHAT SPIKES ===")
+
+        spikes = self._chat_pipeline.scorer.get_top_chat_spikes(top_n=15)
+
+        if not spikes:
+            self.log("Nie znaleziono spike'ow (za malo danych)")
+            return
+
+        for i, spike in enumerate(spikes, 1):
+            self.log(
+                f"{i:2d}. {spike['timestamp_str']} | "
+                f"activity={spike['activity']:.0f} msg | "
+                f"emotes={spike['emotes']}"
+            )
+
+        self.log("======================\n")
+        self.log("Te timestampy maja najwieksza aktywnosc czatu")
+        self.log("Mozesz sprawdzic VOD w tych momentach")
 
 
 def main():

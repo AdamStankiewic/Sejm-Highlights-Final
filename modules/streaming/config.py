@@ -23,9 +23,11 @@ class StreamingConfig(BaseModuleConfig):
     audio_energy_weight: float = 0.10
     keyword_weight: float = 0.05
 
-    # Chat spike detection
-    chat_spike_multiplier: float = 3.0  # 3x baseline = spike
-    chat_window_seconds: float = 10.0  # Window for counting messages
+    # Chat spike detection - ADAPTIVE (percentile-based)
+    chat_spike_percentile: float = 85.0  # Top 15% activity = spike (adaptive!)
+    chat_spike_multiplier: float = 1.5   # Fallback: 1.5x baseline (lowered from 3x)
+    chat_window_seconds: float = 10.0    # Window for counting messages
+    use_percentile_scoring: bool = True  # Use adaptive percentile instead of fixed multiplier
 
     # Emote detection
     min_emotes_for_bonus: int = 10
