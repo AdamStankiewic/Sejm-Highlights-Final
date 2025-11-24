@@ -1,343 +1,299 @@
 """
-Stream Highlights App - Streaming content UI
-Part of Highlights AI Platform
+Stream Highlights AI - Aplikacja GUI dla streamów
+Wersja: 1.0.0 - INITIAL RELEASE
+Python 3.11+ | PyQt6 | CUDA
 
-Usage:
-    python -m apps.stream_app
-    or
-    python apps/stream_app.py
+Automatyczne generowanie najlepszych momentów ze streamów Twitch/YouTube
+Bazuje na aktywności czatu, emote spamie i reakcjach widzów
 """
+
 import sys
+import json
 from pathlib import Path
 
-# Add parent to path for imports
+# Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from datetime import datetime
 from PyQt6.QtWidgets import (
-    QMainWindow, QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QFileDialog, QProgressBar, QTextEdit,
-    QSpinBox, QGroupBox, QComboBox
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QLabel, QProgressBar, QTextEdit, QFileDialog,
+    QGroupBox, QSpinBox, QDoubleSpinBox, QComboBox,
+    QMessageBox, QTabWidget, QCheckBox, QLineEdit
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QFont
 
-from modules.streaming.pipeline import StreamingPipeline
-from modules.streaming.config import StreamingConfig
-
-
-class ProcessingThread(QThread):
-    """Background thread for processing"""
-    progress = pyqtSignal(float, str)
-    finished = pyqtSignal(dict)
-    error = pyqtSignal(str)
-
-    def __init__(self, pipeline, input_file, output_dir):
-        super().__init__()
-        self.pipeline = pipeline
-        self.input_file = input_file
-        self.output_dir = output_dir
-
-    def run(self):
-        try:
-            self.pipeline.set_progress_callback(
-                lambda p, m: self.progress.emit(p, m)
-            )
-            result = self.pipeline.process(self.input_file, self.output_dir)
-            self.finished.emit(result)
-        except Exception as e:
-            self.error.emit(str(e))
+# Pipeline imports (currently using same pipeline, will be refactored)
+from pipeline.processor import PipelineProcessor
+from pipeline.config import Config
 
 
 class StreamHighlightsApp(QMainWindow):
-    """Main application window for Stream Highlights"""
+    """
+    Aplikacja do generowania highlights ze streamów
+    Uproszczona wersja - focus na UX dla streamerów
+    """
 
     def __init__(self):
         super().__init__()
-        self.config = StreamingConfig()
-        self.pipeline = None
-        self.processing_thread = None
-        self.vod_file = None
-        self.chat_file = None
+
+        # Config
+        self.config = Config.load_default()
+        self.vod_path = None
+        self.chat_path = None
+        self.chat_data = None
 
         self.init_ui()
 
     def init_ui(self):
-        """Initialize the user interface"""
-        self.setWindowTitle("Stream Highlights AI v1.0")
-        self.setMinimumSize(700, 500)
+        """Initialize UI"""
+        self.setWindowTitle("Stream Highlights AI v1.0 🎮")
+        self.setGeometry(100, 100, 900, 700)
 
+        # Main widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
 
-        # Title
-        title = QLabel("Stream Highlights AI")
-        title.setStyleSheet("font-size: 24px; font-weight: bold; margin: 10px;")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
+        # === HEADER ===
+        header = QLabel("🎮 Stream Highlights Generator")
+        header.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        header.setStyleSheet("color: #9146FF; padding: 10px;")  # Twitch purple
+        layout.addWidget(header)
 
-        subtitle = QLabel("Automatyczne wycinanie najlepszych momentow z VOD na podstawie aktywnosci czatu")
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(subtitle)
+        info = QLabel(
+            "Automatycznie znajduje najlepsze momenty ze streamu bazując na:\n"
+            "• Aktywności czatu (spam, KEKW, PogChamp)\n"
+            "• Reakcjach emote\n"
+            "• Głośności audio"
+        )
+        info.setWordWrap(True)
+        info.setStyleSheet("color: #666; padding: 5px; margin-bottom: 10px;")
+        layout.addWidget(info)
 
-        # VOD selection
-        vod_group = QGroupBox("VOD (Video)")
-        vod_layout = QHBoxLayout(vod_group)
+        # === FILE SELECTION ===
+        file_group = QGroupBox("📁 Pliki")
+        file_layout = QVBoxLayout()
 
-        self.vod_label = QLabel("Nie wybrano pliku VOD")
-        vod_layout.addWidget(self.vod_label, stretch=1)
-
-        self.vod_btn = QPushButton("Wybierz VOD")
+        # VOD file
+        vod_layout = QHBoxLayout()
+        self.vod_btn = QPushButton("📹 Wybierz Stream VOD")
         self.vod_btn.clicked.connect(self.select_vod)
+        self.vod_btn.setStyleSheet("padding: 10px; font-weight: bold;")
         vod_layout.addWidget(self.vod_btn)
 
-        layout.addWidget(vod_group)
+        self.vod_label = QLabel("Nie wybrano pliku")
+        self.vod_label.setStyleSheet("color: #999;")
+        vod_layout.addWidget(self.vod_label)
+        file_layout.addLayout(vod_layout)
 
-        # Chat selection
-        chat_group = QGroupBox("Chat (JSON)")
-        chat_layout = QVBoxLayout(chat_group)
-
-        chat_row = QHBoxLayout()
-        self.chat_label = QLabel("Nie wybrano pliku czatu")
-        chat_row.addWidget(self.chat_label, stretch=1)
-
-        self.chat_btn = QPushButton("Wybierz chat JSON")
+        # Chat file (optional)
+        chat_layout = QHBoxLayout()
+        self.chat_btn = QPushButton("💬 Wybierz Chat JSON (opcjonalne)")
         self.chat_btn.clicked.connect(self.select_chat)
-        chat_row.addWidget(self.chat_btn)
-        chat_layout.addLayout(chat_row)
+        self.chat_btn.setStyleSheet("padding: 10px;")
+        chat_layout.addWidget(self.chat_btn)
 
-        format_row = QHBoxLayout()
-        format_row.addWidget(QLabel("Format:"))
-        self.format_combo = QComboBox()
-        self.format_combo.addItems(["Twitch (TwitchDownloader)", "YouTube Live Chat"])
-        format_row.addWidget(self.format_combo)
-        format_row.addStretch()
-        chat_layout.addLayout(format_row)
+        self.chat_label = QLabel("Opcjonalne - zwiększa accuracy")
+        self.chat_label.setStyleSheet("color: #999;")
+        chat_layout.addWidget(self.chat_label)
+        file_layout.addLayout(chat_layout)
 
-        # Chat stats
-        self.chat_stats_label = QLabel("")
-        chat_layout.addWidget(self.chat_stats_label)
+        # Chat help
+        chat_help = QLabel(
+            "💡 Tip: Pobierz chat używając 'Twitch Downloader' lub 'yt-dlp --write-subs'"
+        )
+        chat_help.setStyleSheet("color: #FF9800; font-style: italic; font-size: 9pt; padding: 5px;")
+        file_layout.addWidget(chat_help)
 
-        # Preview spikes button
-        preview_row = QHBoxLayout()
-        self.preview_btn = QPushButton("Preview Chat Spikes")
-        self.preview_btn.clicked.connect(self.preview_chat_spikes)
-        self.preview_btn.setEnabled(False)
-        preview_row.addWidget(self.preview_btn)
-        preview_row.addStretch()
-        chat_layout.addLayout(preview_row)
+        file_group.setLayout(file_layout)
+        layout.addWidget(file_group)
 
-        layout.addWidget(chat_group)
+        # === SETTINGS ===
+        settings_group = QGroupBox("⚙️ Ustawienia")
+        settings_layout = QVBoxLayout()
 
-        # Settings
-        settings_group = QGroupBox("Ustawienia")
-        settings_layout = QHBoxLayout(settings_group)
+        # Target clips
+        clips_layout = QHBoxLayout()
+        clips_layout.addWidget(QLabel("🎯 Liczba klipów:"))
+        self.num_clips = QSpinBox()
+        self.num_clips.setRange(5, 30)
+        self.num_clips.setValue(10)
+        clips_layout.addWidget(self.num_clips)
+        clips_layout.addWidget(QLabel("(najlepsze momenty)"))
+        clips_layout.addStretch()
+        settings_layout.addLayout(clips_layout)
 
-        settings_layout.addWidget(QLabel("Docelowa dlugosc (min):"))
-        self.duration_spin = QSpinBox()
-        self.duration_spin.setRange(1, 30)
-        self.duration_spin.setValue(10)
-        settings_layout.addWidget(self.duration_spin)
+        # Clip duration
+        duration_layout = QHBoxLayout()
+        duration_layout.addWidget(QLabel("⏱️ Długość klipu:"))
+        self.clip_duration = QSpinBox()
+        self.clip_duration.setRange(30, 180)
+        self.clip_duration.setValue(60)
+        self.clip_duration.setSuffix(" s")
+        duration_layout.addWidget(self.clip_duration)
+        duration_layout.addStretch()
+        settings_layout.addLayout(duration_layout)
 
-        settings_layout.addWidget(QLabel("Max klipow:"))
-        self.clips_spin = QSpinBox()
-        self.clips_spin.setRange(5, 50)
-        self.clips_spin.setValue(20)
-        settings_layout.addWidget(self.clips_spin)
+        # Shorts
+        self.generate_shorts = QCheckBox("📱 Generuj też Shorts (9:16, max 60s)")
+        self.generate_shorts.setChecked(True)
+        settings_layout.addWidget(self.generate_shorts)
 
-        settings_layout.addStretch()
-
+        settings_group.setLayout(settings_layout)
         layout.addWidget(settings_group)
+
+        # === PROCESSING ===
+        process_group = QGroupBox("🚀 Przetwarzanie")
+        process_layout = QVBoxLayout()
+
+        # Start button
+        self.start_btn = QPushButton("▶️ Generuj Highlights")
+        self.start_btn.clicked.connect(self.start_processing)
+        self.start_btn.setEnabled(False)
+        self.start_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #9146FF;
+                color: white;
+                padding: 15px;
+                font-size: 14pt;
+                font-weight: bold;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #772CE8;
+            }
+            QPushButton:disabled {
+                background-color: #CCC;
+            }
+        """)
+        process_layout.addWidget(self.start_btn)
 
         # Progress
         self.progress_bar = QProgressBar()
-        layout.addWidget(self.progress_bar)
+        process_layout.addWidget(self.progress_bar)
 
-        self.status_label = QLabel("Gotowy - wybierz VOD i plik czatu")
-        layout.addWidget(self.status_label)
+        self.progress_label = QLabel("Gotowy")
+        self.progress_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        process_layout.addWidget(self.progress_label)
 
-        # Log (bigger for more info)
+        process_group.setLayout(process_layout)
+        layout.addWidget(process_group)
+
+        # === LOGS ===
+        log_group = QGroupBox("📋 Logi")
+        log_layout = QVBoxLayout()
+
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setMaximumHeight(200)
-        self.log_text.setStyleSheet("font-family: monospace; font-size: 11px;")
-        layout.addWidget(self.log_text)
+        self.log_text.setStyleSheet("font-family: 'Consolas', monospace; font-size: 9pt;")
+        log_layout.addWidget(self.log_text)
 
-        # Buttons
-        btn_layout = QHBoxLayout()
+        log_group.setLayout(log_layout)
+        layout.addWidget(log_group)
 
-        self.start_btn = QPushButton("Generuj Highlights")
-        self.start_btn.clicked.connect(self.start_processing)
-        self.start_btn.setEnabled(False)
-        self.start_btn.setStyleSheet("font-size: 16px; padding: 10px;")
-        btn_layout.addWidget(self.start_btn)
-
-        self.cancel_btn = QPushButton("Anuluj")
-        self.cancel_btn.clicked.connect(self.cancel_processing)
-        self.cancel_btn.setEnabled(False)
-        btn_layout.addWidget(self.cancel_btn)
-
-        layout.addLayout(btn_layout)
+        layout.addStretch()
 
     def select_vod(self):
-        """Select VOD file"""
+        """Select stream VOD file"""
         file, _ = QFileDialog.getOpenFileName(
             self,
-            "Wybierz VOD",
+            "Wybierz Stream VOD",
             "",
-            "Video Files (*.mp4 *.mkv *.avi *.mov *.webm *.ts)"
+            "Video Files (*.mp4 *.mkv *.flv *.mov);;All Files (*)"
         )
 
         if file:
-            self.vod_file = file
-            self.vod_label.setText(Path(file).name)
-            self.log(f"VOD: {Path(file).name}")
+            self.vod_path = file
+            filename = Path(file).name
+            self.vod_label.setText(f"✅ {filename}")
+            self.vod_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
+            self.log(f"VOD selected: {filename}", "INFO")
             self._check_ready()
 
     def select_chat(self):
-        """Select chat JSON file"""
+        """Select chat JSON file (optional)"""
         file, _ = QFileDialog.getOpenFileName(
             self,
-            "Wybierz plik czatu",
+            "Wybierz Chat JSON",
             "",
-            "JSON Files (*.json)"
+            "JSON Files (*.json);;All Files (*)"
         )
 
         if file:
-            self.chat_file = file
-            self.chat_label.setText(Path(file).name)
-            self.log(f"Chat: {Path(file).name}")
+            self.chat_path = file
+            filename = Path(file).name
+            self.chat_label.setText(f"✅ {filename}")
+            self.chat_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
 
-            # Try to load and show stats
+            # Parse chat (basic validation)
             try:
-                format_type = "twitch" if self.format_combo.currentIndex() == 0 else "youtube"
-                pipeline = StreamingPipeline(self.config)
-                count = pipeline.load_chat_from_file(file, format_type)
-                stats = pipeline.get_chat_stats()
+                with open(file, 'r', encoding='utf-8') as f:
+                    self.chat_data = json.load(f)
 
-                self.chat_stats_label.setText(
-                    f"Zaladowano {count:,} wiadomosci | "
-                    f"{stats.get('unique_users', 0):,} uzytkownikow | "
-                    f"{stats.get('messages_per_minute', 0):.1f} msg/min"
-                )
-                self.log(f"Chat zaladowany: {count} wiadomosci")
-
-                # Store pipeline for preview
-                self._chat_pipeline = pipeline
-                self.preview_btn.setEnabled(True)
+                self.log(f"Chat loaded: {len(self.chat_data)} messages", "INFO")
 
             except Exception as e:
-                self.chat_stats_label.setText(f"Blad ladowania: {e}")
-                self.log(f"Blad: {e}")
-
-            self._check_ready()
+                self.log(f"Chat parse error: {e}", "ERROR")
+                self.chat_label.setText(f"❌ Invalid JSON")
+                self.chat_label.setStyleSheet("color: #F44336;")
+                self.chat_data = None
 
     def _check_ready(self):
-        """Check if ready to process"""
-        if self.vod_file and self.chat_file:
+        """Enable process button when VOD is selected"""
+        if self.vod_path:
             self.start_btn.setEnabled(True)
 
     def start_processing(self):
-        """Start processing"""
-        if not self.vod_file:
-            return
+        """Start processing (placeholder)"""
+        self.log("🚀 Starting processing...", "INFO")
+        self.log("⚠️ Streaming module not yet implemented - using Sejm pipeline", "WARNING")
+        self.log("📌 TODO: Implement streaming scorer with chat analysis", "INFO")
 
         # Update config
-        self.config.target_duration = self.duration_spin.value() * 60
-        self.config.max_clips = self.clips_spin.value()
+        self.config.selection.max_clips = self.num_clips.value()
+        self.config.selection.max_clip_duration = float(self.clip_duration.value())
+        self.config.shorts.enabled = self.generate_shorts.isChecked()
 
-        # Create pipeline with chat
-        self.pipeline = StreamingPipeline(self.config)
-
-        if self.chat_file:
-            format_type = "twitch" if self.format_combo.currentIndex() == 0 else "youtube"
-            self.pipeline.load_chat_from_file(self.chat_file, format_type)
-
-        # Output directory
-        vod_path = Path(self.vod_file)
-        output_dir = vod_path.parent / f"{vod_path.stem}_highlights"
-        output_dir.mkdir(exist_ok=True)
-
-        # Start thread
-        self.processing_thread = ProcessingThread(
-            self.pipeline,
-            self.vod_file,
-            str(output_dir)
+        QMessageBox.information(
+            self,
+            "Coming Soon",
+            "🚧 Streaming module is under development!\n\n"
+            "Currently this app uses the same pipeline as Sejm app.\n"
+            "Streaming-specific features (chat analysis, emote detection) "
+            "will be added in v1.1.\n\n"
+            "For now, use 'sejm_app.py' for processing."
         )
-        self.processing_thread.progress.connect(self.on_progress)
-        self.processing_thread.finished.connect(self.on_finished)
-        self.processing_thread.error.connect(self.on_error)
-        self.processing_thread.start()
 
-        self.start_btn.setEnabled(False)
-        self.cancel_btn.setEnabled(True)
-        self.log("Rozpoczeto przetwarzanie...")
+    def log(self, message: str, level: str = "INFO"):
+        """Add log message"""
+        timestamp = datetime.now().strftime("%H:%M:%S")
 
-    def cancel_processing(self):
-        """Cancel processing"""
-        if self.pipeline:
-            self.pipeline.cancel()
-            self.log("Anulowanie...")
+        # Color by level
+        colors = {
+            "INFO": "#2196F3",
+            "SUCCESS": "#4CAF50",
+            "WARNING": "#FF9800",
+            "ERROR": "#F44336"
+        }
+        color = colors.get(level, "#666")
 
-    def on_progress(self, progress: float, message: str):
-        """Update progress"""
-        self.progress_bar.setValue(int(progress * 100))
-        self.status_label.setText(message)
-
-    def on_finished(self, result: dict):
-        """Processing finished"""
-        self.start_btn.setEnabled(True)
-        self.cancel_btn.setEnabled(False)
-        self.progress_bar.setValue(100)
-
-        if result.get('cancelled'):
-            self.status_label.setText("Anulowano")
-        else:
-            num_clips = result.get('num_clips', 0)
-            self.status_label.setText(f"Zakonczone! Wybrano {num_clips} klipow")
-            self.log(f"Gotowe! {num_clips} klipow do eksportu")
-
-    def on_error(self, error: str):
-        """Handle error"""
-        self.start_btn.setEnabled(True)
-        self.cancel_btn.setEnabled(False)
-        self.status_label.setText("Blad!")
-        self.log(f"BLAD: {error}")
-
-    def log(self, message: str):
-        """Add to log"""
-        self.log_text.append(message)
-
-    def preview_chat_spikes(self):
-        """Preview top chat activity moments"""
-        if not hasattr(self, '_chat_pipeline') or not self._chat_pipeline.scorer:
-            self.log("Najpierw zaladuj chat!")
-            return
-
-        self.log("\n=== TOP CHAT SPIKES ===")
-
-        spikes = self._chat_pipeline.scorer.get_top_chat_spikes(top_n=15)
-
-        if not spikes:
-            self.log("Nie znaleziono spike'ow (za malo danych)")
-            return
-
-        for i, spike in enumerate(spikes, 1):
-            self.log(
-                f"{i:2d}. {spike['timestamp_str']} | "
-                f"activity={spike['activity']:.0f} msg | "
-                f"emotes={spike['emotes']}"
-            )
-
-        self.log("======================\n")
-        self.log("Te timestampy maja najwieksza aktywnosc czatu")
-        self.log("Mozesz sprawdzic VOD w tych momentach")
+        formatted = f'<span style="color: {color};">[{timestamp}] {level}: {message}</span>'
+        self.log_text.append(formatted)
 
 
 def main():
     """Main entry point"""
     app = QApplication(sys.argv)
+
+    # Set app style
+    app.setStyle("Fusion")
+
     window = StreamHighlightsApp()
     window.show()
+
     sys.exit(app.exec())
 
 
