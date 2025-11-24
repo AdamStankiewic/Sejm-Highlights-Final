@@ -161,7 +161,9 @@ class ExportStage:
         # STEP 4: Concatenate wszystko
         if progress_callback:
             progress_callback(0.7, "Łączenie klipów...")
-        
+
+        print(f"   🔗 Łączenie {len(clips)} klipów w final video...")
+
         output_file = self._concatenate_clips(
             clips,
             faded_clips,
@@ -171,6 +173,14 @@ class ExportStage:
             title_cards_generated,
             part_number=part_number  # ✅ Przekazanie part_number
         )
+
+        # Verify output file was created
+        if not output_file.exists():
+            raise RuntimeError(f"Output file nie został utworzony: {output_file}")
+
+        file_size_mb = output_file.stat().st_size / (1024**2)
+        print(f"   ✅ Video wygenerowane: {output_file.name}")
+        print(f"   📦 Rozmiar: {file_size_mb:.1f} MB")
         
         # STEP 5: Generate hardsub version (optional)
         output_file_hardsub = None

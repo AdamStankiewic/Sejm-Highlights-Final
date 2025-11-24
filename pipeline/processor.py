@@ -270,17 +270,36 @@ class PipelineProcessor:
                 self._check_cancelled()
                 stage_start = time.time()
                 self._report_progress("Stage 6/7", 77, "Selekcja najlepszych klipów...")
-                
+
                 # Jeśli jest split_strategy, użyj wyższego threshold
                 min_score = split_strategy['min_score_threshold'] if split_strategy else 0.0  # Bez filtrowania gdy brak strategii
-                
+
+                print(f"\n📊 Rozpoczęto selekcję klipów:")
+                print(f"   - Segmentów do wyboru: {len(scoring_result['segments'])}")
+                print(f"   - Min score threshold: {min_score}")
+                print(f"   - Target duration: {self.config.selection.target_total_duration}s")
+                print(f"   - Max clips: {self.config.selection.max_clips}")
+
                 selection_result = self.stages['selection'].process(
                     segments=scoring_result['segments'],
                     total_duration=source_duration,
                     output_dir=self.session_dir,
                     min_score=min_score
                 )
-                
+
+                print(f"\n✅ Zakończono selekcję:")
+                print(f"   - Wybrano klipów: {len(selection_result['clips'])}")
+                print(f"   - Wybrano shorts: {len(selection_result.get('shorts_clips', []))}")
+                print(f"   - Total duration: {selection_result['total_duration']/60:.1f} min")
+
+                if len(selection_result['clips']) == 0:
+                    print(f"\n⚠️ OSTRZEŻENIE: Nie wybrano ŻADNYCH klipów!")
+                    print(f"   Możliwe przyczyny:")
+                    print(f"   1. Min score ({min_score}) jest za wysoki")
+                    print(f"   2. Wszystkie segmenty mają score poniżej minimum")
+                    print(f"   3. Segmenty są za krótkie (min: {self.config.selection.min_clip_duration}s)")
+                    raise ValueError("Nie wybrano żadnych klipów - sprawdź konfigurację")
+
                 self.timing_stats['selection'] = self._format_duration(time.time() - stage_start)
                 self._report_progress("Stage 6/7", 85, f"✅ Wybrano {len(selection_result['clips'])} klipów")
                 
