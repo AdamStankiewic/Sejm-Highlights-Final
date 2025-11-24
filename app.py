@@ -297,22 +297,25 @@ class SejmHighlightsApp(QMainWindow):
     def create_config_tabs(self) -> QTabWidget:
         """Zakładki z konfiguracją"""
         tabs = QTabWidget()
-        
+
         # TAB 1: Output Settings
         tabs.addTab(self.create_output_tab(), "📊 Output")
-        
-        # TAB 2: Smart Splitter (NOWY!)
+
+        # TAB 2: Smart Splitter
         tabs.addTab(self.create_smart_splitter_tab(), "🤖 Smart Splitter")
-        
-        # TAB 3: Model Settings
+
+        # TAB 3: Scoring & Selection (NOWY!)
+        tabs.addTab(self.create_scoring_tab(), "🎯 Scoring & Selection")
+
+        # TAB 4: Model Settings
         tabs.addTab(self.create_model_tab(), "🧠 AI Models")
-        
-        # TAB 4: Advanced
+
+        # TAB 5: Advanced
         tabs.addTab(self.create_advanced_tab(), "⚙️ Advanced")
-        
-        # TAB 5: YouTube (rozszerzony)
+
+        # TAB 6: YouTube
         tabs.addTab(self.create_youtube_tab(), "📺 YouTube")
-        
+
         return tabs
     
     def create_output_tab(self) -> QWidget:
@@ -489,9 +492,158 @@ class SejmHighlightsApp(QMainWindow):
         
         layout.addStretch()
         return tab
-    
+
+    def create_scoring_tab(self) -> QWidget:
+        """TAB 3: Scoring & Selection Settings (NOWY!)"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        # === SEKCJA 1: Scoring Weights ===
+        scoring_header = QLabel("⚖️ Scoring Weights")
+        scoring_header.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        layout.addWidget(scoring_header)
+
+        info = QLabel("Wagi wpływające na final score. Większa waga = większy wpływ na wybór klipów.")
+        info.setWordWrap(True)
+        info.setStyleSheet("color: #666; padding: 5px; font-size: 9pt;")
+        layout.addWidget(info)
+
+        # Weight Semantic (GPT)
+        semantic_layout = QHBoxLayout()
+        semantic_layout.addWidget(QLabel("🤖 GPT Semantic:"))
+        self.weight_semantic = QDoubleSpinBox()
+        self.weight_semantic.setRange(0.0, 1.0)
+        self.weight_semantic.setSingleStep(0.05)
+        self.weight_semantic.setValue(0.70)  # Default from config
+        self.weight_semantic.setDecimals(2)
+        semantic_layout.addWidget(self.weight_semantic)
+        semantic_layout.addWidget(QLabel("(największy wpływ)"))
+        semantic_layout.addStretch()
+        layout.addLayout(semantic_layout)
+
+        # Weight Acoustic
+        acoustic_layout = QHBoxLayout()
+        acoustic_layout.addWidget(QLabel("🔊 Acoustic (głośność):"))
+        self.weight_acoustic = QDoubleSpinBox()
+        self.weight_acoustic.setRange(0.0, 1.0)
+        self.weight_acoustic.setSingleStep(0.05)
+        self.weight_acoustic.setValue(0.10)
+        self.weight_acoustic.setDecimals(2)
+        acoustic_layout.addWidget(self.weight_acoustic)
+        acoustic_layout.addStretch()
+        layout.addLayout(acoustic_layout)
+
+        # Weight Keyword
+        keyword_layout = QHBoxLayout()
+        keyword_layout.addWidget(QLabel("🔑 Keywords:"))
+        self.weight_keyword = QDoubleSpinBox()
+        self.weight_keyword.setRange(0.0, 1.0)
+        self.weight_keyword.setSingleStep(0.05)
+        self.weight_keyword.setValue(0.10)
+        self.weight_keyword.setDecimals(2)
+        keyword_layout.addWidget(self.weight_keyword)
+        keyword_layout.addStretch()
+        layout.addLayout(keyword_layout)
+
+        # Weight Speaker Change
+        speaker_layout = QHBoxLayout()
+        speaker_layout.addWidget(QLabel("👥 Speaker Change:"))
+        self.weight_speaker_change = QDoubleSpinBox()
+        self.weight_speaker_change.setRange(0.0, 1.0)
+        self.weight_speaker_change.setSingleStep(0.05)
+        self.weight_speaker_change.setValue(0.10)
+        self.weight_speaker_change.setDecimals(2)
+        speaker_layout.addWidget(self.weight_speaker_change)
+        speaker_layout.addStretch()
+        layout.addLayout(speaker_layout)
+
+        # Sum info
+        weights_sum_label = QLabel("💡 Suma wag powinna = 1.0")
+        weights_sum_label.setStyleSheet("color: #2196F3; font-size: 9pt; padding: 5px;")
+        layout.addWidget(weights_sum_label)
+
+        layout.addSpacing(15)
+
+        # === SEKCJA 2: Pre-filtering ===
+        prefilter_header = QLabel("🔍 Pre-filtering")
+        prefilter_header.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        layout.addWidget(prefilter_header)
+
+        prefilter_info = QLabel(
+            "Ile segmentów przejdzie do GPT scoring. Dla długich materiałów (>6h) zwiększ do 150-200."
+        )
+        prefilter_info.setWordWrap(True)
+        prefilter_info.setStyleSheet("color: #666; padding: 5px; font-size: 9pt;")
+        layout.addWidget(prefilter_info)
+
+        # Prefilter top N
+        prefilter_layout = QHBoxLayout()
+        prefilter_layout.addWidget(QLabel("📊 Prefilter Top N:"))
+        self.prefilter_top_n = QSpinBox()
+        self.prefilter_top_n.setRange(20, 300)
+        self.prefilter_top_n.setSingleStep(10)
+        self.prefilter_top_n.setValue(100)  # Default from config
+        prefilter_layout.addWidget(self.prefilter_top_n)
+        prefilter_layout.addWidget(QLabel("segmentów"))
+        prefilter_layout.addStretch()
+        layout.addLayout(prefilter_layout)
+
+        layout.addSpacing(15)
+
+        # === SEKCJA 3: Selection Advanced ===
+        selection_header = QLabel("⚙️ Selection Advanced")
+        selection_header.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        layout.addWidget(selection_header)
+
+        # Min time gap
+        gap_layout = QHBoxLayout()
+        gap_layout.addWidget(QLabel("⏱️ Min gap między klipami:"))
+        self.min_time_gap = QSpinBox()
+        self.min_time_gap.setRange(0, 60)
+        self.min_time_gap.setValue(20)  # Default
+        self.min_time_gap.setSuffix(" s")
+        gap_layout.addWidget(self.min_time_gap)
+        gap_layout.addStretch()
+        layout.addLayout(gap_layout)
+
+        # Smart merge gap
+        merge_layout = QHBoxLayout()
+        merge_layout.addWidget(QLabel("🔗 Smart merge gap:"))
+        self.smart_merge_gap = QDoubleSpinBox()
+        self.smart_merge_gap.setRange(0.0, 30.0)
+        self.smart_merge_gap.setValue(5.0)
+        self.smart_merge_gap.setSuffix(" s")
+        merge_layout.addWidget(self.smart_merge_gap)
+        merge_layout.addWidget(QLabel("(łączy bliskie klipy)"))
+        merge_layout.addStretch()
+        layout.addLayout(merge_layout)
+
+        # Position bins
+        bins_layout = QHBoxLayout()
+        bins_layout.addWidget(QLabel("📦 Position bins:"))
+        self.position_bins = QSpinBox()
+        self.position_bins.setRange(3, 10)
+        self.position_bins.setValue(5)
+        bins_layout.addWidget(self.position_bins)
+        bins_layout.addWidget(QLabel("(równomierne pokrycie)"))
+        bins_layout.addStretch()
+        layout.addLayout(bins_layout)
+
+        # Max clips per bin
+        max_per_bin_layout = QHBoxLayout()
+        max_per_bin_layout.addWidget(QLabel("📊 Max clips per bin:"))
+        self.max_clips_per_bin = QSpinBox()
+        self.max_clips_per_bin.setRange(2, 10)
+        self.max_clips_per_bin.setValue(5)
+        max_per_bin_layout.addWidget(self.max_clips_per_bin)
+        max_per_bin_layout.addStretch()
+        layout.addLayout(max_per_bin_layout)
+
+        layout.addStretch()
+        return tab
+
     def create_model_tab(self) -> QWidget:
-        """TAB 3: Model Settings"""
+        """TAB 4: Model Settings"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
         
@@ -1029,7 +1181,31 @@ class SejmHighlightsApp(QMainWindow):
         self.config.selection.max_clips = int(self.num_clips.value())
         self.config.selection.min_clip_duration = float(self.min_clip_duration.value())
         self.config.selection.max_clip_duration = float(self.max_clip_duration.value())
-        
+
+        # Selection Advanced (NOWE!)
+        if hasattr(self, 'min_time_gap'):
+            self.config.selection.min_time_gap = float(self.min_time_gap.value())
+        if hasattr(self, 'smart_merge_gap'):
+            self.config.selection.smart_merge_gap = float(self.smart_merge_gap.value())
+        if hasattr(self, 'position_bins'):
+            self.config.selection.position_bins = int(self.position_bins.value())
+        if hasattr(self, 'max_clips_per_bin'):
+            self.config.selection.max_clips_per_bin = int(self.max_clips_per_bin.value())
+
+        # Scoring Weights (NOWE!)
+        if hasattr(self, 'weight_semantic'):
+            self.config.scoring.weight_semantic = float(self.weight_semantic.value())
+        if hasattr(self, 'weight_acoustic'):
+            self.config.scoring.weight_acoustic = float(self.weight_acoustic.value())
+        if hasattr(self, 'weight_keyword'):
+            self.config.scoring.weight_keyword = float(self.weight_keyword.value())
+        if hasattr(self, 'weight_speaker_change'):
+            self.config.scoring.weight_speaker_change = float(self.weight_speaker_change.value())
+
+        # Scoring Pre-filter (NOWE!)
+        if hasattr(self, 'prefilter_top_n'):
+            self.config.scoring.prefilter_top_n = int(self.prefilter_top_n.value())
+
         # Export settings
         self.config.export.add_transitions = bool(self.add_transitions.isChecked())
         self.config.export.generate_hardsub = bool(self.add_hardsub.isChecked())
