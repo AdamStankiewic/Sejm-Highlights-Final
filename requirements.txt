@@ -24,6 +24,9 @@ torchaudio>=2.1.0
 transformers>=4.35.0
 faster-whisper>=0.10.0
 
+# Pin setuptools to avoid pkg_resources deprecation warning
+setuptools<81.0.0
+
 # === Audio/Video Processing ===
 librosa>=0.10.1
 soundfile>=0.12.1

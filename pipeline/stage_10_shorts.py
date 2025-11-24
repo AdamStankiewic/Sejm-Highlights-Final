@@ -87,10 +87,12 @@ class ShortsStage:
         
         # Generate each Short
         generated_shorts = []
-        
+
         for i, clip in enumerate(shorts_clips, 1):
             print(f"\n   📱 Short {i}/{len(shorts_clips)}")
-            
+            print(f"      ⏱️ Duration: {clip.get('duration', 0):.1f}s")
+            print(f"      ⭐ Score: {clip.get('final_score', 0):.2f}")
+
             try:
                 short_result = self._generate_single_short(
                     input_path,
@@ -100,10 +102,16 @@ class ShortsStage:
                     i
                 )
                 generated_shorts.append(short_result)
-                
-                print(f"      ✅ Zapisano: {short_result['filename']}")
-                print(f"      📝 Tytuł: {short_result['title']}")
-                
+
+                # Verify file was created
+                short_file = Path(short_result['file'])
+                if short_file.exists():
+                    file_size_mb = short_file.stat().st_size / (1024**2)
+                    print(f"      ✅ Zapisano: {short_result['filename']} ({file_size_mb:.1f} MB)")
+                    print(f"      📝 Tytuł: {short_result['title']}")
+                else:
+                    print(f"      ⚠️ Plik nie został utworzony: {short_file}")
+
             except Exception as e:
                 print(f"      ❌ Błąd: {e}")
                 import traceback
