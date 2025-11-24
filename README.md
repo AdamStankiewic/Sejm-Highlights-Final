@@ -8,12 +8,35 @@ Automatyczne generowanie kompilacji "Najlepszych momentów z Sejmu" z długich t
 
 ## 📋 Spis treści
 
+- [Aplikacje](#aplikacje)
 - [Wymagania systemowe](#wymagania-systemowe)
 - [Instalacja](#instalacja)
 - [Użycie](#użycie)
 - [Konfiguracja](#konfiguracja)
 - [Architektura](#architektura)
 - [Troubleshooting](#troubleshooting)
+
+---
+
+## 🎯 Aplikacje
+
+Projekt zawiera **dwie aplikacje** dla różnych typów contentu:
+
+### 📊 **sejm_app.py** - Political Highlights
+```bash
+python apps/sejm_app.py
+```
+Dla transmisji politycznych (Sejm, konferencje, debaty).
+Używa GPT-4o-mini do analizy kontrowersji i emocji wypowiedzi.
+
+### 🎮 **stream_app.py** - Streaming Highlights (BETA)
+```bash
+python apps/stream_app.py
+```
+Dla streamów Twitch/YouTube Gaming.
+Analiza czatu, emote spamów i reakcji widzów (w rozwoju).
+
+📖 **Więcej:** Zobacz [apps/README.md](apps/README.md) dla szczegółów
 
 ---
 
