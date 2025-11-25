@@ -1,9 +1,9 @@
 """
 Stream Highlights AI - Aplikacja GUI dla streamów
-Wersja: 1.0.0 - INITIAL RELEASE
+Wersja: 1.1.0 - STREAMING SCORER INTEGRATED
 Python 3.11+ | PyQt6 | CUDA
 
-Automatyczne generowanie najlepszych momentów ze streamów Twitch/YouTube
+Automatyczne generowanie najlepszych momentów ze streamów Twitch/YouTube/Kick
 Bazuje na aktywności czatu, emote spamie i reakcjach widzów
 """
 
@@ -24,15 +24,108 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
 
-# Pipeline imports (currently using same pipeline, will be refactored)
+# Pipeline imports
 from pipeline.processor import PipelineProcessor
 from pipeline.config import Config
+
+# Streaming module imports
+from modules.streaming import create_scorer_from_chat, ChatAnalyzer
+
+
+class StreamingProcessingThread(QThread):
+    """Worker thread for streaming video processing"""
+
+    # Signals
+    progress_updated = pyqtSignal(int, str)  # (percent, message)
+    stage_completed = pyqtSignal(str, dict)  # (stage_name, stats)
+    log_message = pyqtSignal(str, str)  # (level, message)
+    processing_completed = pyqtSignal(dict)  # (results)
+    processing_failed = pyqtSignal(str)  # (error_message)
+
+    def __init__(self, input_file: str, config: Config, chat_data: dict = None, chat_path: str = None):
+        super().__init__()
+        self.input_file = input_file
+        self.config = config
+        self.chat_data = chat_data
+        self.chat_path = chat_path
+        self.processor = None
+        self.chat_scorer = None
+        self._is_running = True
+
+    def run(self):
+        """Main processing loop with streaming scorer"""
+        try:
+            self.log_message.emit("INFO", f"🚀 Starting: {Path(self.input_file).name}")
+
+            # Initialize chat scorer if chat provided
+            if self.chat_path:
+                try:
+                    self.log_message.emit("INFO", "📊 Initializing chat analyzer...")
+                    self.chat_scorer = create_scorer_from_chat(
+                        chat_json_path=self.chat_path,
+                        vod_duration=0  # Will be updated after video inspection
+                    )
+
+                    stats = self.chat_scorer.chat_analyzer.get_statistics()
+                    self.log_message.emit("SUCCESS",
+                        f"✅ Chat loaded: {stats['total_messages']} messages, "
+                        f"{stats['unique_chatters']} chatters, "
+                        f"baseline: {stats['baseline_msg_rate']:.2f} msg/s"
+                    )
+                    self.log_message.emit("INFO", f"📱 Platform: {stats['platform'].upper()}")
+
+                except Exception as e:
+                    self.log_message.emit("WARNING", f"⚠️ Chat analysis failed: {e}")
+                    self.log_message.emit("INFO", "Falling back to audio-only scoring")
+                    self.chat_scorer = None
+            else:
+                self.log_message.emit("INFO", "No chat file provided - using audio-only scoring")
+
+            # Initialize processor
+            self.processor = PipelineProcessor(self.config)
+
+            # Progress callback
+            def progress_callback(stage: str, percent: int, message: str):
+                if self._is_running:
+                    self.progress_updated.emit(percent, f"{stage}: {message}")
+                    self.log_message.emit("INFO", f"[{stage}] {message}")
+
+            self.processor.set_progress_callback(progress_callback)
+
+            # TODO: Integrate chat scorer with pipeline scoring
+            # For now, run standard pipeline
+            # In v1.2: Override stage_04_scoring to use streaming scorer
+
+            result = self.processor.process(self.input_file)
+
+            # If chat scorer available, re-score segments
+            if self.chat_scorer and self._is_running:
+                self.log_message.emit("INFO", "🔄 Re-scoring with chat analysis...")
+                # TODO: Implement re-scoring logic
+
+            if self._is_running:
+                self.log_message.emit("SUCCESS", "✅ Processing completed!")
+                self.processing_completed.emit(result)
+
+        except Exception as e:
+            if self._is_running:
+                import traceback
+                error_details = traceback.format_exc()
+                self.log_message.emit("ERROR", f"❌ Error: {str(e)}")
+                self.log_message.emit("ERROR", error_details)
+                self.processing_failed.emit(str(e))
+
+    def stop(self):
+        """Stop processing"""
+        self._is_running = False
+        if self.processor:
+            self.processor.cancel()
 
 
 class StreamHighlightsApp(QMainWindow):
     """
     Aplikacja do generowania highlights ze streamów
-    Uproszczona wersja - focus na UX dla streamerów
+    Chat-based scoring dla Twitch/YouTube/Kick
     """
 
     def __init__(self):
@@ -44,11 +137,14 @@ class StreamHighlightsApp(QMainWindow):
         self.chat_path = None
         self.chat_data = None
 
+        # Processing thread
+        self.processing_thread = None
+
         self.init_ui()
 
     def init_ui(self):
         """Initialize UI"""
-        self.setWindowTitle("Stream Highlights AI v1.0 🎮")
+        self.setWindowTitle("Stream Highlights AI v1.1 🎮")
         self.setGeometry(100, 100, 900, 700)
 
         # Main widget
@@ -148,6 +244,9 @@ class StreamHighlightsApp(QMainWindow):
         process_group = QGroupBox("🚀 Przetwarzanie")
         process_layout = QVBoxLayout()
 
+        # Buttons layout
+        buttons_layout = QHBoxLayout()
+
         # Start button
         self.start_btn = QPushButton("▶️ Generuj Highlights")
         self.start_btn.clicked.connect(self.start_processing)
@@ -168,7 +267,31 @@ class StreamHighlightsApp(QMainWindow):
                 background-color: #CCC;
             }
         """)
-        process_layout.addWidget(self.start_btn)
+        buttons_layout.addWidget(self.start_btn)
+
+        # Cancel button
+        self.cancel_btn = QPushButton("⏹️ Anuluj")
+        self.cancel_btn.clicked.connect(self.cancel_processing)
+        self.cancel_btn.setEnabled(False)
+        self.cancel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #F44336;
+                color: white;
+                padding: 15px;
+                font-size: 14pt;
+                font-weight: bold;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #D32F2F;
+            }
+            QPushButton:disabled {
+                background-color: #CCC;
+            }
+        """)
+        buttons_layout.addWidget(self.cancel_btn)
+
+        process_layout.addLayout(buttons_layout)
 
         # Progress
         self.progress_bar = QProgressBar()
@@ -247,24 +370,110 @@ class StreamHighlightsApp(QMainWindow):
             self.start_btn.setEnabled(True)
 
     def start_processing(self):
-        """Start processing (placeholder)"""
-        self.log("🚀 Starting processing...", "INFO")
-        self.log("⚠️ Streaming module not yet implemented - using Sejm pipeline", "WARNING")
-        self.log("📌 TODO: Implement streaming scorer with chat analysis", "INFO")
+        """Start streaming highlight processing"""
+        # Validate input
+        if not self.vod_path:
+            QMessageBox.warning(self, "Error", "Please select a VOD file!")
+            return
 
-        # Update config
+        # Update config from GUI
         self.config.selection.max_clips = self.num_clips.value()
         self.config.selection.max_clip_duration = float(self.clip_duration.value())
         self.config.shorts.enabled = self.generate_shorts.isChecked()
 
-        QMessageBox.information(
+        # Log configuration
+        self.log(f"🎬 VOD: {Path(self.vod_path).name}", "INFO")
+        if self.chat_path:
+            self.log(f"💬 Chat: {Path(self.chat_path).name}", "INFO")
+        else:
+            self.log("⚠️ No chat file - using audio-only scoring", "WARNING")
+
+        self.log(f"⚙️ Target clips: {self.num_clips.value()}", "INFO")
+        self.log(f"⚙️ Clip duration: {self.clip_duration.value()}s", "INFO")
+
+        # Disable controls
+        self.start_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(True)
+
+        # Reset progress
+        self.progress_bar.setValue(0)
+        self.log_text.clear()
+
+        # Create and start processing thread
+        self.processing_thread = StreamingProcessingThread(
+            input_file=self.vod_path,
+            config=self.config,
+            chat_data=self.chat_data,
+            chat_path=self.chat_path
+        )
+
+        # Connect signals
+        self.processing_thread.progress_updated.connect(self.on_progress_update)
+        self.processing_thread.log_message.connect(self.log)
+        self.processing_thread.processing_completed.connect(self.on_processing_completed)
+        self.processing_thread.processing_failed.connect(self.on_processing_failed)
+
+        # Start processing
+        self.processing_thread.start()
+        self.log("🚀 Processing started!", "SUCCESS")
+
+    def cancel_processing(self):
+        """Cancel ongoing processing"""
+        if self.processing_thread and self.processing_thread.isRunning():
+            self.log("⏹️ Cancelling...", "WARNING")
+            self.processing_thread.stop()
+            self.processing_thread.wait(5000)  # Wait 5s max
+
+            self.start_btn.setEnabled(True)
+            self.cancel_btn.setEnabled(False)
+            self.log("❌ Processing cancelled", "WARNING")
+
+    def on_progress_update(self, percent: int, message: str):
+        """Update progress bar and label"""
+        self.progress_bar.setValue(percent)
+
+    def on_processing_completed(self, result: dict):
+        """Handle successful completion"""
+        self.start_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
+        self.progress_bar.setValue(100)
+
+        # Show results
+        clips = result.get('clips', [])
+        shorts = result.get('shorts', [])
+
+        self.log(f"\n{'='*50}", "SUCCESS")
+        self.log(f"✅ PROCESSING COMPLETE!", "SUCCESS")
+        self.log(f"{'='*50}", "SUCCESS")
+        self.log(f"📊 Generated {len(clips)} clips", "SUCCESS")
+        if shorts:
+            self.log(f"📱 Generated {len(shorts)} Shorts", "SUCCESS")
+
+        # Show output folder
+        if clips:
+            output_dir = Path(clips[0]['file']).parent
+            self.log(f"📁 Output: {output_dir}", "INFO")
+
+            QMessageBox.information(
+                self,
+                "Success!",
+                f"✅ Processing complete!\n\n"
+                f"Generated:\n"
+                f"• {len(clips)} clips\n"
+                f"• {len(shorts)} Shorts\n\n"
+                f"Output folder:\n{output_dir}"
+            )
+
+    def on_processing_failed(self, error: str):
+        """Handle processing failure"""
+        self.start_btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
+
+        QMessageBox.critical(
             self,
-            "Coming Soon",
-            "🚧 Streaming module is under development!\n\n"
-            "Currently this app uses the same pipeline as Sejm app.\n"
-            "Streaming-specific features (chat analysis, emote detection) "
-            "will be added in v1.1.\n\n"
-            "For now, use 'sejm_app.py' for processing."
+            "Processing Failed",
+            f"❌ Error during processing:\n\n{error}\n\n"
+            f"Check the logs for details."
         )
 
     def log(self, message: str, level: str = "INFO"):

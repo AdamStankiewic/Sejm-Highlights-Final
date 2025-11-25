@@ -1,7 +1,16 @@
-"""Streaming Module - Twitch/YouTube VOD Highlights"""
-from .config import StreamingConfig
-from .chat_parser import ChatParser
-from .scorer import StreamingScorer
-from .pipeline import StreamingPipeline
+"""
+Streaming Highlights Module
+Multi-platform support: YouTube, Kick, Twitch
+"""
 
-__all__ = ['StreamingConfig', 'ChatParser', 'StreamingScorer', 'StreamingPipeline']
+from .chat_analyzer import ChatAnalyzer
+from .emote_scorer import EmoteScorer
+from .engagement_scorer import EngagementScorer
+from .composite_scorer import StreamingScorer
+
+__all__ = [
+    'ChatAnalyzer',
+    'EmoteScorer',
+    'EngagementScorer',
+    'StreamingScorer',
+]
