@@ -94,12 +94,32 @@ scoring:
   # Position diversity bonus
   position_diversity_bonus: 0.1
 
+# === Streaming Chat-Based Scoring ===
+streaming:
+  # Chat delay offset (seconds)
+  # Streams have delay: Twitch 3-10s, YouTube 10-30s, Kick 5-15s
+  # Action happens BEFORE chat reacts - we need to look back
+  chat_delay_offset: 10.0  # Look back 10s before chat spike
+
+  # Highlight window configuration
+  # When chat spike at T, create highlight: (T - offset - pre) to (T + post)
+  pre_spike_window: 15.0   # Capture 15s of buildup before spike
+  post_spike_window: 5.0   # Capture 5s after spike peak
+
+  # Scoring weights (can be overridden in stream_app.py)
+  weight_chat_spike: 0.30
+  weight_emote_quality: 0.25
+  weight_engagement: 0.20
+  weight_audio: 0.15
+  weight_viewer_normalized: 0.10
+
 # === Clip Selection ===
 selection:
   # Duration constraints
-  min_clip_duration: 45.0      # było 60.0 (krótsze OK)
-  max_clip_duration: 180.0     # bez zmian (3 min max)
-  target_total_duration: 2400.0  # było 1320.0 (40 min zamiast 22)
+  min_clip_duration: 45.0      # Main video clips (było 60.0)
+  min_short_duration: 20.0     # Shorts only (shorter OK)
+  max_clip_duration: 180.0     # 3 min max
+  target_total_duration: 2400.0  # 40 min target
   
   # Number of clips
   min_clips: 5  # Zmniejszone z 8
