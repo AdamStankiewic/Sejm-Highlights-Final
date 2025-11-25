@@ -1,6 +1,6 @@
 """
-Sejm Highlights Desktop - Główna aplikacja GUI
-Wersja: 2.0.0 - SMART SPLITTER EDITION
+Sejm Highlights Desktop - Aplikacja GUI dla treści politycznych
+Wersja: 2.0.0 - MODULAR EDITION
 Python 3.11+ | PyQt6 | CUDA
 
 Automatyczne generowanie najlepszych momentów z transmisji Sejmu
@@ -9,8 +9,12 @@ Automatyczne generowanie najlepszych momentów z transmisji Sejmu
 
 import sys
 import json
-from video_downloader import VideoDownloader
 from pathlib import Path
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from video_downloader import VideoDownloader
 from datetime import datetime
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -510,12 +514,15 @@ class SejmHighlightsApp(QMainWindow):
 
         # Weight Semantic (GPT)
         semantic_layout = QHBoxLayout()
-        semantic_layout.addWidget(QLabel("🤖 GPT Semantic:"))
+        semantic_label = QLabel("🤖 GPT Semantic:")
+        semantic_label.setMinimumWidth(160)
+        semantic_layout.addWidget(semantic_label)
         self.weight_semantic = QDoubleSpinBox()
         self.weight_semantic.setRange(0.0, 1.0)
         self.weight_semantic.setSingleStep(0.05)
         self.weight_semantic.setValue(0.70)  # Default from config
         self.weight_semantic.setDecimals(2)
+        self.weight_semantic.setFixedWidth(80)
         semantic_layout.addWidget(self.weight_semantic)
         semantic_layout.addWidget(QLabel("(największy wpływ)"))
         semantic_layout.addStretch()
@@ -523,36 +530,45 @@ class SejmHighlightsApp(QMainWindow):
 
         # Weight Acoustic
         acoustic_layout = QHBoxLayout()
-        acoustic_layout.addWidget(QLabel("🔊 Acoustic (głośność):"))
+        acoustic_label = QLabel("🔊 Acoustic (głośność):")
+        acoustic_label.setMinimumWidth(160)
+        acoustic_layout.addWidget(acoustic_label)
         self.weight_acoustic = QDoubleSpinBox()
         self.weight_acoustic.setRange(0.0, 1.0)
         self.weight_acoustic.setSingleStep(0.05)
         self.weight_acoustic.setValue(0.10)
         self.weight_acoustic.setDecimals(2)
+        self.weight_acoustic.setFixedWidth(80)
         acoustic_layout.addWidget(self.weight_acoustic)
         acoustic_layout.addStretch()
         layout.addLayout(acoustic_layout)
 
         # Weight Keyword
         keyword_layout = QHBoxLayout()
-        keyword_layout.addWidget(QLabel("🔑 Keywords:"))
+        keyword_label = QLabel("🔑 Keywords:")
+        keyword_label.setMinimumWidth(160)
+        keyword_layout.addWidget(keyword_label)
         self.weight_keyword = QDoubleSpinBox()
         self.weight_keyword.setRange(0.0, 1.0)
         self.weight_keyword.setSingleStep(0.05)
         self.weight_keyword.setValue(0.10)
         self.weight_keyword.setDecimals(2)
+        self.weight_keyword.setFixedWidth(80)
         keyword_layout.addWidget(self.weight_keyword)
         keyword_layout.addStretch()
         layout.addLayout(keyword_layout)
 
         # Weight Speaker Change
         speaker_layout = QHBoxLayout()
-        speaker_layout.addWidget(QLabel("👥 Speaker Change:"))
+        speaker_label = QLabel("👥 Speaker Change:")
+        speaker_label.setMinimumWidth(160)
+        speaker_layout.addWidget(speaker_label)
         self.weight_speaker_change = QDoubleSpinBox()
         self.weight_speaker_change.setRange(0.0, 1.0)
         self.weight_speaker_change.setSingleStep(0.05)
         self.weight_speaker_change.setValue(0.10)
         self.weight_speaker_change.setDecimals(2)
+        self.weight_speaker_change.setFixedWidth(80)
         speaker_layout.addWidget(self.weight_speaker_change)
         speaker_layout.addStretch()
         layout.addLayout(speaker_layout)
@@ -578,11 +594,14 @@ class SejmHighlightsApp(QMainWindow):
 
         # Prefilter top N
         prefilter_layout = QHBoxLayout()
-        prefilter_layout.addWidget(QLabel("📊 Prefilter Top N:"))
+        prefilter_label = QLabel("📊 Prefilter Top N:")
+        prefilter_label.setMinimumWidth(160)
+        prefilter_layout.addWidget(prefilter_label)
         self.prefilter_top_n = QSpinBox()
         self.prefilter_top_n.setRange(20, 300)
         self.prefilter_top_n.setSingleStep(10)
         self.prefilter_top_n.setValue(100)  # Default from config
+        self.prefilter_top_n.setFixedWidth(80)
         prefilter_layout.addWidget(self.prefilter_top_n)
         prefilter_layout.addWidget(QLabel("segmentów"))
         prefilter_layout.addStretch()
@@ -597,22 +616,28 @@ class SejmHighlightsApp(QMainWindow):
 
         # Min time gap
         gap_layout = QHBoxLayout()
-        gap_layout.addWidget(QLabel("⏱️ Min gap między klipami:"))
+        gap_label = QLabel("⏱️ Min gap między klipami:")
+        gap_label.setMinimumWidth(200)
+        gap_layout.addWidget(gap_label)
         self.min_time_gap = QSpinBox()
         self.min_time_gap.setRange(0, 60)
         self.min_time_gap.setValue(20)  # Default
         self.min_time_gap.setSuffix(" s")
+        self.min_time_gap.setFixedWidth(80)
         gap_layout.addWidget(self.min_time_gap)
         gap_layout.addStretch()
         layout.addLayout(gap_layout)
 
         # Smart merge gap
         merge_layout = QHBoxLayout()
-        merge_layout.addWidget(QLabel("🔗 Smart merge gap:"))
+        merge_label = QLabel("🔗 Smart merge gap:")
+        merge_label.setMinimumWidth(200)
+        merge_layout.addWidget(merge_label)
         self.smart_merge_gap = QDoubleSpinBox()
         self.smart_merge_gap.setRange(0.0, 30.0)
         self.smart_merge_gap.setValue(5.0)
         self.smart_merge_gap.setSuffix(" s")
+        self.smart_merge_gap.setFixedWidth(80)
         merge_layout.addWidget(self.smart_merge_gap)
         merge_layout.addWidget(QLabel("(łączy bliskie klipy)"))
         merge_layout.addStretch()
@@ -620,10 +645,13 @@ class SejmHighlightsApp(QMainWindow):
 
         # Position bins
         bins_layout = QHBoxLayout()
-        bins_layout.addWidget(QLabel("📦 Position bins:"))
+        bins_label = QLabel("📦 Position bins:")
+        bins_label.setMinimumWidth(200)
+        bins_layout.addWidget(bins_label)
         self.position_bins = QSpinBox()
         self.position_bins.setRange(3, 10)
         self.position_bins.setValue(5)
+        self.position_bins.setFixedWidth(80)
         bins_layout.addWidget(self.position_bins)
         bins_layout.addWidget(QLabel("(równomierne pokrycie)"))
         bins_layout.addStretch()
@@ -631,10 +659,13 @@ class SejmHighlightsApp(QMainWindow):
 
         # Max clips per bin
         max_per_bin_layout = QHBoxLayout()
-        max_per_bin_layout.addWidget(QLabel("📊 Max clips per bin:"))
+        max_per_bin_label = QLabel("📊 Max clips per bin:")
+        max_per_bin_label.setMinimumWidth(200)
+        max_per_bin_layout.addWidget(max_per_bin_label)
         self.max_clips_per_bin = QSpinBox()
         self.max_clips_per_bin.setRange(2, 10)
         self.max_clips_per_bin.setValue(5)
+        self.max_clips_per_bin.setFixedWidth(80)
         max_per_bin_layout.addWidget(self.max_clips_per_bin)
         max_per_bin_layout.addStretch()
         layout.addLayout(max_per_bin_layout)
