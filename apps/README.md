@@ -37,31 +37,34 @@ python apps/sejm_app.py
 
 ---
 
-### 2. **stream_app.py** - Streaming Highlights ⚠️ BETA
+### 2. **stream_app.py** - Streaming Highlights ✅ ACTIVE (v1.2)
 ```bash
 python apps/stream_app.py
 ```
 
-**Przeznaczenie:** Streamy Twitch/YouTube Gaming/Just Chatting
+**Przeznaczenie:** Streamy Twitch/YouTube/Kick Gaming/Just Chatting
 
-**Scoring oparty na:** *(planned)*
-- 💬 Chat activity spikes (40%)
-- 😂 Emote density (KEKW, LUL, PogChamp) (25%)
-- 📊 Clip count from Twitch API (20%)
-- 🔊 Audio loudness (15%)
+**Scoring oparty na:** *(IMPLEMENTED v1.2)*
+- 💬 Chat activity spikes (30%) - baseline normalization
+- 😂 Emote quality (25%) - platform-specific weights
+- 👥 Engagement (20%) - diversity, message quality, VIP participation
+- 🔊 Audio features (15%) - loudness, energy, spectral flux
+- 📊 Viewer normalized (10%) - MPVS (if available)
 
-**Status:** 🚧 **Under Development**
-- Chat analysis - **TODO**
-- Emote detection - **TODO**
-- Twitch API integration - **TODO**
+**Status:** ✅ **FUNCTIONAL**
+- ✅ Chat analysis - Multi-platform (Twitch/YouTube/Kick)
+- ✅ Emote detection - Platform-specific scoring
+- ✅ Baseline normalization - Spike detection (3x threshold)
+- ✅ Engagement scoring - Diversity, quality, conversations
+- ⏳ Twitch API integration - Planned for v1.3
 
-Obecnie używa tego samego pipeline co `sejm_app.py`.
-
-**Planowane dla v1.1:**
-- Upload chat JSON (z Twitch Downloader)
-- Automatyczna detekcja emote spamów
-- Integration z Twitch Clips API
-- Streamlined UX dla streamerów
+**v1.2 Features:**
+- Chat-based scoring replaces GPT semantic analysis
+- Upload chat JSON (Twitch Downloader, yt-dlp, Kick export)
+- Auto-detection platformy (Twitch/YouTube/Kick)
+- Fallback to audio-only jeśli brak chatu
+- Real-time chat statistics display
+- Threading with cancel button
 
 ---
 
@@ -70,12 +73,15 @@ Obecnie używa tego samego pipeline co `sejm_app.py`.
 | Feature                  | sejm_app.py | stream_app.py |
 |--------------------------|-------------|---------------|
 | GPT Scoring              | ✅ TAK      | ❌ NIE        |
-| Chat Analysis            | ❌ NIE      | 🚧 Planned    |
-| Emote Detection          | ❌ NIE      | 🚧 Planned    |
+| Chat Analysis            | ❌ NIE      | ✅ TAK (v1.2) |
+| Emote Detection          | ❌ NIE      | ✅ TAK (v1.2) |
+| Baseline Normalization   | ❌ NIE      | ✅ TAK (v1.2) |
+| Engagement Scoring       | ❌ NIE      | ✅ TAK (v1.2) |
 | Smart Splitter           | ✅ TAK      | ❌ NIE        |
 | YouTube Upload           | ✅ TAK      | 🚧 Planned    |
 | Shorts Generation        | ✅ TAK      | ✅ TAK        |
 | Scoring Weights UI       | ✅ TAK      | ⏳ Simple     |
+| Multi-Platform Support   | ❌ NIE      | ✅ TAK (Tw/YT/Kick) |
 
 ---
 
@@ -137,7 +143,7 @@ Sejm-Highlights-Final/
 1. ✅ **Phase 1:** Create apps/ folder (DONE)
 2. ⏳ **Phase 2:** Extract core logic to core/
 3. ⏳ **Phase 3:** Create modules/politics/
-4. ⏳ **Phase 4:** Create modules/streaming/
+4. ✅ **Phase 4:** Create modules/streaming/ (DONE v1.2)
 5. ⏳ **Phase 5:** Full refactor to modular architecture
 
 ---
@@ -177,13 +183,17 @@ python apps/sejm_app.py & python apps/stream_app.py
 
 ## 🐛 Known Issues
 
-1. **stream_app.py** - Chat analysis not yet implemented
-   - Workaround: Use sejm_app.py for now
-   - Fix: Implement modules/streaming/ scorer
+1. **stream_app.py** - Viewer count normalization requires chat JSON with metadata
+   - Workaround: Falls back to baseline normalization (works great!)
+   - Enhancement: Extract viewer count from Twitch API in v1.3
 
 2. **Both apps** - Share same config.yml
    - Workaround: Edit config.yml before switching apps
-   - Fix: Separate configs per app
+   - Fix: Separate configs per app (planned v2.0)
+
+3. **stream_app.py** - YouTube upload not implemented yet
+   - Workaround: Use sejm_app.py for auto-upload
+   - Fix: Planned for v1.3
 
 ---
 
@@ -194,5 +204,5 @@ python apps/sejm_app.py & python apps/stream_app.py
 
 ---
 
-**Last Updated:** 2025-11-24
-**Version:** 2.0.0 (sejm_app) | 1.0.0-beta (stream_app)
+**Last Updated:** 2025-11-25
+**Version:** 2.0.0 (sejm_app) | 1.2.0 (stream_app)

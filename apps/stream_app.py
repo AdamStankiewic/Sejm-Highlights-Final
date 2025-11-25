@@ -1,10 +1,12 @@
 """
 Stream Highlights AI - Aplikacja GUI dla streamów
-Wersja: 1.1.0 - STREAMING SCORER INTEGRATED
+Wersja: 1.2.0 - CHAT-BASED SCORING ACTIVE
 Python 3.11+ | PyQt6 | CUDA
 
 Automatyczne generowanie najlepszych momentów ze streamów Twitch/YouTube/Kick
 Bazuje na aktywności czatu, emote spamie i reakcjach widzów
+
+v1.2: Chat scoring replaces GPT - real streaming highlights!
 """
 
 import sys
@@ -92,16 +94,24 @@ class StreamingProcessingThread(QThread):
 
             self.processor.set_progress_callback(progress_callback)
 
-            # TODO: Integrate chat scorer with pipeline scoring
-            # For now, run standard pipeline
-            # In v1.2: Override stage_04_scoring to use streaming scorer
+            # OVERRIDE Stage 5: Use streaming scorer instead of GPT
+            if self.chat_scorer:
+                self.log_message.emit("INFO", "🎮 Using streaming chat-based scoring")
+                from pipeline.stage_05_scoring_streaming import StreamingScoringStage
+                self.processor.stage_05 = StreamingScoringStage(
+                    self.config,
+                    chat_scorer=self.chat_scorer
+                )
+            else:
+                self.log_message.emit("INFO", "🔊 Using audio-only scoring (no chat)")
+                from pipeline.stage_05_scoring_streaming import StreamingScoringStage
+                self.processor.stage_05 = StreamingScoringStage(
+                    self.config,
+                    chat_scorer=None
+                )
 
+            # Run pipeline with custom scoring
             result = self.processor.process(self.input_file)
-
-            # If chat scorer available, re-score segments
-            if self.chat_scorer and self._is_running:
-                self.log_message.emit("INFO", "🔄 Re-scoring with chat analysis...")
-                # TODO: Implement re-scoring logic
 
             if self._is_running:
                 self.log_message.emit("SUCCESS", "✅ Processing completed!")
@@ -144,7 +154,7 @@ class StreamHighlightsApp(QMainWindow):
 
     def init_ui(self):
         """Initialize UI"""
-        self.setWindowTitle("Stream Highlights AI v1.1 🎮")
+        self.setWindowTitle("Stream Highlights AI v1.2 🎮")
         self.setGeometry(100, 100, 900, 700)
 
         # Main widget
