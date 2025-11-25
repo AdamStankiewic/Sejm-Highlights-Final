@@ -98,14 +98,14 @@ class StreamingProcessingThread(QThread):
             if self.chat_scorer:
                 self.log_message.emit("INFO", "🎮 Using streaming chat-based scoring")
                 from pipeline.stage_05_scoring_streaming import StreamingScoringStage
-                self.processor.stage_05 = StreamingScoringStage(
+                self.processor.stages['scoring'] = StreamingScoringStage(
                     self.config,
                     chat_scorer=self.chat_scorer
                 )
             else:
                 self.log_message.emit("INFO", "🔊 Using audio-only scoring (no chat)")
                 from pipeline.stage_05_scoring_streaming import StreamingScoringStage
-                self.processor.stage_05 = StreamingScoringStage(
+                self.processor.stages['scoring'] = StreamingScoringStage(
                     self.config,
                     chat_scorer=None
                 )
