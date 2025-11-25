@@ -1,12 +1,13 @@
 """
 Stream Highlights AI - Aplikacja GUI dla streamów
-Wersja: 1.2.0 - CHAT-BASED SCORING ACTIVE
+Wersja: 1.2.1 - CHAT-BASED SCORING WITH DELAY OFFSET
 Python 3.11+ | PyQt6 | CUDA
 
 Automatyczne generowanie najlepszych momentów ze streamów Twitch/YouTube/Kick
 Bazuje na aktywności czatu, emote spamie i reakcjach widzów
 
 v1.2: Chat scoring replaces GPT - real streaming highlights!
+v1.2.1: Added delay offset - accounts for stream delay (action before chat reaction)
 """
 
 import sys
@@ -63,9 +64,14 @@ class StreamingProcessingThread(QThread):
             if self.chat_path:
                 try:
                     self.log_message.emit("INFO", "📊 Initializing chat analyzer...")
+
+                    # Get delay offset from config (default: 10s)
+                    delay_offset = self.config.streaming.get('chat_delay_offset', 10.0)
+
                     self.chat_scorer = create_scorer_from_chat(
                         chat_json_path=self.chat_path,
-                        vod_duration=0  # Will be updated after video inspection
+                        vod_duration=0,  # Will be updated after video inspection
+                        chat_delay_offset=delay_offset
                     )
 
                     stats = self.chat_scorer.chat_analyzer.get_statistics()
@@ -75,6 +81,7 @@ class StreamingProcessingThread(QThread):
                         f"baseline: {stats['baseline_msg_rate']:.2f} msg/s"
                     )
                     self.log_message.emit("INFO", f"📱 Platform: {stats['platform'].upper()}")
+                    self.log_message.emit("INFO", f"⏱️ Delay offset: {delay_offset:.1f}s (accounts for stream delay)")
 
                 except Exception as e:
                     self.log_message.emit("WARNING", f"⚠️ Chat analysis failed: {e}")

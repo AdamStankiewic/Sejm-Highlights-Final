@@ -31,7 +31,8 @@ class StreamingScorer:
         self,
         chat_analyzer: Optional[ChatAnalyzer] = None,
         platform: str = 'twitch',
-        weights: Optional[Dict[str, float]] = None
+        weights: Optional[Dict[str, float]] = None,
+        chat_delay_offset: float = 10.0
     ):
         """
         Initialize streaming scorer
@@ -40,9 +41,12 @@ class StreamingScorer:
             chat_analyzer: ChatAnalyzer instance (optional)
             platform: 'twitch', 'youtube', or 'kick'
             weights: Custom weights for scoring components
+            chat_delay_offset: Seconds to look back before segment start
+                              Accounts for stream delay (action before chat reaction)
         """
         self.chat_analyzer = chat_analyzer
         self.platform = platform.lower()
+        self.chat_delay_offset = chat_delay_offset
 
         # Initialize sub-scorers
         self.emote_scorer = EmoteScorer(platform=self.platform)
@@ -91,10 +95,14 @@ class StreamingScorer:
         if cache_key in self._score_cache:
             return self._score_cache[cache_key]
 
-        # Get messages in this window
+        # Get messages in this window + delay offset
+        # Action happens at [start_time, end_time]
+        # Chat reactions come at [start_time, end_time + delay_offset]
         messages = []
         if self.chat_analyzer:
-            messages = self.chat_analyzer.get_messages_in_window(start_time, end_time)
+            # Extend window to catch delayed chat reactions
+            chat_end = end_time + self.chat_delay_offset
+            messages = self.chat_analyzer.get_messages_in_window(start_time, chat_end)
 
         # Initialize scores
         scores = {
@@ -175,13 +183,18 @@ class StreamingScorer:
         """
         Score based on chat spike vs baseline
 
+        Note: Messages may include delayed reactions (up to chat_delay_offset after end_time)
+              We normalize by the extended window duration to get accurate rate
+
         Returns:
             Spike score (0.0 - 10.0)
         """
         if not self.chat_analyzer or not messages:
             return 5.0
 
-        window_duration = end_time - start_time
+        # Calculate actual window we're analyzing (including delay offset)
+        # Messages span [start_time, end_time + delay_offset]
+        window_duration = (end_time - start_time) + self.chat_delay_offset
         msg_rate = len(messages) / window_duration
 
         # Compare to baseline
@@ -264,19 +277,24 @@ class StreamingScorer:
         self,
         messages: List[ChatMessage],
         viewer_count: int,
-        window_duration: float
+        segment_duration: float
     ) -> float:
         """
         Score based on Messages Per Viewer Per Second (MPVS)
 
         Normalizes chat activity by viewer count
 
+        Note: segment_duration should be the original segment length,
+              not the extended window with delay offset
+
         Returns:
             Normalized score (0.0 - 10.0)
         """
-        if viewer_count == 0 or window_duration == 0:
+        if viewer_count == 0 or segment_duration == 0:
             return 5.0
 
+        # Use extended window for message count (includes delayed reactions)
+        window_duration = segment_duration + self.chat_delay_offset
         msg_rate = len(messages) / window_duration
         mpvs = msg_rate / viewer_count
 
@@ -400,7 +418,8 @@ def create_scorer_from_chat(
     chat_json_path: str,
     vod_duration: float = 0,
     platform: Optional[str] = None,
-    weights: Optional[Dict[str, float]] = None
+    weights: Optional[Dict[str, float]] = None,
+    chat_delay_offset: float = 10.0
 ) -> StreamingScorer:
     """
     Convenience function to create scorer from chat file
@@ -410,6 +429,7 @@ def create_scorer_from_chat(
         vod_duration: Total VOD duration in seconds
         platform: Platform name (auto-detected if None)
         weights: Custom scoring weights
+        chat_delay_offset: Stream delay in seconds (default: 10s)
 
     Returns:
         Configured StreamingScorer instance
@@ -421,16 +441,18 @@ def create_scorer_from_chat(
         platform=platform
     )
 
-    # Create scorer
+    # Create scorer with delay offset
     scorer = StreamingScorer(
         chat_analyzer=chat_analyzer,
         platform=chat_analyzer.platform,
-        weights=weights
+        weights=weights,
+        chat_delay_offset=chat_delay_offset
     )
 
     print(f"✅ Scorer created for {chat_analyzer.platform.upper()}")
     print(f"   Messages: {len(chat_analyzer.messages)}")
     print(f"   Baseline: {chat_analyzer.baseline_msg_rate:.2f} msg/s")
+    print(f"   Delay offset: {chat_delay_offset:.1f}s (accounts for stream delay)")
 
     return scorer
 

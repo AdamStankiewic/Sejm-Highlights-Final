@@ -37,14 +37,14 @@ python apps/sejm_app.py
 
 ---
 
-### 2. **stream_app.py** - Streaming Highlights ✅ ACTIVE (v1.2)
+### 2. **stream_app.py** - Streaming Highlights ✅ ACTIVE (v1.2.1)
 ```bash
 python apps/stream_app.py
 ```
 
 **Przeznaczenie:** Streamy Twitch/YouTube/Kick Gaming/Just Chatting
 
-**Scoring oparty na:** *(IMPLEMENTED v1.2)*
+**Scoring oparty na:** *(IMPLEMENTED v1.2.1)*
 - 💬 Chat activity spikes (30%) - baseline normalization
 - 😂 Emote quality (25%) - platform-specific weights
 - 👥 Engagement (20%) - diversity, message quality, VIP participation
@@ -56,6 +56,7 @@ python apps/stream_app.py
 - ✅ Emote detection - Platform-specific scoring
 - ✅ Baseline normalization - Spike detection (3x threshold)
 - ✅ Engagement scoring - Diversity, quality, conversations
+- ✅ **Delay offset** - Accounts for stream delay (v1.2.1)
 - ⏳ Twitch API integration - Planned for v1.3
 
 **v1.2 Features:**
@@ -65,6 +66,12 @@ python apps/stream_app.py
 - Fallback to audio-only jeśli brak chatu
 - Real-time chat statistics display
 - Threading with cancel button
+
+**v1.2.1 Features (NEW):**
+- ⏱️ **Chat delay offset** - Captures action BEFORE chat reaction
+- Stream delay: Twitch 3-10s, YouTube 10-30s, Kick 5-15s
+- Configurable in `config.yml` (streaming.chat_delay_offset)
+- Separate `min_clip_duration` (45s main) vs `min_short_duration` (20s Shorts)
 
 ---
 
@@ -205,4 +212,4 @@ python apps/sejm_app.py & python apps/stream_app.py
 ---
 
 **Last Updated:** 2025-11-25
-**Version:** 2.0.0 (sejm_app) | 1.2.0 (stream_app)
+**Version:** 2.0.0 (sejm_app) | 1.2.1 (stream_app)

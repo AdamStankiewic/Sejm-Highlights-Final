@@ -73,10 +73,12 @@ from modules.streaming import create_scorer_from_chat
 scorer = create_scorer_from_chat(
     chat_json_path="path/to/chat.json",
     vod_duration=7200,  # 2 hours
-    platform="twitch"   # or 'youtube', 'kick' (auto-detected if omitted)
+    platform="twitch",   # or 'youtube', 'kick' (auto-detected if omitted)
+    chat_delay_offset=10.0  # NEW v1.2.1: Account for stream delay (default: 10s)
 )
 
 # Score a segment (e.g., 10:30 - 11:00)
+# NOTE: Scorer automatically looks ahead by delay_offset to catch delayed reactions
 score, breakdown = scorer.score_segment(
     start_time=630,   # 10:30 in seconds
     end_time=660,     # 11:00
@@ -200,6 +202,46 @@ chat_downloader https://youtube.com/watch?v=VIDEO_ID -o chat.json
   }
 ]
 ```
+
+---
+
+## ⏱️ Chat Delay Offset (v1.2.1)
+
+### Why is delay offset important?
+
+Streams have inherent delay between the streamer's action and chat's reaction:
+- **Twitch**: 3-10 seconds (low-latency: 3-5s, normal: 8-10s)
+- **YouTube**: 10-30 seconds (varies widely)
+- **Kick**: 5-15 seconds
+
+**The problem:** When chat explodes at timestamp T, the funny/exciting action actually happened at timestamp (T - delay).
+
+**The solution:** `chat_delay_offset` makes the scorer look ahead in time to catch delayed reactions.
+
+### How it works:
+
+```python
+# Without delay offset (WRONG):
+# Segment [600, 630] → Chat messages [600, 630]
+# Misses reactions that come at 631-640
+
+# With delay offset=10s (CORRECT):
+# Segment [600, 630] → Chat messages [600, 630+10]
+# Captures both immediate AND delayed reactions
+
+scorer = StreamingScorer(
+    chat_analyzer=analyzer,
+    chat_delay_offset=10.0  # Look ahead 10s for reactions
+)
+```
+
+### Recommended values:
+
+- **Twitch** (low-latency): 5s
+- **Twitch** (normal): 10s
+- **YouTube**: 15s
+- **Kick**: 8s
+- **Unknown**: 10s (safe default)
 
 ---
 
@@ -513,7 +555,7 @@ for i, clip in enumerate(highlights, 1):
 
 ---
 
-**Version**: 1.0.0
+**Version**: 1.2.1 (Added delay offset support)
 **Last Updated**: 2025-11-25
 **Supported Platforms**: Twitch, YouTube, Kick
 ```

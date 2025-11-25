@@ -40,6 +40,7 @@ class StreamingScoringStage:
             print(f"  Platform: {stats['platform'].upper()}")
             print(f"  Messages: {stats['total_messages']}")
             print(f"  Baseline: {stats['baseline_msg_rate']:.2f} msg/s")
+            print(f"  Delay offset: {self.chat_scorer.chat_delay_offset:.1f}s")
         else:
             print("⚠️ No chat data - using audio-only scoring")
 
