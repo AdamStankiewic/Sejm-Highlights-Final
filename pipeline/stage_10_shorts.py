@@ -279,26 +279,50 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             if text:
                 ass_content += f"Dialogue: 0,{self._format_ass_time(0)},{self._format_ass_time(clip_end - clip_start)},Default,,0,0,0,,{text}\n"
         else:
-            # Grupuj słowa w krótkie frazy (3-4 słowa) dla lepszej czytelności
-            # Krótsze frazy bo większa czcionka (68px)
-            phrase_length = 4
+            # Grupuj słowa w krótkie frazy dla 9:16 formatu
+            # Ograniczenia dla narrow format (1080px width, 68px font):
+            # - Max 2-3 słowa OR max 25 znaków per line
+            # - Zapobiega ucinaniu napisów
+            max_chars_per_line = 25  # Safe limit for 9:16 with 68px font
             i = 0
-            
+
             while i < len(words):
-                # Zbierz 4-6 słów
-                phrase_words = words[i:i+phrase_length]
-                
+                # Zbieraj słowa dopóki nie przekroczymy limitu
+                phrase_words = []
+                phrase_text = ""
+
+                while i < len(words):
+                    word = words[i]['word']
+
+                    # Test: czy dodanie tego słowa przekroczy limit?
+                    test_text = phrase_text + (' ' if phrase_text else '') + word
+
+                    # Przerwij jeśli:
+                    # - Mamy już 3 słowa (max dla narrow format)
+                    # - Tekst przekracza 25 znaków
+                    if len(phrase_words) >= 3 or len(test_text) > max_chars_per_line:
+                        # Jeśli phrase_words jest puste, weź chociaż jedno słowo
+                        if not phrase_words:
+                            phrase_words.append(words[i])
+                            phrase_text = word
+                            i += 1
+                        break
+
+                    phrase_words.append(words[i])
+                    phrase_text = test_text
+                    i += 1
+
                 if not phrase_words:
                     break
-                
+
                 # Oblicz timing względem początku clipu
                 start_time = phrase_words[0]['start'] - clip['t0']
                 end_time = phrase_words[-1]['end'] - clip['t0']
-                
+
                 # Zabezpieczenie przed ujemnymi czasami
                 start_time = max(0, start_time)
                 end_time = max(start_time + 0.5, end_time)
-                
+
                 # Złącz słowa
                 text = ' '.join(w['word'] for w in phrase_words)
                 
