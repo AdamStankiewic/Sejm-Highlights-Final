@@ -117,10 +117,29 @@ class ScoringConfig:
 
 
 @dataclass
+class StreamingConfig:
+    """Streaming chat-based scoring settings"""
+    # Chat delay offset (seconds)
+    chat_delay_offset: float = 10.0
+
+    # Highlight window configuration
+    pre_spike_window: float = 15.0
+    post_spike_window: float = 5.0
+
+    # Scoring weights
+    weight_chat_spike: float = 0.30
+    weight_emote_quality: float = 0.25
+    weight_engagement: float = 0.20
+    weight_audio: float = 0.15
+    weight_viewer_normalized: float = 0.10
+
+
+@dataclass
 class SelectionConfig:
     """Clip selection settings"""
     # Duration constraints
     min_clip_duration: float = 90.0
+    min_short_duration: float = 20.0  # For Shorts only (can be shorter)
     max_clip_duration: float = 180.0
     target_total_duration: float = 900.0  # 15 min
     
@@ -486,6 +505,7 @@ class Config:
     asr: ASRConfig = None
     features: FeatureConfig = None
     scoring: ScoringConfig = None
+    streaming: StreamingConfig = None
     selection: SelectionConfig = None
     export: ExportConfig = None
     splitter: SmartSplitterConfig = None
@@ -519,6 +539,8 @@ class Config:
             self.features = FeatureConfig()
         if self.scoring is None:
             self.scoring = ScoringConfig()
+        if self.streaming is None:
+            self.streaming = StreamingConfig()
         if self.selection is None:
             self.selection = SelectionConfig()
         if self.export is None:
@@ -552,6 +574,7 @@ class Config:
         asr = ASRConfig(**data.get('asr', {}))
         features = FeatureConfig(**data.get('features', {}))
         scoring = ScoringConfig(**data.get('scoring', {}))
+        streaming = StreamingConfig(**data.get('streaming', {}))
         selection = SelectionConfig(**data.get('selection', {}))
         export = ExportConfig(**data.get('export', {}))
         youtube = YouTubeConfig(**data.get('youtube', {}))
@@ -568,6 +591,7 @@ class Config:
             asr=asr,
             features=features,
             scoring=scoring,
+            streaming=streaming,
             selection=selection,
             export=export,
             youtube=youtube,
@@ -596,6 +620,7 @@ class Config:
             'asr': asdict(self.asr),
             'features': asdict(self.features),
             'scoring': asdict(self.scoring),
+            'streaming': asdict(self.streaming),
             'selection': asdict(self.selection),
             'export': asdict(self.export),
             'youtube': asdict(self.youtube),
@@ -622,6 +647,7 @@ class Config:
             'asr': asdict(self.asr),
             'features': asdict(self.features),
             'scoring': asdict(self.scoring),
+            'streaming': asdict(self.streaming),
             'selection': asdict(self.selection),
             'export': asdict(self.export),
             'youtube': asdict(self.youtube),
