@@ -66,7 +66,8 @@ class StreamingProcessingThread(QThread):
                     self.log_message.emit("INFO", "📊 Initializing chat analyzer...")
 
                     # Get delay offset from config (default: 10s)
-                    delay_offset = self.config.streaming.get('chat_delay_offset', 10.0)
+                    # FIXED: Use attribute access instead of dict .get()
+                    delay_offset = self.config.streaming.chat_delay_offset
 
                     self.chat_scorer = create_scorer_from_chat(
                         chat_json_path=self.chat_path,
@@ -376,7 +377,20 @@ class StreamHighlightsApp(QMainWindow):
                 with open(file, 'r', encoding='utf-8') as f:
                     self.chat_data = json.load(f)
 
-                self.log(f"Chat loaded: {len(self.chat_data)} messages", "INFO")
+                # Note: chat_data might be a dict with 'comments' key (Twitch Downloader format)
+                # The actual parsing is done in ChatAnalyzer
+                if isinstance(self.chat_data, dict):
+                    # Check for Twitch Downloader format
+                    if 'comments' in self.chat_data:
+                        msg_count = len(self.chat_data.get('comments', []))
+                        self.log(f"Chat file loaded: {msg_count} messages", "INFO")
+                    else:
+                        self.log(f"Chat file loaded (format: dict with {len(self.chat_data)} keys)", "INFO")
+                elif isinstance(self.chat_data, list):
+                    self.log(f"Chat file loaded: {len(self.chat_data)} messages", "INFO")
+                else:
+                    self.log(f"Chat file loaded: {type(self.chat_data)}", "INFO")
+
                 print(f"🔍 DEBUG: Chat data type: {type(self.chat_data)}")
 
             except Exception as e:
