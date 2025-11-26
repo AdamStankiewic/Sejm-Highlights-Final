@@ -368,12 +368,16 @@ class StreamHighlightsApp(QMainWindow):
             self.chat_label.setText(f"✅ {filename}")
             self.chat_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
 
+            # DEBUG: Print to console
+            print(f"🔍 DEBUG: Chat path set to: {self.chat_path}")
+
             # Parse chat (basic validation)
             try:
                 with open(file, 'r', encoding='utf-8') as f:
                     self.chat_data = json.load(f)
 
                 self.log(f"Chat loaded: {len(self.chat_data)} messages", "INFO")
+                print(f"🔍 DEBUG: Chat data type: {type(self.chat_data)}")
 
             except Exception as e:
                 self.log(f"Chat parse error: {e}", "ERROR")
@@ -400,6 +404,11 @@ class StreamHighlightsApp(QMainWindow):
 
         # Log configuration
         self.log(f"🎬 VOD: {Path(self.vod_path).name}", "INFO")
+
+        # DEBUG: Print chat_path value
+        print(f"🔍 DEBUG: start_processing() - chat_path = {self.chat_path}")
+        print(f"🔍 DEBUG: start_processing() - chat_data = {type(self.chat_data) if self.chat_data else None}")
+
         if self.chat_path:
             self.log(f"💬 Chat: {Path(self.chat_path).name}", "INFO")
         else:
