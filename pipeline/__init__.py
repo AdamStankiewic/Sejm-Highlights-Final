@@ -2,6 +2,11 @@
 Sejm Highlights Pipeline
 """
 
+# Suppress pkg_resources deprecation warning from ctranslate2
+# See: https://github.com/OpenNMT/CTranslate2/pull/1911
+import warnings
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated", category=UserWarning)
+
 from .config import Config
 from .processor import PipelineProcessor
 from .stage_01_ingest import IngestStage

@@ -4,6 +4,11 @@ Stage 3: Transkrypcja Audio → Tekst
 - TYLKO szybka metoda (wycinanie segmentów)
 """
 
+# Suppress pkg_resources deprecation warning from ctranslate2
+# See: https://github.com/OpenNMT/CTranslate2/pull/1911
+import warnings
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated", category=UserWarning)
+
 import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Callable
