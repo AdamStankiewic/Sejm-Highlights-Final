@@ -31,6 +31,10 @@ setup(
     ],
     python_requires=">=3.11",
     install_requires=[
+        # Setuptools pinning (temporary workaround for ctranslate2 pkg_resources warning)
+        # See: https://github.com/OpenNMT/CTranslate2/pull/1911
+        "setuptools<81",
+
         # Core dependencies
         "numpy>=1.24.0",
         "scipy>=1.10.0",

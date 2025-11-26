@@ -1,6 +1,12 @@
 # Sejm Highlights AI - Requirements
 # Python 3.11+
 
+# === Setuptools Pinning ===
+# Pin setuptools to <81 to avoid pkg_resources deprecation warning from ctranslate2
+# See: https://github.com/OpenNMT/CTranslate2/pull/1911
+# This is a temporary workaround until ctranslate2 fixes the upstream issue
+setuptools<81
+
 # === Core Framework ===
 PyQt6>=6.6.0
 PyYAML>=6.0.1
