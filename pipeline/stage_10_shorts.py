@@ -375,9 +375,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     f"{self._format_ass_time(end_time)},"
                     f"Default,,0,0,0,,{text}\n"
                 )
-                
-                i += phrase_length
-        
+                # Note: i jest już inkrementowane w wewnętrznej pętli while (linie 300, 305)
+
         # Zapisz ASS
         with open(ass_file, 'w', encoding='utf-8') as f:
             f.write(ass_content)
