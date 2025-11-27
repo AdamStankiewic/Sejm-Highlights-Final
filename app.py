@@ -575,9 +575,14 @@ class SejmHighlightsApp(QMainWindow):
         profile_group = QGroupBox("🎯 Upload Profile (Multi-channel)")
         profile_layout = QVBoxLayout()
 
+        # Profile selector (compact)
         profile_select_layout = QHBoxLayout()
-        profile_select_layout.addWidget(QLabel("📋 Profil kanału:"))
+        profile_label = QLabel("📋 Profil:")
+        profile_label.setMinimumWidth(100)
+        profile_select_layout.addWidget(profile_label)
+
         self.youtube_profile = QComboBox()
+        self.youtube_profile.setMinimumWidth(150)
 
         # Load profiles from config
         profile_names = self.config.list_upload_profiles() if hasattr(self.config, 'list_upload_profiles') else []
@@ -592,46 +597,58 @@ class SejmHighlightsApp(QMainWindow):
         profile_select_layout.addStretch()
         profile_layout.addLayout(profile_select_layout)
 
-        # Profile info display
+        # Profile info display (compact)
         self.profile_info_label = QLabel()
-        self.profile_info_label.setStyleSheet("color: #666; font-size: 9pt; padding: 8px; background: #f5f5f5; border-radius: 4px;")
+        self.profile_info_label.setStyleSheet(
+            "color: #555; font-size: 8pt; padding: 6px; background: #f9f9f9; "
+            "border-radius: 3px; border: 1px solid #e0e0e0;"
+        )
         self.profile_info_label.setWordWrap(True)
+        self.profile_info_label.setMaximumHeight(60)
         profile_layout.addWidget(self.profile_info_label)
 
-        # Playlist section
-        playlist_layout = QHBoxLayout()
-        playlist_layout.addWidget(QLabel("📂 Playlist (Main):"))
+        layout.addSpacing(5)
+
+        # Playlist section (aligned labels)
+        playlist_main_layout = QHBoxLayout()
+        playlist_main_label = QLabel("📂 Main:")
+        playlist_main_label.setMinimumWidth(100)
+        playlist_main_layout.addWidget(playlist_main_label)
         self.youtube_main_playlist = QLineEdit()
-        self.youtube_main_playlist.setPlaceholderText("Pozostaw puste lub podaj Playlist ID")
-        playlist_layout.addWidget(self.youtube_main_playlist)
-        profile_layout.addLayout(playlist_layout)
+        self.youtube_main_playlist.setPlaceholderText("Playlist ID (opcjonalne)")
+        playlist_main_layout.addWidget(self.youtube_main_playlist)
+        profile_layout.addLayout(playlist_main_layout)
 
         playlist_shorts_layout = QHBoxLayout()
-        playlist_shorts_layout.addWidget(QLabel("📂 Playlist (Shorts):"))
+        playlist_shorts_label = QLabel("📱 Shorts:")
+        playlist_shorts_label.setMinimumWidth(100)
+        playlist_shorts_layout.addWidget(playlist_shorts_label)
         self.youtube_shorts_playlist = QLineEdit()
-        self.youtube_shorts_playlist.setPlaceholderText("Pozostaw puste lub podaj Playlist ID")
+        self.youtube_shorts_playlist.setPlaceholderText("Playlist ID (opcjonalne)")
         playlist_shorts_layout.addWidget(self.youtube_shorts_playlist)
         profile_layout.addLayout(playlist_shorts_layout)
 
-        # Refresh playlists button
-        refresh_btn_layout = QHBoxLayout()
-        self.refresh_playlists_btn = QPushButton("🔄 Odśwież Playlisty")
+        # Buttons row (both in one line)
+        buttons_layout = QHBoxLayout()
+        buttons_layout.addStretch()
+
+        self.refresh_playlists_btn = QPushButton("🔄 Odśwież")
         self.refresh_playlists_btn.clicked.connect(self.refresh_playlists)
         self.refresh_playlists_btn.setEnabled(False)
-        refresh_btn_layout.addStretch()
-        refresh_btn_layout.addWidget(self.refresh_playlists_btn)
-        profile_layout.addLayout(refresh_btn_layout)
+        self.refresh_playlists_btn.setMaximumWidth(120)
+        buttons_layout.addWidget(self.refresh_playlists_btn)
 
-        # Upload Queue button (NOWY!)
-        queue_btn_layout = QHBoxLayout()
-        self.upload_queue_btn = QPushButton("📤 Upload Queue Manager")
+        buttons_layout.addSpacing(10)
+
+        self.upload_queue_btn = QPushButton("📤 Upload Queue")
         self.upload_queue_btn.clicked.connect(self.open_upload_queue)
         self.upload_queue_btn.setStyleSheet(
-            "padding: 10px; font-weight: bold; background: #FF6B35; color: white; border-radius: 4px;"
+            "padding: 8px 16px; font-weight: bold; background: #FF6B35; color: white; border-radius: 4px;"
         )
-        queue_btn_layout.addStretch()
-        queue_btn_layout.addWidget(self.upload_queue_btn)
-        profile_layout.addLayout(queue_btn_layout)
+        self.upload_queue_btn.setMaximumWidth(150)
+        buttons_layout.addWidget(self.upload_queue_btn)
+
+        profile_layout.addLayout(buttons_layout)
 
         profile_group.setLayout(profile_layout)
         layout.addWidget(profile_group)
