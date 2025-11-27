@@ -36,11 +36,12 @@ class ProcessingThread(QThread):
     processing_completed = pyqtSignal(dict)  # (wyniki)
     processing_failed = pyqtSignal(str)  # (error_message)
 
-    def __init__(self, input_file: str, config: Config, upload_profile: str = None):
+    def __init__(self, input_file: str, config: Config, upload_profile: str = None, use_queue: bool = False):
         super().__init__()
         self.input_file = input_file
         self.config = config
         self.upload_profile = upload_profile
+        self.use_queue = use_queue
         self.processor = None
         self._is_running = True
 
@@ -52,8 +53,15 @@ class ProcessingThread(QThread):
             if self.upload_profile:
                 self.log_message.emit("INFO", f"📋 Używam profilu YouTube: {self.upload_profile}")
 
+            if self.use_queue:
+                self.log_message.emit("INFO", f"📋 Tryb Upload Queue - filmy zostaną dodane do kolejki")
+
             # Inicjalizacja processora
-            self.processor = PipelineProcessor(self.config, upload_profile=self.upload_profile)
+            self.processor = PipelineProcessor(
+                self.config,
+                upload_profile=self.upload_profile,
+                use_queue=self.use_queue
+            )
             
             # Callback dla progressu
             def progress_callback(stage: str, percent: int, message: str):
@@ -552,6 +560,15 @@ class SejmHighlightsApp(QMainWindow):
         self.youtube_upload.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         layout.addWidget(self.youtube_upload)
 
+        # Use Queue mode
+        self.youtube_use_queue = QCheckBox("📋 Dodaj do kolejki zamiast natychmiastowego uploadu")
+        self.youtube_use_queue.setChecked(False)
+        self.youtube_use_queue.setToolTip(
+            "Gdy włączone: filmy zostaną dodane do Upload Queue\n"
+            "Gdy wyłączone: filmy będą uploaded natychmiast po przetworzeniu"
+        )
+        layout.addWidget(self.youtube_use_queue)
+
         layout.addSpacing(10)
 
         # === UPLOAD PROFILE SELECTOR (NOWY!) ===
@@ -604,6 +621,17 @@ class SejmHighlightsApp(QMainWindow):
         refresh_btn_layout.addStretch()
         refresh_btn_layout.addWidget(self.refresh_playlists_btn)
         profile_layout.addLayout(refresh_btn_layout)
+
+        # Upload Queue button (NOWY!)
+        queue_btn_layout = QHBoxLayout()
+        self.upload_queue_btn = QPushButton("📤 Upload Queue Manager")
+        self.upload_queue_btn.clicked.connect(self.open_upload_queue)
+        self.upload_queue_btn.setStyleSheet(
+            "padding: 10px; font-weight: bold; background: #FF6B35; color: white; border-radius: 4px;"
+        )
+        queue_btn_layout.addStretch()
+        queue_btn_layout.addWidget(self.upload_queue_btn)
+        profile_layout.addLayout(queue_btn_layout)
 
         profile_group.setLayout(profile_layout)
         layout.addWidget(profile_group)
@@ -998,10 +1026,17 @@ class SejmHighlightsApp(QMainWindow):
 
         # Get selected upload profile (if YouTube upload is enabled)
         upload_profile = None
+        use_queue = False
         if self.youtube_upload.isChecked():
             upload_profile = self.youtube_profile.currentText()
+            use_queue = self.youtube_use_queue.isChecked()
 
-        self.processing_thread = ProcessingThread(input_file, self.config, upload_profile=upload_profile)
+        self.processing_thread = ProcessingThread(
+            input_file,
+            self.config,
+            upload_profile=upload_profile,
+            use_queue=use_queue
+        )
         
         # Connect signals
         self.processing_thread.progress_updated.connect(self.on_progress_update)
@@ -1163,6 +1198,20 @@ class SejmHighlightsApp(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie udało się pobrać playlist:\n{str(e)}")
             self.log(f"❌ Błąd pobierania playlist: {str(e)}", "ERROR")
+
+    def open_upload_queue(self):
+        """Open Upload Queue Manager dialog"""
+        try:
+            from upload_queue_dialog import UploadQueueDialog
+
+            dialog = UploadQueueDialog(self.config, parent=self)
+            dialog.exec()
+
+            self.log("📤 Upload Queue Manager zamknięty", "INFO")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Błąd", f"Nie udało się otworzyć Upload Queue:\n{str(e)}")
+            self.log(f"❌ Błąd Upload Queue: {str(e)}", "ERROR")
 
     def update_config_from_gui(self):
         """Aktualizuj obiekt Config wartościami z GUI"""
