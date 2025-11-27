@@ -473,38 +473,59 @@ class PipelineProcessor:
                             for i, part_meta in enumerate(parts_metadata):
                                 print(f"\n📤 Upload części {part_meta['part_number']}/{part_meta['total_parts']}...")
 
-                            # Generuj enhanced title
-                            video_title = self.smart_splitter.generate_enhanced_title(
-                                part_meta,
-                                part_meta['clips'],
-                                use_politicians=self.config.splitter.use_politicians_in_titles
+                                # Generuj enhanced title
+                                video_title = self.smart_splitter.generate_enhanced_title(
+                                    part_meta,
+                                    part_meta['clips'],
+                                    use_politicians=self.config.splitter.use_politicians_in_titles
+                                )
+
+                                # Determine privacy/premiere status from profile
+                                premiere_datetime = datetime.fromisoformat(part_meta['premiere_datetime'])
+
+                                if main_settings.get('schedule_as_premiere', False):
+                                    # Schedule as premiere
+                                    youtube_result = youtube_stage.schedule_premiere(
+                                        video_file=export_results[i]['output_file'],
+                                        thumbnail_file=thumbnail_results[i].get('thumbnail_path') if thumbnail_results else None,
+                                        title=video_title,
+                                        clips=part_meta['clips'],
+                                        segments=scoring_result['segments'],
+                                        output_dir=self.config.output_dir,
+                                        premiere_datetime=premiere_datetime
+                                    )
+                                else:
+                                    # Upload with profile privacy settings
+                                    youtube_result = youtube_stage.process(
+                                        video_file=export_results[i]['output_file'],
+                                        thumbnail_file=thumbnail_results[i].get('thumbnail_path') if thumbnail_results else None,
+                                        title=video_title,
+                                        clips=part_meta['clips'],
+                                        segments=scoring_result['segments'],
+                                        output_dir=self.config.output_dir,
+                                        privacy_status=main_settings['privacy_status']
+                                    )
+
+                                # Add to playlist if specified in profile
+                                if youtube_result.get('success') and main_settings.get('playlist_id'):
+                                    youtube_stage.playlist_manager.add_video_to_playlist(
+                                        main_settings['playlist_id'],
+                                        youtube_result['video_id']
+                                    )
+
+                                youtube_results.append(youtube_result)
+                        else:
+                            # Single upload (standardowy)
+                            video_title = self._generate_youtube_title(selection_result)
+                            youtube_result = youtube_stage.process(
+                                video_file=export_results[0]['output_file'],
+                                thumbnail_file=thumbnail_results[0].get('thumbnail_path') if thumbnail_results else None,
+                                title=video_title,
+                                clips=selection_result['clips'],
+                                segments=scoring_result['segments'],
+                                output_dir=self.config.output_dir,
+                                privacy_status=main_settings['privacy_status']
                             )
-
-                            # Determine privacy/premiere status from profile
-                            premiere_datetime = datetime.fromisoformat(part_meta['premiere_datetime'])
-
-                            if main_settings.get('schedule_as_premiere', False):
-                                # Schedule as premiere
-                                youtube_result = youtube_stage.schedule_premiere(
-                                    video_file=export_results[i]['output_file'],
-                                    thumbnail_file=thumbnail_results[i].get('thumbnail_path') if thumbnail_results else None,
-                                    title=video_title,
-                                    clips=part_meta['clips'],
-                                    segments=scoring_result['segments'],
-                                    output_dir=self.config.output_dir,
-                                    premiere_datetime=premiere_datetime
-                                )
-                            else:
-                                # Upload with profile privacy settings
-                                youtube_result = youtube_stage.process(
-                                    video_file=export_results[i]['output_file'],
-                                    thumbnail_file=thumbnail_results[i].get('thumbnail_path') if thumbnail_results else None,
-                                    title=video_title,
-                                    clips=part_meta['clips'],
-                                    segments=scoring_result['segments'],
-                                    output_dir=self.config.output_dir,
-                                    privacy_status=main_settings['privacy_status']
-                                )
 
                             # Add to playlist if specified in profile
                             if youtube_result.get('success') and main_settings.get('playlist_id'):
@@ -514,27 +535,6 @@ class PipelineProcessor:
                                 )
 
                             youtube_results.append(youtube_result)
-                    else:
-                        # Single upload (standardowy)
-                        video_title = self._generate_youtube_title(selection_result)
-                        youtube_result = youtube_stage.process(
-                            video_file=export_results[0]['output_file'],
-                            thumbnail_file=thumbnail_results[0].get('thumbnail_path') if thumbnail_results else None,
-                            title=video_title,
-                            clips=selection_result['clips'],
-                            segments=scoring_result['segments'],
-                            output_dir=self.config.output_dir,
-                            privacy_status=main_settings['privacy_status']
-                        )
-
-                        # Add to playlist if specified in profile
-                        if youtube_result.get('success') and main_settings.get('playlist_id'):
-                            youtube_stage.playlist_manager.add_video_to_playlist(
-                                main_settings['playlist_id'],
-                                youtube_result['video_id']
-                            )
-
-                        youtube_results.append(youtube_result)
                 
                 # === ETAP 10: YouTube Shorts Generation (optional) ===
                 shorts_results = []
