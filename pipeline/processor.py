@@ -600,27 +600,27 @@ class PipelineProcessor:
 
                                     # Upload using profile settings
                                     upload_result = shorts_youtube_stage.upload_video(
-                                    video_file=short_meta['file'],
-                                    title=short_title,
-                                    description=short_meta['description'],
-                                    tags=short_meta['tags'],
-                                    category_id=shorts_settings['category_id'],
-                                    privacy_status=shorts_settings['privacy_status']
-                                )
+                                        video_file=short_meta['file'],
+                                        title=short_title,
+                                        description=short_meta['description'],
+                                        tags=short_meta['tags'],
+                                        category_id=shorts_settings['category_id'],
+                                        privacy_status=shorts_settings['privacy_status']
+                                    )
 
-                                if upload_result.get('success'):
-                                    short_meta['youtube_url'] = upload_result['video_url']
-                                    print(f"   ✅ Short uploaded: {upload_result['video_url']}")
+                                    if upload_result.get('success'):
+                                        short_meta['youtube_url'] = upload_result['video_url']
+                                        print(f"   ✅ Short uploaded: {upload_result['video_url']}")
 
-                                    # Add to playlist if specified in profile
-                                    if shorts_settings.get('playlist_id'):
-                                        shorts_youtube_stage.playlist_manager.add_video_to_playlist(
-                                            shorts_settings['playlist_id'],
-                                            upload_result['video_id']
-                                        )
+                                        # Add to playlist if specified in profile
+                                        if shorts_settings.get('playlist_id'):
+                                            shorts_youtube_stage.playlist_manager.add_video_to_playlist(
+                                                shorts_settings['playlist_id'],
+                                                upload_result['video_id']
+                                            )
 
-                            except Exception as e:
-                                print(f"   ⚠️ Błąd uploadu Short: {e}")
+                                except Exception as e:
+                                    print(f"   ⚠️ Błąd uploadu Short: {e}")
                 
                 # === Finalize result ===
                 result = {
