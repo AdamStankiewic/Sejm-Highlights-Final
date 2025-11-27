@@ -149,12 +149,15 @@ class ShortsStage:
         width = self.config.shorts.width
         height = self.config.shorts.height
         
+        # STEP 1: Generuj AI tytuł (potrzebny dla napisów)
+        title = self._generate_ai_short_title(clip, segments)
+
         print(f"      🎬 Renderowanie video...")
-        
-        # STEP 1: Generuj ASS napisy (żółte, safe zone)
-        self._generate_shorts_subtitles(clip, segments, t0, t1, ass_file)
-        
-        # STEP 2: Renderuj video z napisami
+
+        # STEP 2: Generuj ASS napisy (żółte, safe zone) + tytuł intro
+        self._generate_shorts_subtitles(clip, segments, t0, t1, ass_file, title)
+
+        # STEP 3: Renderuj video z napisami
         # Filter complex:
         # 1. Scale + crop do 9:16
         # 2. Dodaj napisy z ASS (żółte, centered, safe zone)
@@ -193,9 +196,8 @@ class ShortsStage:
             error_msg = e.stderr if e.stderr else str(e)
             print(f"      ⚠️ FFmpeg error: {error_msg[:200]}")
             raise
-        
-        # Generate AI title and metadata
-        title = self._generate_ai_short_title(clip, segments)
+
+        # Generate metadata
         description = self._generate_short_description_fixed()
         
         return {
@@ -218,16 +220,20 @@ class ShortsStage:
         segments: List[Dict],
         clip_start: float,
         clip_end: float,
-        ass_file: Path
+        ass_file: Path,
+        title: str = None
     ):
         """
         Generuj napisy w formacie ASS dla Shorts
-        
+
         Żółte napisy z czarnym outline, positioned w safe zone
         YouTube Shorts UI:
         - Góra (0-200px): nazwa kanału, czas
         - Dół (1620-1920px): przyciski like/comment/share
         - Safe zone: 300-1500px (środek)
+
+        Args:
+            title: Opcjonalny tytuł do wyświetlenia jako intro (0.0-1.5s)
         """
         
         # Znajdź segment odpowiadający clipowi
@@ -261,7 +267,13 @@ Style: Default,Arial,68,&H00FFFF00,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-        
+
+        # INTRO: Dodaj napis tytułowy (0.0 - 1.5s) jako hook
+        if title:
+            # Skróć tytuł jeśli za długi (max 50 znaków dla lepszej czytelności)
+            intro_title = title[:50] + "..." if len(title) > 50 else title
+            ass_content += f"Dialogue: 0,{self._format_ass_time(0.0)},{self._format_ass_time(1.5)},Default,,0,0,0,,{intro_title}\n"
+
         # Generuj linie napisów z word-level timing
         words = segment.get('words', [])
 
