@@ -28,28 +28,32 @@ from pipeline.config import Config
 
 class ProcessingThread(QThread):
     """Worker thread dla przetwarzania video (żeby GUI nie zamarzało)"""
-    
+
     # Sygnały do komunikacji z GUI
     progress_updated = pyqtSignal(int, str)  # (procent, etap)
     stage_completed = pyqtSignal(str, dict)  # (nazwa_etapu, statystyki)
     log_message = pyqtSignal(str, str)  # (level, message)
     processing_completed = pyqtSignal(dict)  # (wyniki)
     processing_failed = pyqtSignal(str)  # (error_message)
-    
-    def __init__(self, input_file: str, config: Config):
+
+    def __init__(self, input_file: str, config: Config, upload_profile: str = None):
         super().__init__()
         self.input_file = input_file
         self.config = config
+        self.upload_profile = upload_profile
         self.processor = None
         self._is_running = True
-    
+
     def run(self):
         """Główna pętla przetwarzania"""
         try:
             self.log_message.emit("INFO", f"🚀 Rozpoczynam przetwarzanie: {Path(self.input_file).name}")
-            
+
+            if self.upload_profile:
+                self.log_message.emit("INFO", f"📋 Używam profilu YouTube: {self.upload_profile}")
+
             # Inicjalizacja processora
-            self.processor = PipelineProcessor(self.config)
+            self.processor = PipelineProcessor(self.config, upload_profile=self.upload_profile)
             
             # Callback dla progressu
             def progress_callback(stage: str, percent: int, message: str):
@@ -541,20 +545,76 @@ class SejmHighlightsApp(QMainWindow):
         """TAB 5: YouTube Settings (ROZSZERZONY!)"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        
+
         # Enable YouTube upload
         self.youtube_upload = QCheckBox("📺 Upload do YouTube po zakończeniu")
         self.youtube_upload.setChecked(False)
         self.youtube_upload.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         layout.addWidget(self.youtube_upload)
-        
+
         layout.addSpacing(10)
-        
-        # Schedule as premiere (NOWE!)
+
+        # === UPLOAD PROFILE SELECTOR (NOWY!) ===
+        profile_group = QGroupBox("🎯 Upload Profile (Multi-channel)")
+        profile_layout = QVBoxLayout()
+
+        profile_select_layout = QHBoxLayout()
+        profile_select_layout.addWidget(QLabel("📋 Profil kanału:"))
+        self.youtube_profile = QComboBox()
+
+        # Load profiles from config
+        profile_names = self.config.list_upload_profiles() if hasattr(self.config, 'list_upload_profiles') else []
+        if profile_names:
+            self.youtube_profile.addItems(profile_names)
+        else:
+            self.youtube_profile.addItems(["sejm", "stream"])
+
+        self.youtube_profile.setCurrentIndex(0)
+        self.youtube_profile.currentIndexChanged.connect(self.on_profile_changed)
+        profile_select_layout.addWidget(self.youtube_profile)
+        profile_select_layout.addStretch()
+        profile_layout.addLayout(profile_select_layout)
+
+        # Profile info display
+        self.profile_info_label = QLabel()
+        self.profile_info_label.setStyleSheet("color: #666; font-size: 9pt; padding: 8px; background: #f5f5f5; border-radius: 4px;")
+        self.profile_info_label.setWordWrap(True)
+        profile_layout.addWidget(self.profile_info_label)
+
+        # Playlist section
+        playlist_layout = QHBoxLayout()
+        playlist_layout.addWidget(QLabel("📂 Playlist (Main):"))
+        self.youtube_main_playlist = QLineEdit()
+        self.youtube_main_playlist.setPlaceholderText("Pozostaw puste lub podaj Playlist ID")
+        playlist_layout.addWidget(self.youtube_main_playlist)
+        profile_layout.addLayout(playlist_layout)
+
+        playlist_shorts_layout = QHBoxLayout()
+        playlist_shorts_layout.addWidget(QLabel("📂 Playlist (Shorts):"))
+        self.youtube_shorts_playlist = QLineEdit()
+        self.youtube_shorts_playlist.setPlaceholderText("Pozostaw puste lub podaj Playlist ID")
+        playlist_shorts_layout.addWidget(self.youtube_shorts_playlist)
+        profile_layout.addLayout(playlist_shorts_layout)
+
+        # Refresh playlists button
+        refresh_btn_layout = QHBoxLayout()
+        self.refresh_playlists_btn = QPushButton("🔄 Odśwież Playlisty")
+        self.refresh_playlists_btn.clicked.connect(self.refresh_playlists)
+        self.refresh_playlists_btn.setEnabled(False)
+        refresh_btn_layout.addStretch()
+        refresh_btn_layout.addWidget(self.refresh_playlists_btn)
+        profile_layout.addLayout(refresh_btn_layout)
+
+        profile_group.setLayout(profile_layout)
+        layout.addWidget(profile_group)
+
+        layout.addSpacing(10)
+
+        # Schedule as premiere
         self.youtube_premiere = QCheckBox("🎬 Scheduluj jako Premiery (zamiast instant publish)")
         self.youtube_premiere.setChecked(True)
         layout.addWidget(self.youtube_premiere)
-        
+
         premiere_info = QLabel(
             "✨ Gdy włączone: każda część będzie premiered w osobnym dniu o określonej godzinie\n"
             "❌ Gdy wyłączone: wszystkie części zostaną opublikowane natychmiast"
@@ -562,21 +622,21 @@ class SejmHighlightsApp(QMainWindow):
         premiere_info.setWordWrap(True)
         premiere_info.setStyleSheet("color: #666; font-size: 9pt; padding-left: 25px;")
         layout.addWidget(premiere_info)
-        
+
         layout.addSpacing(10)
-        
-        # Privacy status
+
+        # Privacy status (still useful as override)
         privacy_layout = QHBoxLayout()
-        privacy_layout.addWidget(QLabel("🔒 Status prywatności (dla non-premiere):"))
+        privacy_layout.addWidget(QLabel("🔒 Status prywatności (override):"))
         self.youtube_privacy = QComboBox()
-        self.youtube_privacy.addItems(["Unlisted", "Private", "Public"])
+        self.youtube_privacy.addItems(["Z profilu", "Unlisted", "Private", "Public"])
         self.youtube_privacy.setCurrentIndex(0)
         privacy_layout.addWidget(self.youtube_privacy)
         privacy_layout.addStretch()
         layout.addLayout(privacy_layout)
-        
+
         layout.addSpacing(10)
-        
+
         # Credentials path
         cred_layout = QHBoxLayout()
         cred_layout.addWidget(QLabel("🔑 Client Secret JSON:"))
@@ -585,11 +645,14 @@ class SejmHighlightsApp(QMainWindow):
         self.youtube_creds.setPlaceholderText("client_secret.json")
         cred_layout.addWidget(self.youtube_creds)
         layout.addLayout(cred_layout)
-        
+
         cred_info = QLabel("📘 Pobierz z: Google Cloud Console → APIs & Services → Credentials")
         cred_info.setStyleSheet("color: #2196F3; font-style: italic; padding-left: 25px;")
         layout.addWidget(cred_info)
-        
+
+        # Update profile info on load
+        self.on_profile_changed(0)
+
         layout.addStretch()
         return tab
     
@@ -932,7 +995,13 @@ class SejmHighlightsApp(QMainWindow):
         if not input_file or input_file == "Nie wybrano pliku":
             QMessageBox.warning(self, "Błąd", "Proszę wybrać plik wejściowy lub pobrać video z URL!")
             return
-        self.processing_thread = ProcessingThread(input_file, self.config)
+
+        # Get selected upload profile (if YouTube upload is enabled)
+        upload_profile = None
+        if self.youtube_upload.isChecked():
+            upload_profile = self.youtube_profile.currentText()
+
+        self.processing_thread = ProcessingThread(input_file, self.config, upload_profile=upload_profile)
         
         # Connect signals
         self.processing_thread.progress_updated.connect(self.on_progress_update)
@@ -1021,7 +1090,80 @@ class SejmHighlightsApp(QMainWindow):
         self.cancel_btn.setEnabled(False)
         self.progress_bar.setValue(0)
         self.progress_label.setText("Gotowy")
-    
+
+    # === YouTube Profile Management ===
+
+    def on_profile_changed(self, index: int):
+        """Update profile info when profile selection changes"""
+        try:
+            profile_name = self.youtube_profile.currentText()
+            profile = self.config.get_upload_profile(profile_name)
+
+            if profile:
+                # Display profile information
+                info_text = (
+                    f"📺 Kanał: {profile.name}\n"
+                    f"🆔 Channel ID: {profile.channel_id}\n"
+                    f"🔑 Token: {profile.token_file}\n"
+                    f"📋 Main: {profile.main_videos.privacy_status} | "
+                    f"Premiere: {'Tak' if profile.main_videos.schedule_as_premiere else 'Nie'}\n"
+                    f"📱 Shorts: {profile.shorts.privacy_status} | "
+                    f"Hashtags: {'Tak' if profile.shorts.add_hashtags else 'Nie'}"
+                )
+                self.profile_info_label.setText(info_text)
+
+                # Update playlist fields from profile
+                self.youtube_main_playlist.setText(profile.main_videos.playlist_id or "")
+                self.youtube_shorts_playlist.setText(profile.shorts.playlist_id or "")
+
+                # Enable refresh button
+                self.refresh_playlists_btn.setEnabled(True)
+            else:
+                self.profile_info_label.setText(f"⚠️ Profil '{profile_name}' nie znaleziony w config.yml")
+                self.refresh_playlists_btn.setEnabled(False)
+
+        except Exception as e:
+            self.profile_info_label.setText(f"❌ Błąd ładowania profilu: {str(e)}")
+            self.refresh_playlists_btn.setEnabled(False)
+
+    def refresh_playlists(self):
+        """Refresh playlists from YouTube for selected profile"""
+        try:
+            profile_name = self.youtube_profile.currentText()
+            self.log(f"🔄 Pobieranie playlist dla profilu: {profile_name}...", "INFO")
+
+            # Import here to avoid circular imports
+            from pipeline.stage_09_youtube import YouTubeStage
+
+            # Create YouTube stage with selected profile
+            youtube_stage = YouTubeStage(self.config, profile_name=profile_name)
+            youtube_stage.authorize()
+
+            # Get playlists
+            if youtube_stage.playlist_manager:
+                playlists = youtube_stage.playlist_manager.list_playlists()
+
+                if playlists:
+                    playlist_names = [f"{p['title']} ({p['id']})" for p in playlists[:10]]
+                    playlist_info = "\n".join(playlist_names)
+                    QMessageBox.information(
+                        self,
+                        f"Playlisty - {profile_name}",
+                        f"Znaleziono {len(playlists)} playlist:\n\n{playlist_info}\n\n"
+                        f"Możesz skopiować ID i wkleić w pole Playlist powyżej."
+                    )
+                    self.log(f"✅ Znaleziono {len(playlists)} playlist", "INFO")
+                else:
+                    QMessageBox.information(self, "Playlisty", "Nie znaleziono żadnych playlist")
+                    self.log("⚠️ Nie znaleziono playlist", "WARNING")
+            else:
+                QMessageBox.warning(self, "Błąd", "Nie udało się zainicjalizować Playlist Manager")
+                self.log("❌ Błąd inicjalizacji Playlist Manager", "ERROR")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Błąd", f"Nie udało się pobrać playlist:\n{str(e)}")
+            self.log(f"❌ Błąd pobierania playlist: {str(e)}", "ERROR")
+
     def update_config_from_gui(self):
         """Aktualizuj obiekt Config wartościami z GUI"""
         # Selection settings
@@ -1057,14 +1199,25 @@ class SejmHighlightsApp(QMainWindow):
         if hasattr(self.config, 'youtube'):
             self.config.youtube.enabled = bool(self.youtube_upload.isChecked())
             self.config.youtube.schedule_as_premiere = bool(self.youtube_premiere.isChecked())
-            
-            privacy_map = {0: "unlisted", 1: "private", 2: "public"}
-            self.config.youtube.privacy_status = privacy_map.get(
-                self.youtube_privacy.currentIndex(), "unlisted"
-            )
-            
+
+            # Privacy status (tylko jeśli nie używamy profilu)
+            privacy_idx = self.youtube_privacy.currentIndex()
+            if privacy_idx > 0:  # 0 = "Z profilu"
+                privacy_map = {1: "unlisted", 2: "private", 3: "public"}
+                self.config.youtube.privacy_status = privacy_map.get(privacy_idx, "unlisted")
+
             if self.youtube_creds.text():
                 self.config.youtube.credentials_path = Path(self.youtube_creds.text())
+
+            # Update playlist IDs in selected profile
+            profile_name = self.youtube_profile.currentText()
+            profile = self.config.get_upload_profile(profile_name)
+            if profile:
+                # Save playlist IDs from GUI to profile
+                if self.youtube_main_playlist.text():
+                    profile.main_videos.playlist_id = self.youtube_main_playlist.text().strip()
+                if self.youtube_shorts_playlist.text():
+                    profile.shorts.playlist_id = self.youtube_shorts_playlist.text().strip()
         
         # Advanced settings
         self.config.output_dir = Path(self.output_dir.text())
