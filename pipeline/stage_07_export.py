@@ -17,13 +17,23 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from .config import Config
+
+# Import TitleGenerator for streaming content
+try:
+    from modules.export.title_generator import TitleGenerator
+except ImportError:
+    TitleGenerator = None
+
 load_dotenv()
 
 class ExportStage:
     def __init__(self, config: Config):
         self.config = config
         self._check_ffmpeg()
-        
+
+        # Stream context (for streaming content) - set externally if needed
+        self.stream_context = None
+
         # Initialize GPT
         self.openai_client = None
         api_key = os.getenv("OPENAI_API_KEY")
@@ -34,24 +44,65 @@ class ExportStage:
                 pass
     
     def _generate_gpt_title(self, clips: List[Dict]) -> str:
-        """Generuj clickbait z GPT-4o-mini"""
-        
+        """Generuj clickbait z GPT-4o-mini (context-aware for streaming)"""
+
+        # === STREAMING CONTENT: Use TitleGenerator ===
+        if self.stream_context and TitleGenerator:
+            try:
+                print("   🎮 Using context-aware title generation...")
+
+                # Initialize title generator
+                generator = TitleGenerator(openai_api_key=os.getenv("OPENAI_API_KEY"))
+
+                # Get top clip for title generation
+                top_clip = clips[0] if clips else {}
+                transcript = top_clip.get('transcript', '')
+
+                # Prepare chat stats if available
+                chat_stats = None
+                if 'chat_spike_score' in top_clip or 'chat_stats' in top_clip:
+                    chat_stats = {
+                        'spike_intensity': top_clip.get('chat_spike_score', 0),
+                        'top_emotes': top_clip.get('top_emotes', []),
+                        'avg_viewers': top_clip.get('avg_viewers', 0)
+                    }
+
+                # Generate title
+                titles = generator.generate_title(
+                    stream_context=self.stream_context,
+                    transcript=transcript,
+                    chat_stats=chat_stats,
+                    format_type="Highlight",
+                    max_chars=80,
+                    num_options=1
+                )
+
+                if titles:
+                    title = titles[0]
+                    print(f"   🤖 Generated context-aware title: {title}")
+                    return title
+
+            except Exception as e:
+                print(f"   ⚠️ TitleGenerator error: {e}")
+                # Fall through to Sejm logic
+
+        # === SEJM CONTENT: Original logic ===
         if not self.openai_client:
             # Fallback bez GPT
             from datetime import datetime
             date = datetime.now().strftime("%d.%m.%Y")
             return f"NAJLEPSZE MOMENTY! 🔥 | Sejm Highlights {date}"
-        
+
         # Przygotuj kontekst - top 3 klipy
         context = "Najciekawsze fragmenty debaty:\n\n"
         for i, clip in enumerate(clips[:3], 1):
             transcript = clip.get('transcript', '')[:300]
             score = clip.get('final_score', 0)
             context += f"Fragment {i} (score: {score:.2f}):\n{transcript}\n\n"
-        
+
         from datetime import datetime
         date = datetime.now().strftime("%d.%m.%Y")
-        
+
         prompt = f"""Jesteś ekspertem od tworzenia viralowych tytułów YouTube dla polskiej polityki.
 
     {context}
@@ -80,11 +131,11 @@ class ExportStage:
                 max_tokens=100,
                 temperature=0.9
             )
-            
+
             title = response.choices[0].message.content.strip()
             print(f"   🤖 GPT wygenerował tytuł: {title}")
             return title
-            
+
         except Exception as e:
             print(f"   ⚠️ Błąd GPT API: {e}")
             return f"NAJLEPSZE MOMENTY! 🔥 | Sejm Highlights {date}"
