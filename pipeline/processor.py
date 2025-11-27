@@ -6,7 +6,7 @@ Orchestruje wszystkie etapy przetwarzania (7 głównych + opcjonalnie YouTube)
 import time
 import json
 from pathlib import Path
-from typing import Callable, Optional, Dict, Any
+from typing import Callable, Optional, Dict, Any, List
 from datetime import datetime, timedelta
 
 from .config import Config
