@@ -264,7 +264,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         
         # Generuj linie napisów z word-level timing
         words = segment.get('words', [])
-        
+
         if not words:
             # Fallback - użyj całego tekstu
             text = segment.get('text', '').strip()
@@ -273,36 +273,36 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         else:
             # Grupuj słowa w krótkie frazy (3-4 słowa) dla lepszej czytelności
             # Krótsze frazy bo większa czcionka (68px)
-            phrase_length = 4
+            PHRASE_LENGTH = 4
             i = 0
-            
+
             while i < len(words):
                 # Zbierz 4-6 słów
-                phrase_words = words[i:i+phrase_length]
-                
+                phrase_words = words[i:i+PHRASE_LENGTH]
+
                 if not phrase_words:
                     break
-                
+
                 # Oblicz timing względem początku clipu
                 start_time = phrase_words[0]['start'] - clip['t0']
                 end_time = phrase_words[-1]['end'] - clip['t0']
-                
+
                 # Zabezpieczenie przed ujemnymi czasami
                 start_time = max(0, start_time)
                 end_time = max(start_time + 0.5, end_time)
-                
+
                 # Złącz słowa
-                text = ' '.join(w['word'] for w in phrase_words)
-                
+                phrase_text = ' '.join(w['word'] for w in phrase_words)
+
                 # Dodaj linię ASS
                 ass_content += (
                     f"Dialogue: 0,"
                     f"{self._format_ass_time(start_time)},"
                     f"{self._format_ass_time(end_time)},"
-                    f"Default,,0,0,0,,{text}\n"
+                    f"Default,,0,0,0,,{phrase_text}\n"
                 )
-                
-                i += phrase_length
+
+                i += PHRASE_LENGTH
         
         # Zapisz ASS
         with open(ass_file, 'w', encoding='utf-8') as f:
