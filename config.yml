@@ -115,20 +115,20 @@ streaming:
 
 # === Clip Selection ===
 selection:
-  # Duration constraints
-  min_clip_duration: 45.0      # Main video clips (było 60.0)
+  # Duration constraints (STREAM OPTIMIZED v1.2.1)
+  min_clip_duration: 30.0      # ZMIENIONE z 45.0 → 30.0 (stream-friendly!)
   min_short_duration: 20.0     # Shorts only (shorter OK)
-  max_clip_duration: 180.0     # 3 min max
-  target_total_duration: 2400.0  # 40 min target
-  
+  max_clip_duration: 120.0     # ZMIENIONE z 180.0 → 120.0 (shorter for streams)
+  target_total_duration: 3600.0  # ZMIENIONE z 2400.0 → 3600.0 (60 min target!)
+
   # Number of clips
-  min_clips: 5  # Zmniejszone z 8
-  max_clips: 25
-  
+  min_clips: 10  # ZMIENIONE z 5 → 10
+  max_clips: 40  # ZMIENIONE z 25 → 40
+
   # Temporal constraints
-  min_time_gap: 20.0  # Zmniejszone z 30
-  smart_merge_gap: 5.0  # Gap for merging
-  smart_merge_min_score: 0.5  # Zmniejszone z 0.6
+  min_time_gap: 15.0  # ZMIENIONE z 20.0 → 15.0 (clips can be closer)
+  smart_merge_gap: 8.0  # ZMIENIONE z 5.0 → 8.0 (merge clips up to 8s apart)
+  smart_merge_min_score: 0.5  # bez zmian
   
   # Coverage optimization
   position_bins: 5  # Broadcast phases
