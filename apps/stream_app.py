@@ -33,6 +33,9 @@ from pipeline.config import Config
 
 # Streaming module imports
 from modules.streaming import create_scorer_from_chat, ChatAnalyzer
+from modules.streaming.context_detector import (
+    parse_stream_context, ContentType, Language, format_context_summary
+)
 
 
 class StreamingProcessingThread(QThread):
@@ -45,12 +48,22 @@ class StreamingProcessingThread(QThread):
     processing_completed = pyqtSignal(dict)  # (results)
     processing_failed = pyqtSignal(str)  # (error_message)
 
-    def __init__(self, input_file: str, config: Config, chat_data: dict = None, chat_path: str = None):
+    def __init__(
+        self,
+        input_file: str,
+        config: Config,
+        chat_data: dict = None,
+        chat_path: str = None,
+        language: str = "pl",
+        stream_context: dict = None
+    ):
         super().__init__()
         self.input_file = input_file
         self.config = config
         self.chat_data = chat_data
         self.chat_path = chat_path
+        self.language = language
+        self.stream_context = stream_context or {}
         self.processor = None
         self.chat_scorer = None
         self._is_running = True
@@ -91,8 +104,18 @@ class StreamingProcessingThread(QThread):
             else:
                 self.log_message.emit("INFO", "No chat file provided - using audio-only scoring")
 
+            # Override language from GUI
+            if self.language:
+                self.config.asr.language = self.language
+                self.log_message.emit("INFO", f"🌍 ASR Language: {Language.get_name(self.language)} ({self.language})")
+
             # Initialize processor
             self.processor = PipelineProcessor(self.config)
+
+            # Set stream context on export stage for context-aware titles
+            if self.stream_context:
+                self.processor.stages['export'].stream_context = self.stream_context
+                self.log_message.emit("INFO", "📋 Context-aware title generation enabled")
 
             # Progress callback
             def progress_callback(stage: str, percent: int, message: str):
@@ -155,6 +178,13 @@ class StreamHighlightsApp(QMainWindow):
         self.chat_path = None
         self.chat_data = None
 
+        # Stream context (language + content)
+        self.language = Language.POLISH  # Default
+        self.streamer_name = ""
+        self.content_type = ContentType.VARIETY
+        self.activity = ""
+        self.stream_title = ""
+
         # Processing thread
         self.processing_thread = None
 
@@ -185,6 +215,73 @@ class StreamHighlightsApp(QMainWindow):
         info.setWordWrap(True)
         info.setStyleSheet("color: #666; padding: 5px; margin-bottom: 10px;")
         layout.addWidget(info)
+
+        # === LANGUAGE SELECTION ===
+        lang_group = QGroupBox("🌍 Język / Language")
+        lang_layout = QVBoxLayout()
+
+        lang_info = QLabel("Wybierz język dla: transkrypcji, tytułów, opisów")
+        lang_info.setStyleSheet("color: #666; font-size: 9pt; margin-bottom: 5px;")
+        lang_layout.addWidget(lang_info)
+
+        # Language buttons layout
+        lang_buttons = QHBoxLayout()
+
+        self.lang_pl = QPushButton("🇵🇱 Polski")
+        self.lang_pl.setCheckable(True)
+        self.lang_pl.setChecked(True)
+        self.lang_pl.clicked.connect(lambda: self.set_language(Language.POLISH))
+        self.lang_pl.setStyleSheet("""
+            QPushButton {
+                padding: 10px;
+                font-weight: bold;
+                border: 2px solid #9146FF;
+                border-radius: 5px;
+            }
+            QPushButton:checked {
+                background-color: #9146FF;
+                color: white;
+            }
+        """)
+        lang_buttons.addWidget(self.lang_pl)
+
+        self.lang_en = QPushButton("🇬🇧 English")
+        self.lang_en.setCheckable(True)
+        self.lang_en.clicked.connect(lambda: self.set_language(Language.ENGLISH))
+        self.lang_en.setStyleSheet("""
+            QPushButton {
+                padding: 10px;
+                font-weight: bold;
+                border: 2px solid #9146FF;
+                border-radius: 5px;
+            }
+            QPushButton:checked {
+                background-color: #9146FF;
+                color: white;
+            }
+        """)
+        lang_buttons.addWidget(self.lang_en)
+
+        self.lang_de = QPushButton("🇩🇪 Deutsch")
+        self.lang_de.setCheckable(True)
+        self.lang_de.clicked.connect(lambda: self.set_language(Language.GERMAN))
+        self.lang_de.setStyleSheet("""
+            QPushButton {
+                padding: 10px;
+                font-weight: bold;
+                border: 2px solid #9146FF;
+                border-radius: 5px;
+            }
+            QPushButton:checked {
+                background-color: #9146FF;
+                color: white;
+            }
+        """)
+        lang_buttons.addWidget(self.lang_de)
+
+        lang_layout.addLayout(lang_buttons)
+        lang_group.setLayout(lang_layout)
+        layout.addWidget(lang_group)
 
         # === FILE SELECTION ===
         file_group = QGroupBox("📁 Pliki")
@@ -223,6 +320,64 @@ class StreamHighlightsApp(QMainWindow):
 
         file_group.setLayout(file_layout)
         layout.addWidget(file_group)
+
+        # === CONTENT CONTEXT ===
+        context_group = QGroupBox("🎮 Kontekst Contentu")
+        context_layout = QVBoxLayout()
+
+        # Streamer name
+        streamer_layout = QHBoxLayout()
+        streamer_layout.addWidget(QLabel("Streamer:"))
+        self.streamer_field = QLineEdit()
+        self.streamer_field.setPlaceholderText("np. Gucio, LVNDMARK, xQc (auto-detect z pliku)")
+        self.streamer_field.textChanged.connect(lambda text: setattr(self, 'streamer_name', text))
+        streamer_layout.addWidget(self.streamer_field)
+        context_layout.addLayout(streamer_layout)
+
+        # Content type
+        type_layout = QHBoxLayout()
+        type_layout.addWidget(QLabel("Typ contentu:"))
+        self.content_type_combo = QComboBox()
+        self.content_type_combo.addItems([
+            ContentType.GAMING,
+            ContentType.IRL,
+            ContentType.EVENT,
+            ContentType.JUST_CHATTING,
+            ContentType.VARIETY
+        ])
+        self.content_type_combo.setCurrentText(ContentType.VARIETY)
+        self.content_type_combo.currentTextChanged.connect(lambda text: setattr(self, 'content_type', text))
+        type_layout.addWidget(self.content_type_combo)
+        type_layout.addStretch()
+        context_layout.addLayout(type_layout)
+
+        # Activity/Game
+        activity_layout = QHBoxLayout()
+        activity_layout.addWidget(QLabel("Aktywność/Gra:"))
+        self.activity_field = QLineEdit()
+        self.activity_field.setPlaceholderText("np. Tarkov, CS2, Mixed, IRL Warszawa (opcjonalne)")
+        self.activity_field.textChanged.connect(lambda text: setattr(self, 'activity', text))
+        activity_layout.addWidget(self.activity_field)
+        context_layout.addLayout(activity_layout)
+
+        # Stream title
+        title_layout = QHBoxLayout()
+        title_layout.addWidget(QLabel("Tytuł streamu:"))
+        self.title_field = QLineEdit()
+        self.title_field.setPlaceholderText("Tytuł z pliku (opcjonalne)")
+        self.title_field.textChanged.connect(lambda text: setattr(self, 'stream_title', text))
+        title_layout.addWidget(self.title_field)
+        context_layout.addLayout(title_layout)
+
+        # Context help
+        context_help = QLabel(
+            "💡 Pola wypełnią się automatycznie po wybraniu VOD. Możesz je edytować."
+        )
+        context_help.setStyleSheet("color: #FF9800; font-style: italic; font-size: 9pt; padding: 5px;")
+        context_layout.addWidget(context_help)
+
+        context_group.setLayout(context_layout)
+        layout.addWidget(context_group)
 
         # === SETTINGS ===
         settings_group = QGroupBox("⚙️ Ustawienia")
@@ -337,6 +492,18 @@ class StreamHighlightsApp(QMainWindow):
 
         layout.addStretch()
 
+    def set_language(self, lang_code: str):
+        """Set language and update UI"""
+        self.language = lang_code
+
+        # Update button states
+        self.lang_pl.setChecked(lang_code == Language.POLISH)
+        self.lang_en.setChecked(lang_code == Language.ENGLISH)
+        self.lang_de.setChecked(lang_code == Language.GERMAN)
+
+        lang_name = Language.get_name(lang_code)
+        self.log(f"Language set to: {lang_name} ({lang_code})", "INFO")
+
     def select_vod(self):
         """Select stream VOD file"""
         file, _ = QFileDialog.getOpenFileName(
@@ -352,6 +519,26 @@ class StreamHighlightsApp(QMainWindow):
             self.vod_label.setText(f"✅ {filename}")
             self.vod_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
             self.log(f"VOD selected: {filename}", "INFO")
+
+            # Auto-detect stream context
+            context = parse_stream_context(file)
+
+            # Update context fields
+            self.streamer_field.setText(context['streamer'])
+            self.content_type_combo.setCurrentText(context['content_type'])
+            self.activity_field.setText(context['activity'])
+            self.title_field.setText(context['stream_title'])
+
+            # Update language if detected differently
+            detected_lang = context['language']
+            if detected_lang != self.language:
+                self.set_language(detected_lang)
+
+            # Log detected context
+            self.log("📋 Auto-detected context:", "INFO")
+            for line in format_context_summary(context).split('\n'):
+                self.log(f"   {line}", "INFO")
+
             self._check_ready()
 
     def select_chat(self):
@@ -437,8 +624,24 @@ class StreamHighlightsApp(QMainWindow):
         else:
             self.log("⚠️ No chat file - using audio-only scoring", "WARNING")
 
+        # Log language and content context
+        self.log(f"🌍 Language: {Language.get_name(self.language)} ({self.language})", "INFO")
+        self.log(f"🎮 Streamer: {self.streamer_name or 'Unknown'}", "INFO")
+        self.log(f"📋 Content Type: {self.content_type}", "INFO")
+        if self.activity:
+            self.log(f"🎯 Activity: {self.activity}", "INFO")
+
         self.log(f"⚙️ Target clips: {self.num_clips.value()}", "INFO")
         self.log(f"⚙️ Clip duration: {self.clip_duration.value()}s", "INFO")
+
+        # Prepare stream context dict
+        stream_context = {
+            'streamer': self.streamer_name,
+            'content_type': self.content_type,
+            'activity': self.activity,
+            'stream_title': self.stream_title,
+            'language': self.language
+        }
 
         # Disable controls
         self.start_btn.setEnabled(False)
@@ -453,7 +656,9 @@ class StreamHighlightsApp(QMainWindow):
             input_file=self.vod_path,
             config=self.config,
             chat_data=self.chat_data,
-            chat_path=self.chat_path
+            chat_path=self.chat_path,
+            language=self.language,
+            stream_context=stream_context
         )
 
         # Connect signals
