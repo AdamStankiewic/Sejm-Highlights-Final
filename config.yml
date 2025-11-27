@@ -27,12 +27,11 @@ asr:
   
   # Initial prompt for better name accuracy
   initial_prompt: |
-    Wydarzenie polityczne: posiedzenie Sejmu, konferencja prasowa, spotkanie polityków, debata.
-    Politycy: Donald Tusk, Jarosław Kaczyński, Szymon Hołownia,
+    Posiedzenie Sejmu Rzeczypospolitej Polskiej.
+    Posłowie: Donald Tusk, Jarosław Kaczyński, Szymon Hołownia,
     Krzysztof Bosak, Władysław Kosiniak-Kamysz, Przemysław Czarnek,
-    Borys Budka, Bartłomiej Sienkiewicz, Radosław Fogiel, Mateusz Morawiecki,
-    Andrzej Duda, Rafał Trzaskowski, Zbigniew Ziobro.
-    Tematy: budżet, polityka zagraniczna, sprawy wewnętrzne, Unia Europejska, Ukraina.
+    Borys Budka, Bartłomiej Sienkiewicz, Radosław Fogiel.
+    Tematy: budżet państwa, polityka zagraniczna, sprawy wewnętrzne.
   
   batch_size: 10
 
@@ -95,41 +94,21 @@ scoring:
   # Position diversity bonus
   position_diversity_bonus: 0.1
 
-# === Streaming Chat-Based Scoring ===
-streaming:
-  # Chat delay offset (seconds)
-  # Streams have delay: Twitch 3-10s, YouTube 10-30s, Kick 5-15s
-  # Action happens BEFORE chat reacts - we need to look back
-  chat_delay_offset: 10.0  # Look back 10s before chat spike
-
-  # Highlight window configuration
-  # When chat spike at T, create highlight: (T - offset - pre) to (T + post)
-  pre_spike_window: 15.0   # Capture 15s of buildup before spike
-  post_spike_window: 5.0   # Capture 5s after spike peak
-
-  # Scoring weights (can be overridden in stream_app.py)
-  weight_chat_spike: 0.30
-  weight_emote_quality: 0.25
-  weight_engagement: 0.20
-  weight_audio: 0.15
-  weight_viewer_normalized: 0.10
-
 # === Clip Selection ===
 selection:
-  # Duration constraints (STREAM OPTIMIZED v1.2.1)
-  min_clip_duration: 30.0      # ZMIENIONE z 45.0 → 30.0 (stream-friendly!)
-  min_short_duration: 20.0     # Shorts only (shorter OK)
-  max_clip_duration: 120.0     # ZMIENIONE z 180.0 → 120.0 (shorter for streams)
-  target_total_duration: 3600.0  # ZMIENIONE z 2400.0 → 3600.0 (60 min target!)
-
+  # Duration constraints
+  min_clip_duration: 45.0      # było 60.0 (krótsze OK)
+  max_clip_duration: 180.0     # bez zmian (3 min max)
+  target_total_duration: 2400.0  # było 1320.0 (40 min zamiast 22)
+  
   # Number of clips
-  min_clips: 10  # ZMIENIONE z 5 → 10
-  max_clips: 40  # ZMIENIONE z 25 → 40
-
+  min_clips: 5  # Zmniejszone z 8
+  max_clips: 25
+  
   # Temporal constraints
-  min_time_gap: 15.0  # ZMIENIONE z 20.0 → 15.0 (clips can be closer)
-  smart_merge_gap: 8.0  # ZMIENIONE z 5.0 → 8.0 (merge clips up to 8s apart)
-  smart_merge_min_score: 0.5  # bez zmian
+  min_time_gap: 20.0  # Zmniejszone z 30
+  smart_merge_gap: 5.0  # Gap for merging
+  smart_merge_min_score: 0.5  # Zmniejszone z 0.6
   
   # Coverage optimization
   position_bins: 5  # Broadcast phases
@@ -198,12 +177,14 @@ splitter:
   use_politicians_in_titles: true
   first_premiere_days_offset: 1
 
-# config.yml
+# === YouTube Upload Configuration ===
 youtube:
-  enabled: true  # Zmień na true gdy chcesz uploadować
+  enabled: true  # Global enable/disable
+  credentials_path: "client_secret.json"  # OAuth credentials
+
+  # Default settings (fallback if no profile selected)
   privacy_status: "unlisted"
   schedule_as_premiere: true
-  credentials_path: "client_secret.json"
   channel_id: "UCSlsIpJrotOvA1wbA4Z46zA"
   category_id: "25"
   language: "pl"
@@ -216,90 +197,54 @@ youtube:
   auto_description: true
   auto_tags: true
 
-# === AI Thumbnail Generation ===
-thumbnails:
-  enabled: true
-  generate_variants: true  # Generuj kilka wersji
-  num_variants: 3
+# === Upload Profiles (Multi-channel support) ===
+upload_profiles:
+  sejm:
+    name: "Sejm Highlights"
+    channel_id: "UCSlsIpJrotOvA1wbA4Z46zA"
+    token_file: "youtube_token_sejm.json"  # Osobny token dla kanału
 
-  # Wymiary YouTube
-  width: 1920  # 1920x1080 dla lepszej jakości
-  height: 1080
-  quality: 92  # JPEG quality (92-95 optimal)
+    # Main videos
+    main_videos:
+      privacy_status: "unlisted"
+      schedule_as_premiere: true
+      category_id: "25"  # News & Politics
+      playlist_id: ""  # Optional: auto-add to playlist
 
-  # GPT Integration dla tytułów
-  use_gpt_titles: true
-  gpt_temperature: 0.8  # Wyższa kreatywność dla tytułów
-  max_title_length: 25  # Max znaków (z emoji!)
+    # Shorts
+    shorts:
+      enabled: true
+      upload: true
+      privacy_status: "public"
+      category_id: "25"
+      playlist_id: ""  # Optional: Shorts playlist
+      add_hashtags: true
 
-  # Strategia wyboru klatki
-  frame_selection:
-    strategy: 'face_priority'  # Opcje: face_priority, best_score, emotional, multi_criteria
-    quality_check: true
-    prefer_open_mouth: true  # Preferuj emocjonalne ekspresje
-    sample_frames: 20  # Ile klatek sprawdzić w klipie
+  stream:
+    name: "Live Streams"
+    channel_id: "UCq5S2-INMkM8AEvYsFu4BOg"
+    token_file: "youtube_token_stream.json"
 
-  # Predefiniowane style/templates
-  templates:
-    aggressive:
-      description: "Maksymalny clickbait, emocje, CAPS"
-      text_position: 'top_bottom'
-      primary_color: '#FFFF00'  # Żółty
-      secondary_color: '#FF0000'  # Czerwony
-      outline_color: '#000000'
-      outline_width: 8
-      emoji_pool: ['🔥', '💥', '😱', '⚡', '🚨']
-      gradient_direction: 'both'
-      font_size_multiplier: 1.2
+    # Main videos
+    main_videos:
+      privacy_status: "public"
+      schedule_as_premiere: false
+      category_id: "22"  # People & Blogs
+      playlist_id: ""
 
-    question:
-      description: "Pytający, ciekawość"
-      text_position: 'center'
-      primary_color: '#FFFF00'  # Żółty
-      secondary_color: '#FF6600'  # Pomarańczowy
-      outline_color: '#000000'
-      outline_width: 7
-      emoji_pool: ['🤔', '❓', '😱', '🔥']
-      gradient_direction: 'bottom'
-      font_size_multiplier: 1.1
+    # Shorts
+    shorts:
+      enabled: true
+      upload: true
+      privacy_status: "public"
+      category_id: "22"
+      playlist_id: ""
+      add_hashtags: true
 
-    viral:
-      description: "Neonowy, viralowy, TikTok style"
-      text_position: 'split'
-      primary_color: '#FF00FF'  # Magenta
-      secondary_color: '#00FFFF'  # Cyan
-      outline_color: '#000000'
-      outline_width: 9
-      emoji_pool: ['😱', '🤯', '💀', '🔥', '⚡']
-      gradient_direction: 'both'
-      font_size_multiplier: 1.15
-
-  # Visual enhancements
-  enhancements:
-    contrast: 1.3  # Zwiększ kontrast
-    saturation: 1.2  # Zwiększ saturację
-    sharpness: 1.1  # Lekkie wyostrzenie
-    add_arrows: false  # Strzałki wskazujące (opcjonalne)
-    add_circles: false  # Koła wskazujące (opcjonalne)
-
-  # Mobile optimization
-  mobile_test:
-    enabled: true
-    test_width: 320  # Test w rozmiarze mobile
-    test_height: 180
-    min_readability: 0.8  # Min 80% czytelności
-
-  # Output
-  output_format: 'jpg'
-  save_metadata: true  # Zapisz metadata.json z wariantami
-
-# Pozostałe sekcje (audio, vad, asr, etc.) użyją domyślnych wartości
-# === YouTube Shorts ===
+# === YouTube Shorts (Global defaults) ===
 shorts:
-  # Enable/disable Shorts generation
-  enabled: true  # Domyślnie wyłączone
-
-  # Selection criteria
+  # Generation settings
+  enabled: true  # Generate Shorts
   min_duration: 15.0  # Min 15s dla Shorts
   max_duration: 60.0  # Max 60s (YouTube Shorts limit)
   max_shorts_count: 10  # Max liczba Shorts do wygenerowania
@@ -312,58 +257,13 @@ shorts:
   pre_roll: 0.5  # Sekund przed klipem
   post_roll: 0.5  # Sekund po klipie
 
-  # === INTRO OVERLAY SYSTEM ===
-  intro:
-    enabled: true  # Włącz intro overlay
-    style: 'overlay'  # Style: overlay, title_card (future)
-    duration: 2.5  # Jak długo intro jest widoczne (sekundy)
-    fade_in: 0.3  # Fade in animation (sekundy)
-    fade_out: 0.5  # Fade out animation (sekundy)
-
-    # GPT Ultra-Short Titles
-    use_gpt_titles: true
-    title_max_length: 15  # ULTRA KRÓTKIE! (z emoji)
-    gpt_temperature: 0.9  # Wysoka kreatywność
-
-    # Text Layout (1080x1920 vertical)
-    text:
-      emoji_top:
-        enabled: true
-        position_y: 200  # Y position (from top)
-        size: 140  # Emoji size (px)
-        count: 2  # Max 2 emoji
-
-      title_bottom:
-        position_y: 1600  # Y position (from top, above UI zone)
-        font_size: 90  # Large for readability (70-110px)
-        max_lines: 2  # Max lines
-        alignment: 'center'
-
-    # Colors (Shorts = więcej neon/aggressive)
-    colors:
-      text: '#FFFF00'  # Żółty (najbardziej czytelny)
-      outline: '#000000'  # Czarny outline
-      outline_width: 10  # Gruby outline (8-12px)
-      glow: false  # Neon glow effect (future)
-
-    # Emoji pool dla Shorts (bardziej Gen-Z)
-    emoji_pool: ['💥', '😱', '🔥', '⚡', '🤯', '💀', '👀', '🚨']
-
-    # Safe zones (avoid YouTube UI)
-    safe_zones:
-      avoid_top: 150  # Top UI (channel name, time)
-      avoid_bottom: 250  # Bottom UI (like/comment/share buttons)
-  
-  # Subtitles (UWAGA: wyłączone przez problemy z fontconfig na Windows)
-  # Pliki SRT są generowane osobno i można je:
-  # - Dodać w YouTube Studio po uploadzie
-  # - Użyć z zewnętrznym narzędziem do napisów
-  subtitle_fontsize: 48  # Duże napisy dla mobile (gdy włączone)
+  # Subtitles
+  subtitle_fontsize: 68  # Duże napisy dla mobile
   subtitle_position: "center"  # center, top, bottom
-  
-  # Upload settings
-  upload_to_youtube: false  # Auto-upload Shorts
-  shorts_category_id: "25"  # News & Politics
+
+  # Upload defaults (overridden by upload_profiles)
+  upload_to_youtube: true  # WŁĄCZONE - użyj profile settings
+  privacy_status: "public"  # Default if no profile
   add_hashtags: true  # Dodaj #Shorts automatycznie
 
 # === CHANGELOG v1.2 FINAL ===

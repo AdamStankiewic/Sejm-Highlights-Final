@@ -27,17 +27,36 @@ class PipelineProcessor:
     """
     Główny processor zarządzający całym pipeline'em
     """
-    
-    def __init__(self, config: Config):
+
+    def __init__(self, config: Config, upload_profile: Optional[str] = None, use_queue: bool = False):
+        """
+        Initialize pipeline processor
+
+        Args:
+            config: Pipeline configuration
+            upload_profile: Optional upload profile name ('sejm', 'stream', etc.)
+                          If None, auto-detects or uses default
+            use_queue: If True, add videos to Upload Queue instead of immediate upload
+        """
         self.config = config
         self.config.validate()
-        
+
+        # Upload profile for YouTube
+        self.upload_profile = upload_profile
+
+        # Upload Queue mode
+        self.use_queue = use_queue
+        self.upload_queue = None
+        if use_queue:
+            from .upload_queue import UploadQueue
+            self.upload_queue = UploadQueue()
+
         # Progress callback
         self.progress_callback: Optional[Callable] = None
-        
+
         # Cancellation flag
         self._cancelled = False
-        
+
         # Timing stats
         self.timing_stats = {}
         
@@ -163,9 +182,33 @@ class PipelineProcessor:
         # YouTube limit
         if len(title) > 100:
             title = title[:97] + "..."
-        
+
         return title
-    
+
+    def _add_to_upload_queue(self, video_file: str, title: str, description: str,
+                            tags: List[str], video_type: str = "main",
+                            thumbnail_file: Optional[str] = None) -> str:
+        """Add video to upload queue"""
+        from .upload_queue import QueueItem
+        import uuid
+
+        item = QueueItem(
+            id=f"upload_{uuid.uuid4().hex[:8]}",
+            video_file=video_file,
+            title=title,
+            description=description,
+            tags=tags,
+            profile_name=self.upload_profile or "sejm",
+            video_type=video_type,
+            thumbnail_file=thumbnail_file,
+            duration=None,  # Can be added if needed
+            file_size=Path(video_file).stat().st_size if Path(video_file).exists() else None
+        )
+
+        item_id = self.upload_queue.add(item)
+        print(f"   ✅ Dodano do Upload Queue: {item_id}")
+        return item_id
+
     def process(self, input_file: str) -> Dict[str, Any]:
             """
             Główna metoda przetwarzania
@@ -371,26 +414,76 @@ class PipelineProcessor:
                 # === ETAP 9: YouTube Upload (dla każdej części z premiere scheduling) ===
                 youtube_results = []
                 if self.config.youtube.enabled:
-                    from .stage_09_youtube import YouTubeStage
-                    youtube_stage = YouTubeStage(self.config)
-                    youtube_stage.authorize()
-                    
-                    if parts_metadata:
-                        # Multi-part upload z premiere scheduling
-                        for i, part_meta in enumerate(parts_metadata):
-                            print(f"\n📤 Upload części {part_meta['part_number']}/{part_meta['total_parts']}...")
-                            
+                    if self.use_queue:
+                        # ADD TO QUEUE MODE
+                        print("\n📋 Dodawanie filmów do Upload Queue...")
+
+                        if parts_metadata:
+                            # Multi-part - add each part to queue
+                            for i, part_meta in enumerate(parts_metadata):
+                                video_title = self.smart_splitter.generate_enhanced_title(
+                                    part_meta,
+                                    part_meta['clips'],
+                                    use_politicians=self.config.splitter.use_politicians_in_titles
+                                )
+
+                                description = f"Posiedzenie Sejmu - Część {part_meta['part_number']}/{part_meta['total_parts']}"
+                                tags = ["Sejm", "Polityka", "Polska", "Parliament"]
+
+                                item_id = self._add_to_upload_queue(
+                                    video_file=export_results[i]['output_file'],
+                                    title=video_title,
+                                    description=description,
+                                    tags=tags,
+                                    video_type="main",
+                                    thumbnail_file=thumbnail_results[i].get('thumbnail_path') if thumbnail_results else None
+                                )
+
+                                youtube_results.append({'success': True, 'queue_id': item_id})
+                        else:
+                            # Single video - add to queue
+                            video_title = self._generate_youtube_title(selection_result)
+                            description = "Najlepsze momenty z posiedzenia Sejmu"
+                            tags = ["Sejm", "Polityka", "Polska", "Parliament"]
+
+                            item_id = self._add_to_upload_queue(
+                                video_file=export_results[0]['output_file'],
+                                title=video_title,
+                                description=description,
+                                tags=tags,
+                                video_type="main",
+                                thumbnail_file=thumbnail_results[0].get('thumbnail_path') if thumbnail_results else None
+                            )
+
+                            youtube_results.append({'success': True, 'queue_id': item_id})
+
+                        print(f"✅ Dodano {len(youtube_results)} filmów do Upload Queue")
+
+                    else:
+                        # IMMEDIATE UPLOAD MODE
+                        from .stage_09_youtube import YouTubeStage
+                        youtube_stage = YouTubeStage(self.config, profile_name=self.upload_profile)
+                        youtube_stage.authorize()
+
+                        # Get profile settings for main videos
+                        main_settings = youtube_stage.get_profile_settings('main')
+
+                        if parts_metadata:
+                            # Multi-part upload z premiere scheduling
+                            for i, part_meta in enumerate(parts_metadata):
+                                print(f"\n📤 Upload części {part_meta['part_number']}/{part_meta['total_parts']}...")
+
                             # Generuj enhanced title
                             video_title = self.smart_splitter.generate_enhanced_title(
                                 part_meta,
                                 part_meta['clips'],
                                 use_politicians=self.config.splitter.use_politicians_in_titles
                             )
-                            
-                            # Determine privacy/premiere status
+
+                            # Determine privacy/premiere status from profile
                             premiere_datetime = datetime.fromisoformat(part_meta['premiere_datetime'])
-                            
-                            if self.config.youtube.schedule_as_premiere:
+
+                            if main_settings.get('schedule_as_premiere', False):
                                 # Schedule as premiere
                                 youtube_result = youtube_stage.schedule_premiere(
                                     video_file=export_results[i]['output_file'],
@@ -402,7 +495,7 @@ class PipelineProcessor:
                                     premiere_datetime=premiere_datetime
                                 )
                             else:
-                                # Upload unlisted/private
+                                # Upload with profile privacy settings
                                 youtube_result = youtube_stage.process(
                                     video_file=export_results[i]['output_file'],
                                     thumbnail_file=thumbnail_results[i].get('thumbnail_path') if thumbnail_results else None,
@@ -410,9 +503,16 @@ class PipelineProcessor:
                                     clips=part_meta['clips'],
                                     segments=scoring_result['segments'],
                                     output_dir=self.config.output_dir,
-                                    privacy_status='unlisted'
+                                    privacy_status=main_settings['privacy_status']
                                 )
-                            
+
+                            # Add to playlist if specified in profile
+                            if youtube_result.get('success') and main_settings.get('playlist_id'):
+                                youtube_stage.playlist_manager.add_video_to_playlist(
+                                    main_settings['playlist_id'],
+                                    youtube_result['video_id']
+                                )
+
                             youtube_results.append(youtube_result)
                     else:
                         # Single upload (standardowy)
@@ -424,8 +524,16 @@ class PipelineProcessor:
                             clips=selection_result['clips'],
                             segments=scoring_result['segments'],
                             output_dir=self.config.output_dir,
-                            privacy_status=self.config.youtube.privacy_status
+                            privacy_status=main_settings['privacy_status']
                         )
+
+                        # Add to playlist if specified in profile
+                        if youtube_result.get('success') and main_settings.get('playlist_id'):
+                            youtube_stage.playlist_manager.add_video_to_playlist(
+                                main_settings['playlist_id'],
+                                youtube_result['video_id']
+                            )
+
                         youtube_results.append(youtube_result)
                 
                 # === ETAP 10: YouTube Shorts Generation (optional) ===
@@ -452,31 +560,65 @@ class PipelineProcessor:
                     
                     # Optional: Upload Shorts to YouTube
                     if self.config.shorts.upload_to_youtube and self.config.youtube.enabled:
-                        print("\n📤 Upload Shorts na YouTube...")
-                        from .stage_09_youtube import YouTubeStage
-                        youtube_stage = YouTubeStage(self.config)
-                        youtube_stage.authorize()
-                        
-                        for short_meta in shorts_results:
-                            try:
-                                # Upload as Short (dodaj #Shorts w tytule)
+                        if self.use_queue:
+                            # ADD SHORTS TO QUEUE MODE
+                            print("\n📋 Dodawanie Shorts do Upload Queue...")
+
+                            for short_meta in shorts_results:
                                 short_title = short_meta['title']
-                                if self.config.shorts.add_hashtags and '#Shorts' not in short_title:
+                                if '#Shorts' not in short_title:
                                     short_title += " #Shorts"
-                                
-                                upload_result = youtube_stage.upload_video(
+
+                                item_id = self._add_to_upload_queue(
                                     video_file=short_meta['file'],
                                     title=short_title,
                                     description=short_meta['description'],
                                     tags=short_meta['tags'],
-                                    category_id=self.config.shorts.shorts_category_id,
-                                    privacy_status='unlisted'  # lub 'public'
+                                    video_type="shorts"
                                 )
-                                
+
+                                short_meta['queue_id'] = item_id
+
+                            print(f"✅ Dodano {len(shorts_results)} Shorts do Upload Queue")
+
+                        else:
+                            # IMMEDIATE UPLOAD MODE
+                            print("\n📤 Upload Shorts na YouTube...")
+                            from .stage_09_youtube import YouTubeStage
+                            shorts_youtube_stage = YouTubeStage(self.config, profile_name=self.upload_profile)
+                            shorts_youtube_stage.authorize()
+
+                            # Get profile settings for Shorts
+                            shorts_settings = shorts_youtube_stage.get_profile_settings('shorts')
+
+                            for short_meta in shorts_results:
+                                try:
+                                    # Upload as Short (dodaj #Shorts w tytule)
+                                    short_title = short_meta['title']
+                                    if shorts_settings.get('add_hashtags', False) and '#Shorts' not in short_title:
+                                        short_title += " #Shorts"
+
+                                    # Upload using profile settings
+                                    upload_result = shorts_youtube_stage.upload_video(
+                                    video_file=short_meta['file'],
+                                    title=short_title,
+                                    description=short_meta['description'],
+                                    tags=short_meta['tags'],
+                                    category_id=shorts_settings['category_id'],
+                                    privacy_status=shorts_settings['privacy_status']
+                                )
+
                                 if upload_result.get('success'):
                                     short_meta['youtube_url'] = upload_result['video_url']
                                     print(f"   ✅ Short uploaded: {upload_result['video_url']}")
-                                
+
+                                    # Add to playlist if specified in profile
+                                    if shorts_settings.get('playlist_id'):
+                                        shorts_youtube_stage.playlist_manager.add_video_to_playlist(
+                                            shorts_settings['playlist_id'],
+                                            upload_result['video_id']
+                                        )
+
                             except Exception as e:
                                 print(f"   ⚠️ Błąd uploadu Short: {e}")
                 

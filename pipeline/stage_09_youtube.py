@@ -16,23 +16,108 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
 
+from .youtube_playlist_manager import PlaylistManager
+
 
 class YouTubeStage:
     """
-    Stage 9: Upload video na YouTube
+    Stage 9: Upload video na YouTube with multi-channel profile support
     """
-    
+
     # Scopes wymagane do uploadu video
     SCOPES = [
         'https://www.googleapis.com/auth/youtube.upload',
         'https://www.googleapis.com/auth/youtube',
         'https://www.googleapis.com/auth/youtube.readonly'
     ]
-    
-    def __init__(self, config):
+
+    def __init__(self, config, profile_name: Optional[str] = None):
+        """
+        Initialize YouTube Stage
+
+        Args:
+            config: Pipeline config
+            profile_name: Optional upload profile name (e.g., 'sejm', 'stream')
+                         If None, uses default YouTube config
+        """
         self.config = config
         self.credentials = None
         self.youtube_service = None
+        self.playlist_manager = None
+
+        # Profile management
+        self.current_profile = None
+        self.current_profile_name = profile_name
+
+        # Load profile if specified
+        if profile_name:
+            self.set_profile(profile_name)
+
+    def set_profile(self, profile_name: str):
+        """
+        Set active upload profile
+
+        Args:
+            profile_name: Name of profile from config (e.g., 'sejm', 'stream')
+        """
+        profile = self.config.get_upload_profile(profile_name)
+
+        if not profile:
+            available = self.config.list_upload_profiles()
+            raise ValueError(
+                f"Profile '{profile_name}' not found. Available: {available}"
+            )
+
+        self.current_profile = profile
+        self.current_profile_name = profile_name
+
+        print(f"📺 Profil uploadowy: {profile.name} (kanał: {profile.channel_id[:15]}...)")
+
+    def get_profile_settings(self, video_type: str = 'main') -> Dict[str, Any]:
+        """
+        Get upload settings from current profile
+
+        Args:
+            video_type: 'main' or 'shorts'
+
+        Returns:
+            Dict with privacy_status, category_id, playlist_id, etc.
+        """
+        # Use profile if set, otherwise use global config
+        if self.current_profile:
+            if video_type == 'shorts':
+                settings = self.current_profile.shorts
+                return {
+                    'privacy_status': settings.privacy_status,
+                    'category_id': settings.category_id,
+                    'playlist_id': settings.playlist_id,
+                    'add_hashtags': settings.add_hashtags,
+                    'channel_id': self.current_profile.channel_id
+                }
+            else:  # main videos
+                settings = self.current_profile.main_videos
+                return {
+                    'privacy_status': settings.privacy_status,
+                    'schedule_as_premiere': settings.schedule_as_premiere,
+                    'category_id': settings.category_id,
+                    'playlist_id': settings.playlist_id,
+                    'channel_id': self.current_profile.channel_id
+                }
+        else:
+            # Fallback to global YouTube config
+            return {
+                'privacy_status': self.config.youtube.privacy_status,
+                'schedule_as_premiere': self.config.youtube.schedule_as_premiere,
+                'category_id': self.config.youtube.category_id,
+                'playlist_id': '',
+                'channel_id': self.config.youtube.channel_id
+            }
+
+    def _get_token_file(self) -> str:
+        """Get token file path for current profile"""
+        if self.current_profile:
+            return self.current_profile.token_file
+        return "youtube_token.json"
 
     def _generate_clickbait_title(self, clips: list) -> str:
         """Generuj clickbaitowy tytuł"""
@@ -77,9 +162,11 @@ class YouTubeStage:
     def authorize(self):
         """
         Autoryzacja OAuth 2.0 dla YouTube API
+        Uses profile-specific token file if profile is set
+
         Returns: Authenticated YouTube service
         """
-        token_file = Path("youtube_token.json")
+        token_file = Path(self._get_token_file())
         
         # Sprawdź czy credentials_path istnieje
         if not self.config.youtube.credentials_path:
@@ -123,7 +210,10 @@ class YouTubeStage:
         
         # Build YouTube service
         self.youtube_service = build('youtube', 'v3', credentials=self.credentials)
-        
+
+        # Initialize Playlist Manager
+        self.playlist_manager = PlaylistManager(self.youtube_service)
+
         # === POBIERZ WSZYSTKIE KANAŁY UŻYTKOWNIKA ===
         try:
             channels_response = self.youtube_service.channels().list(
@@ -381,12 +471,21 @@ class YouTubeStage:
             # Upload captions if provided
             if srt_file and Path(srt_file).exists():
                 self._upload_captions(video_id, srt_file, language='pl')
-            
+
+            # Add to playlist if specified in profile
+            playlist_added = False
+            if hasattr(self, 'playlist_to_add') and self.playlist_to_add:
+                playlist_added = self.playlist_manager.add_video_to_playlist(
+                    self.playlist_to_add,
+                    video_id
+                )
+
             return {
                 'success': True,
                 'video_id': video_id,
                 'video_url': video_url,
-                'title': title
+                'title': title,
+                'playlist_added': playlist_added
             }
             
         except HttpError as e:
