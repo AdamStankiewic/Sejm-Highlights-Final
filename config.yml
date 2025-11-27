@@ -177,12 +177,14 @@ splitter:
   use_politicians_in_titles: true
   first_premiere_days_offset: 1
 
-# config.yml
+# === YouTube Upload Configuration ===
 youtube:
-  enabled: true  # Zmień na true gdy chcesz uploadować
+  enabled: true  # Global enable/disable
+  credentials_path: "client_secret.json"  # OAuth credentials
+
+  # Default settings (fallback if no profile selected)
   privacy_status: "unlisted"
   schedule_as_premiere: true
-  credentials_path: "client_secret.json"
   channel_id: "UCSlsIpJrotOvA1wbA4Z46zA"
   category_id: "25"
   language: "pl"
@@ -195,35 +197,73 @@ youtube:
   auto_description: true
   auto_tags: true
 
-# Pozostałe sekcje (audio, vad, asr, etc.) użyją domyślnych wartości
-# === YouTube Shorts ===
+# === Upload Profiles (Multi-channel support) ===
+upload_profiles:
+  sejm:
+    name: "Sejm Highlights"
+    channel_id: "UCSlsIpJrotOvA1wbA4Z46zA"
+    token_file: "youtube_token_sejm.json"  # Osobny token dla kanału
+
+    # Main videos
+    main_videos:
+      privacy_status: "unlisted"
+      schedule_as_premiere: true
+      category_id: "25"  # News & Politics
+      playlist_id: ""  # Optional: auto-add to playlist
+
+    # Shorts
+    shorts:
+      enabled: true
+      upload: true
+      privacy_status: "public"
+      category_id: "25"
+      playlist_id: ""  # Optional: Shorts playlist
+      add_hashtags: true
+
+  stream:
+    name: "Live Streams"
+    channel_id: "UCq5S2-INMkM8AEvYsFu4BOg"
+    token_file: "youtube_token_stream.json"
+
+    # Main videos
+    main_videos:
+      privacy_status: "public"
+      schedule_as_premiere: false
+      category_id: "22"  # People & Blogs
+      playlist_id: ""
+
+    # Shorts
+    shorts:
+      enabled: true
+      upload: true
+      privacy_status: "public"
+      category_id: "22"
+      playlist_id: ""
+      add_hashtags: true
+
+# === YouTube Shorts (Global defaults) ===
 shorts:
-  # Enable/disable Shorts generation
-  enabled: true  # Domyślnie wyłączone
-  
-  # Selection criteria
+  # Generation settings
+  enabled: true  # Generate Shorts
   min_duration: 15.0  # Min 15s dla Shorts
   max_duration: 60.0  # Max 60s (YouTube Shorts limit)
   max_shorts_count: 10  # Max liczba Shorts do wygenerowania
-  
+
   # Video format (9:16 vertical)
   width: 1080
   height: 1920
-  
+
   # Timing
   pre_roll: 0.5  # Sekund przed klipem
   post_roll: 0.5  # Sekund po klipie
-  
-  # Subtitles (UWAGA: wyłączone przez problemy z fontconfig na Windows)
-  # Pliki SRT są generowane osobno i można je:
-  # - Dodać w YouTube Studio po uploadzie
-  # - Użyć z zewnętrznym narzędziem do napisów
-  subtitle_fontsize: 48  # Duże napisy dla mobile (gdy włączone)
+
+  # Subtitles
+  subtitle_fontsize: 68  # Duże napisy dla mobile
   subtitle_position: "center"  # center, top, bottom
-  
-  # Upload settings
-  upload_to_youtube: false  # Auto-upload Shorts
-  shorts_category_id: "25"  # News & Politics
+
+  # Upload defaults (overridden by upload_profiles)
+  upload_to_youtube: true  # WŁĄCZONE - użyj profile settings
+  privacy_status: "public"  # Default if no profile
   add_hashtags: true  # Dodaj #Shorts automatycznie
 
 # === CHANGELOG v1.2 FINAL ===
