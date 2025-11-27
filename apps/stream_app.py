@@ -416,6 +416,15 @@ class StreamHighlightsApp(QMainWindow):
         self.config.selection.max_clip_duration = float(self.clip_duration.value())
         self.config.shorts.enabled = self.generate_shorts.isChecked()
 
+        # STREAMING-SPECIFIC: Lower min_clip_duration for gaming streams
+        # Gaming streamers speak in short bursts (15-40s), not long speeches like Sejm
+        self.config.selection.min_clip_duration = 20.0  # Changed from 45s to 20s for streams
+
+        # STREAMING-SPECIFIC: Optimize smart merge for streams
+        # Merge closely related moments (e.g., reaction + outcome of game action)
+        self.config.selection.smart_merge_gap = 8.0  # Increased from 5.0s to merge more aggressively
+        self.config.selection.smart_merge_min_score = 0.45  # Lowered from 0.5 to merge more clips
+
         # Log configuration
         self.log(f"🎬 VOD: {Path(self.vod_path).name}", "INFO")
 
