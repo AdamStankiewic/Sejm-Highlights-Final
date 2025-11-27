@@ -1,27 +1,17 @@
 """
-Stage 10: YouTube Shorts Generator (ENHANCED v2.0)
+Stage 10: YouTube Shorts Generator (ENHANCED)
 - Format pionowy 9:16 (1080x1920)
 - Żółte napisy z safe zones
 - AI-generowane viralne tytuły
-- INTRO OVERLAY: Ultra-clickable first frame z GPT titles
 - Stały opis zoptymalizowany pod Shorts
 """
 
 import subprocess
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 import os
-import random
-
-# PIL dla intro overlay
-try:
-    from PIL import Image, ImageDraw, ImageFont
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
-    print("⚠️ PIL nie zainstalowany - intro overlay wyłączony")
 
 from .config import Config
 
@@ -97,12 +87,10 @@ class ShortsStage:
         
         # Generate each Short
         generated_shorts = []
-
+        
         for i, clip in enumerate(shorts_clips, 1):
             print(f"\n   📱 Short {i}/{len(shorts_clips)}")
-            print(f"      ⏱️ Duration: {clip.get('duration', 0):.1f}s")
-            print(f"      ⭐ Score: {clip.get('final_score', 0):.2f}")
-
+            
             try:
                 short_result = self._generate_single_short(
                     input_path,
@@ -112,16 +100,10 @@ class ShortsStage:
                     i
                 )
                 generated_shorts.append(short_result)
-
-                # Verify file was created
-                short_file = Path(short_result['file'])
-                if short_file.exists():
-                    file_size_mb = short_file.stat().st_size / (1024**2)
-                    print(f"      ✅ Zapisano: {short_result['filename']} ({file_size_mb:.1f} MB)")
-                    print(f"      📝 Tytuł: {short_result['title']}")
-                else:
-                    print(f"      ⚠️ Plik nie został utworzony: {short_file}")
-
+                
+                print(f"      ✅ Zapisano: {short_result['filename']}")
+                print(f"      📝 Tytuł: {short_result['title']}")
+                
             except Exception as e:
                 print(f"      ❌ Błąd: {e}")
                 import traceback
@@ -176,21 +158,19 @@ class ShortsStage:
         # Filter complex:
         # 1. Scale + crop do 9:16
         # 2. Dodaj napisy z ASS (żółte, centered, safe zone)
-        # Output: [vout] = video z napisami
         filter_complex = (
             f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
-            f"crop={width}:{height},"
-            f"ass='{str(ass_file).replace('\\', '/')}' [vout]"
+            f"crop={width}:{height}[v];"
+            f"[v]ass='{str(ass_file).replace('\\', '/')}'"
         )
-
+        
         cmd = [
             'ffmpeg',
             '-ss', str(t0),
             '-to', str(t1),
             '-i', str(input_file),
             '-filter_complex', filter_complex,
-            '-map', '[vout]',  # ✅ Video z filtra (z napisami!)
-            '-map', '0:a',     # ✅ Audio z oryginału
+            '-map', '0:a',
             '-c:v', 'libx264',
             '-preset', 'medium',
             '-crf', '23',
@@ -213,41 +193,11 @@ class ShortsStage:
             error_msg = e.stderr if e.stderr else str(e)
             print(f"      ⚠️ FFmpeg error: {error_msg[:200]}")
             raise
-
+        
         # Generate AI title and metadata
         title = self._generate_ai_short_title(clip, segments)
         description = self._generate_short_description_fixed()
-
-        # === INTRO TITLE SYSTEM (drawtext zamiast PNG overlay) ===
-        intro_enabled = getattr(self.config.shorts.intro, 'enabled', False)
-
-        if intro_enabled:
-            print(f"      📝 Napisy ASS: {ass_file.name}")
-            try:
-                # Generuj clickbait dwu-liniowy title (FAZA 1!)
-                line1, line2, emoji_list = self._generate_ultra_short_title_gpt(clip, segments)
-
-                # Dodaj FAZA 1 overlay: 2 linie + emoji + ramka (pierwsze 3 sekundy)
-                success = self._add_intro_drawtext_to_video(
-                    output_file,
-                    line1,
-                    line2,
-                    emoji_list,
-                    output_dir,
-                    index
-                )
-
-                if success:
-                    print(f"      ✅ FAZA 1 intro dodany! (2 linie tekstu + czerwona ramka)")
-                else:
-                    print(f"      ⚠️ Intro failed, Short bez intro")
-
-            except Exception as e:
-                print(f"      ⚠️ Intro error: {e}")
-                # Video bez intro nadal działa
-        else:
-            print(f"      📝 Napisy ASS: {ass_file.name}")
-
+        
         return {
             'file': str(output_file),
             'filename': output_file.name,
@@ -314,45 +264,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         
         # Generuj linie napisów z word-level timing
         words = segment.get('words', [])
-        
+
         if not words:
             # Fallback - użyj całego tekstu
             text = segment.get('text', '').strip()
             if text:
                 ass_content += f"Dialogue: 0,{self._format_ass_time(0)},{self._format_ass_time(clip_end - clip_start)},Default,,0,0,0,,{text}\n"
         else:
-            # Grupuj słowa w krótkie frazy dla 9:16 formatu
-            # Ograniczenia dla narrow format (1080px width, 68px font):
-            # - Max 2-3 słowa OR max 25 znaków per line
-            # - Zapobiega ucinaniu napisów
-            max_chars_per_line = 25  # Safe limit for 9:16 with 68px font
+            # Grupuj słowa w krótkie frazy (3-4 słowa) dla lepszej czytelności
+            # Krótsze frazy bo większa czcionka (68px)
+            PHRASE_LENGTH = 4
             i = 0
 
             while i < len(words):
-                # Zbieraj słowa dopóki nie przekroczymy limitu
-                phrase_words = []
-                phrase_text = ""
-
-                while i < len(words):
-                    word = words[i]['word']
-
-                    # Test: czy dodanie tego słowa przekroczy limit?
-                    test_text = phrase_text + (' ' if phrase_text else '') + word
-
-                    # Przerwij jeśli:
-                    # - Mamy już 3 słowa (max dla narrow format)
-                    # - Tekst przekracza 25 znaków
-                    if len(phrase_words) >= 3 or len(test_text) > max_chars_per_line:
-                        # Jeśli phrase_words jest puste, weź chociaż jedno słowo
-                        if not phrase_words:
-                            phrase_words.append(words[i])
-                            phrase_text = word
-                            i += 1
-                        break
-
-                    phrase_words.append(words[i])
-                    phrase_text = test_text
-                    i += 1
+                # Zbierz 4-6 słów
+                phrase_words = words[i:i+PHRASE_LENGTH]
 
                 if not phrase_words:
                     break
@@ -366,17 +292,18 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 end_time = max(start_time + 0.5, end_time)
 
                 # Złącz słowa
-                text = ' '.join(w['word'] for w in phrase_words)
-                
+                phrase_text = ' '.join(w['word'] for w in phrase_words)
+
                 # Dodaj linię ASS
                 ass_content += (
                     f"Dialogue: 0,"
                     f"{self._format_ass_time(start_time)},"
                     f"{self._format_ass_time(end_time)},"
-                    f"Default,,0,0,0,,{text}\n"
+                    f"Default,,0,0,0,,{phrase_text}\n"
                 )
-                # Note: i jest już inkrementowane w wewnętrznej pętli while (linie 300, 305)
 
+                i += PHRASE_LENGTH
+        
         # Zapisz ASS
         with open(ass_file, 'w', encoding='utf-8') as f:
             f.write(ass_content)
@@ -524,453 +451,18 @@ Tylko tytuł, bez cudzysłowów, bez wyjaśnień:"""
         """Generuj tagi dla Short"""
         tags = [
             'Sejm',
-            'Polska',
+            'Polska', 
             'Polityka',
             'Shorts',
             'PolskaPolityka',
             'DebataSejmowa',
             'Parlament'
         ]
-
+        
         # Dodaj keywords z clipu
         keywords = clip.get('keywords', [])
         for kw in keywords[:3]:  # Max 3 dodatkowe
             if kw not in tags:
                 tags.append(kw)
-
+        
         return tags[:15]  # YouTube limit
-
-    # ==========================================
-    # INTRO OVERLAY SYSTEM (v2.0)
-    # ==========================================
-
-    def _generate_ultra_short_title_gpt(self, clip: Dict, segments: List[Dict]) -> Tuple[str, str, List[str]]:
-        """
-        Generuj dwu-liniowy clickbait title dla Shorts miniaturki (FAZA 1 upgrade!)
-
-        Returns:
-            (line1_hook, line2_subtext, [emoji1, emoji2, emoji3, emoji4])
-        """
-        if not self.gpt_client or not getattr(self.config.shorts.intro, 'use_gpt_titles', True):
-            return self._generate_ultra_short_fallback(clip)
-
-        # Context
-        segment = None
-        for seg in segments:
-            if abs(seg['t0'] - clip['t0']) < 1.0:
-                segment = seg
-                break
-
-        transcript = segment.get('transcript', '')[:200] if segment else ''
-        keywords = ', '.join(clip.get('keywords', [])[:3])
-
-        prompt = f"""Wygeneruj DWU-LINIOWY clickbait title dla YouTube Shorts miniaturki (polska polityka):
-
-KONTEKST:
-- Fragment: "{transcript}"
-- Keywords: {keywords}
-- To jest MINIATURKA Shorts (pierwsza klatka) - musi być ULTRA clickbait jak Onet/WP!
-
-WYMAGANIA:
-- 2 LINIE tekstu
-- LINE 1 (hook): 3-7 słów, ALL CAPS, krzykliwy (jak nagłówki Onetu)
-- LINE 2 (subtext): 2-5 słów, doprecyzowanie
-
-PRZYKŁADY (IDEALNE dla polskiej polityki):
-Line 1: "KŁAMSTWO STULECIA W SEJMIE!"
-Line 2: "Tusk w szoku"
-
-Line 1: "POSEŁ OSZALAŁ!"
-Line 2: "Nikt tego nie widział"
-
-Line 1: "TO KONIEC PIS-u?!"
-Line 2: "Kaczyński milczy"
-
-Line 1: "AWANTURA! BIJATYKA!"
-Line 2: "Zamknęli Sejm"
-
-EMOJI: Daj 4 emoji (polityczne shock value)
-Najlepsze: 🔥😱💥🚨⚡🤯💀👀
-
-Format JSON:
-{{
-  "line1": "SZOK W SEJMIE!",
-  "line2": "Posłowie oszaleli",
-  "emoji": ["🔥", "😱", "💥", "🚨"]
-}}"""
-
-        try:
-            response = self.gpt_client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "Jesteś ekspertem od clickbaitowych miniaturek YouTube w polskiej niszy politycznej. Znasz styl Onetu, WP, Super Expressu."},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"},
-                temperature=getattr(self.config.shorts.intro, 'gpt_temperature', 0.9),
-                max_tokens=100
-            )
-
-            result = json.loads(response.choices[0].message.content)
-            line1 = result.get('line1', 'SZOK W SEJMIE!').strip().upper()
-            line2 = result.get('line2', 'Posłowie oszaleli').strip()
-            emoji = result.get('emoji', ['🔥', '😱', '💥', '🚨'])
-
-            print(f"      🎨 GPT Clickbait:")
-            print(f"         Line 1: '{line1}'")
-            print(f"         Line 2: '{line2}'")
-            print(f"         Emoji: {emoji[:4]}")
-
-            return line1, line2, emoji[:4]  # Max 4 emoji dla 4 rogów
-
-        except Exception as e:
-            print(f"      ⚠️ GPT clickbait error: {e}")
-            return self._generate_ultra_short_fallback(clip)
-
-    def _generate_ultra_short_fallback(self, clip: Dict) -> Tuple[str, str, List[str]]:
-        """Fallback dwu-liniowy title"""
-        keywords = clip.get('keywords', [])
-
-        templates = [
-            ("SZOK W SEJMIE!", "Posłowie oszaleli", ['🔥', '😱', '💥', '🚨']),
-            ("AWANTURA!", "Nikt tego nie widział", ['😱', '🤯', '💥', '🔥']),
-            ("TO KONIEC?!", "Politycy w szoku", ['💥', '😱', '⚡', '🚨']),
-            ("SKANDAL!", "Zamknęli Sejm", ['🚨', '😱', '🔥', '💀']),
-        ]
-
-        if keywords:
-            kw = keywords[0].upper()[:15]
-            return (f"{kw}!", "Zobacz co się stało", ['🔥', '😱', '💥', '⚡'])
-
-        # Random z templates
-        return random.choice(templates)
-
-    def _create_intro_overlay_image(
-        self,
-        title: str,
-        emoji_list: List[str],
-        output_path: Path
-    ) -> bool:
-        """
-        Stwórz PNG overlay z tytułem i emoji (transparent background)
-
-        Layout (1080x1920):
-        ┌─────────────────────┐
-        │        🔥💥         │  ← Top emoji (y=200)
-        │                     │
-        │                     │
-        │                     │
-        │   (transparent)     │  ← Middle: przezroczysty (video widoczny)
-        │                     │
-        │                     │
-        │     SZOK! 😱        │  ← Bottom title (y=1600)
-        └─────────────────────┘
-        """
-        if not PIL_AVAILABLE:
-            print("      ⚠️ PIL niedostępny, pomijam intro overlay")
-            return False
-
-        try:
-            width = self.config.shorts.width
-            height = self.config.shorts.height
-
-            # Create transparent image
-            overlay = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-            draw = ImageDraw.Draw(overlay)
-
-            # Config
-            intro_config = self.config.shorts.intro
-
-            # === TOP EMOJI ===
-            if getattr(intro_config.text.emoji_top, 'enabled', True) and emoji_list:
-                try:
-                    emoji_size = getattr(intro_config.text.emoji_top, 'size', 140)
-                    emoji_y = getattr(intro_config.text.emoji_top, 'position_y', 200)
-                    emoji_font = ImageFont.truetype("C:/Windows/Fonts/seguiemj.ttf", emoji_size)
-
-                    # Center emoji(s)
-                    emoji_text = ' '.join(emoji_list[:2])  # Max 2
-                    bbox = draw.textbbox((0, 0), emoji_text, font=emoji_font)
-                    emoji_width = bbox[2] - bbox[0]
-                    emoji_x = (width - emoji_width) // 2
-
-                    draw.text((emoji_x, emoji_y), emoji_text, font=emoji_font, fill=(255, 255, 255, 255))
-                except Exception as e:
-                    print(f"      ⚠️ Emoji error: {e}")
-
-            # === BOTTOM TITLE ===
-            try:
-                title_y = getattr(intro_config.text.title_bottom, 'position_y', 1600)
-                title_size = getattr(intro_config.text.title_bottom, 'font_size', 90)
-                title_font = ImageFont.truetype("C:/Windows/Fonts/impact.ttf", title_size)
-
-                # Colors
-                text_color = getattr(intro_config.colors, 'text', '#FFFF00')
-                outline_color = getattr(intro_config.colors, 'outline', '#000000')
-                outline_width = getattr(intro_config.colors, 'outline_width', 10)
-
-                # Parse colors
-                if text_color.startswith('#'):
-                    r, g, b = int(text_color[1:3], 16), int(text_color[3:5], 16), int(text_color[5:7], 16)
-                    text_color_rgb = (r, g, b, 255)
-                else:
-                    text_color_rgb = (255, 255, 0, 255)
-
-                if outline_color.startswith('#'):
-                    r, g, b = int(outline_color[1:3], 16), int(outline_color[3:5], 16), int(outline_color[5:7], 16)
-                    outline_color_rgb = (r, g, b, 255)
-                else:
-                    outline_color_rgb = (0, 0, 0, 255)
-
-                # Center title
-                bbox = draw.textbbox((0, 0), title, font=title_font)
-                title_width = bbox[2] - bbox[0]
-                title_x = (width - title_width) // 2
-
-                # Draw outline
-                for adj_x in range(-outline_width, outline_width + 1):
-                    for adj_y in range(-outline_width, outline_width + 1):
-                        if adj_x != 0 or adj_y != 0:
-                            draw.text((title_x + adj_x, title_y + adj_y), title, font=title_font, fill=outline_color_rgb)
-
-                # Draw text
-                draw.text((title_x, title_y), title, font=title_font, fill=text_color_rgb)
-
-            except Exception as e:
-                print(f"      ⚠️ Title text error: {e}")
-                return False
-
-            # Save overlay
-            overlay.save(output_path, 'PNG')
-            print(f"      💾 Overlay PNG: {output_path.name}")
-            return True
-
-        except Exception as e:
-            print(f"      ❌ Overlay creation error: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
-
-    def _add_intro_drawtext_to_video(
-        self,
-        video_file: Path,
-        line1: str,
-        line2: str,
-        emoji_list: List[str],
-        output_dir: Path,
-        index: int
-    ) -> bool:
-        """
-        FAZA 1: Dodaj clickbait intro (pierwsze 3s) - PROSTY i DZIAŁAJĄCY!
-
-        Layout (9:16, 1080x1920):
-        ┌─────────────────────┐
-        │                     │
-        │                     │
-        │  SZOK W SEJMIE!     │  ← Line 1 (duży, żółty, 140px)
-        │                     │
-        │  Posłowie oszaleli  │  ← Line 2 (mniejszy, biały, 80px)
-        │                     │
-        │                     │
-        └─────────────────────┘
-        └───── Czerwona ─────┘  ← Czerwona ramka (10px)
-
-        enable='between(t,0,3)' - wszystko widoczne tylko pierwsze 3s
-        Pierwsza klatka (t=0) = pełny clickbait = IDEALNA miniaturka! ✅
-        """
-        temp_video = None
-        text_file1 = None
-        text_file2 = None
-        try:
-            # Zapisz tekst do plików (unika problemów z cudzysłowami w ffmpeg!)
-            # Polskie znaki - zamieniamy na ASCII bo ffmpeg drawtext ma problemy
-            def sanitize_pl(text):
-                return text.replace("ł", "l").replace("ą", "a").replace("ę", "e").replace("ć", "c").replace("ź", "z").replace("ż", "z").replace("ń", "n").replace("ó", "o").replace("ś", "s").replace("Ł", "L").replace("Ą", "A").replace("Ę", "E").replace("Ć", "C").replace("Ź", "Z").replace("Ż", "Z").replace("Ń", "N").replace("Ó", "O").replace("Ś", "S")
-
-            safe_line1 = sanitize_pl(line1)
-            safe_line2 = sanitize_pl(line2)
-
-            # Zapisz do plików
-            text_file1 = output_dir / f"short_{index:02d}_line1.txt"
-            text_file2 = output_dir / f"short_{index:02d}_line2.txt"
-            with open(text_file1, 'w', encoding='utf-8') as f:
-                f.write(safe_line1)
-            with open(text_file2, 'w', encoding='utf-8') as f:
-                f.write(safe_line2)
-
-            # Ścieżki (forward slashes dla ffmpeg)
-            text_file1_path = str(text_file1).replace('\\', '/')
-            text_file2_path = str(text_file2).replace('\\', '/')
-            font_path = "C\\\\:/Windows/Fonts/arialbd.ttf"  # Arial BOLD!
-
-            # ffmpeg filter: czerwona ramka + 2 linie tekstu
-            # Format 9:16 (1080x1920) - tekst musi się mieścić!
-            # Line 1: fontsize=80, gruba czcionka (borderw=8)
-            # Line 2: fontsize=50, mniejsza
-            # WAŻNE: enable=between(t\,0\,3) - BEZ cudzysłowów, przecinki escape'owane!
-            filter_complex = (
-                # Czerwona ramka (15px thick) - tylko pierwsze 3s
-                f"drawbox=x=15:y=15:w=iw-30:h=ih-30:color=red:t=15:enable=between(t\\,0\\,3),"
-
-                # Line 1 - DUŻY hook (góra środka, y=h/2-120)
-                f"drawtext="
-                f"textfile={text_file1_path}:"
-                f"fontfile={font_path}:"
-                f"fontsize=80:"
-                f"fontcolor=yellow:"
-                f"borderw=8:"
-                f"bordercolor=black:"
-                f"x=(w-text_w)/2:"
-                f"y=(h/2)-120:"
-                f"enable=between(t\\,0\\,3),"
-
-                # Line 2 - mniejszy subtext (pod line1, y=h/2+20)
-                f"drawtext="
-                f"textfile={text_file2_path}:"
-                f"fontfile={font_path}:"
-                f"fontsize=50:"
-                f"fontcolor=white:"
-                f"borderw=5:"
-                f"bordercolor=black:"
-                f"x=(w-text_w)/2:"
-                f"y=(h/2)+20:"
-                f"enable=between(t\\,0\\,3)"
-            )
-
-            print(f"      🔧 Line 1: {safe_line1[:30]}...")
-            print(f"      🔧 Line 2: {safe_line2[:30]}...")
-            print(f"      🔧 Filter: ramka + 2 linie (pierwsze 3s)")
-
-            # Temp files
-            temp_video = output_dir / f"short_{index:02d}_temp.mp4"
-            video_file.rename(temp_video)
-
-            cmd = [
-                'ffmpeg',
-                '-i', str(temp_video),
-                '-vf', filter_complex,
-                '-c:a', 'copy',  # Copy audio (szybsze)
-                '-c:v', 'libx264',
-                '-preset', 'medium',
-                '-crf', '23',
-                '-y',
-                str(video_file)
-            ]
-
-            print(f"      🔧 FAZA 1 filter: 2 linie tekstu + czerwona ramka")
-
-            result = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=True,
-                encoding='utf-8'
-            )
-
-            # Cleanup temp files
-            temp_video.unlink()
-            for tf in [text_file1, text_file2]:
-                if tf and tf.exists():
-                    tf.unlink()
-
-            return True
-
-        except subprocess.CalledProcessError as e:
-            error_msg = e.stderr if e.stderr else str(e)
-            # Pokaż TYLKO faktyczny błąd (ostatnie linie stderr zawierają prawdziwy error)
-            if error_msg:
-                lines = error_msg.split('\n')
-                # Ostatnie 5 linii zwykle zawierają error
-                relevant_lines = [l.strip() for l in lines[-5:] if l.strip()]
-                print(f"      ❌ ffmpeg error:")
-                for line in relevant_lines:
-                    print(f"         {line}")
-            # Restore original if failed
-            if temp_video and temp_video.exists():
-                temp_video.rename(video_file)
-            # Cleanup text files
-            for tf in [text_file1, text_file2]:
-                if tf and tf.exists():
-                    tf.unlink()
-            return False
-        except Exception as e:
-            print(f"      ❌ FAZA 1 error: {e}")
-            # Restore original if failed
-            if temp_video and temp_video.exists():
-                temp_video.rename(video_file)
-            # Cleanup text files
-            for tf in [text_file1, text_file2]:
-                if tf and tf.exists():
-                    tf.unlink()
-            return False
-
-    def _add_intro_overlay_to_video_OLD(
-        self,
-        input_video: Path,
-        overlay_png: Path,
-        output_video: Path
-    ) -> bool:
-        """
-        Dodaj intro overlay do video z fade in/out
-
-        ffmpeg overlay z fade:
-        - 0.0-0.3s: Fade in
-        - 0.3-2.5s: Full visible
-        - 2.5-3.0s: Fade out
-        """
-        try:
-            intro_config = self.config.shorts.intro
-            duration = getattr(intro_config, 'duration', 2.5)
-            fade_in = getattr(intro_config, 'fade_in', 0.3)
-            fade_out = getattr(intro_config, 'fade_out', 0.5)
-
-            fade_out_start = duration - fade_out
-
-            # ffmpeg filter: overlay z fade (alpha channel aware)
-            # fade=t=in:st=0:d=0.3:alpha=1 - fade in alpha channel
-            # fade=t=out:st=2.0:d=0.5:alpha=1 - fade out alpha channel
-            filter_complex = (
-                f"[1:v]fade=t=in:st=0:d={fade_in}:alpha=1,"
-                f"fade=t=out:st={fade_out_start}:d={fade_out}:alpha=1[ovr];"
-                f"[0:v][ovr]overlay=0:0:format=auto:shortest=1"
-            )
-
-            cmd = [
-                'ffmpeg',
-                '-i', str(input_video),
-                '-i', str(overlay_png),
-                '-filter_complex', filter_complex,
-                '-c:a', 'copy',
-                '-c:v', 'libx264',
-                '-preset', 'medium',
-                '-crf', '23',
-                '-y',
-                str(output_video)
-            ]
-
-            print(f"      🔧 ffmpeg overlay command:")
-            print(f"         Filter: {filter_complex}")
-
-            result = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=True,
-                encoding='utf-8'
-            )
-
-            # Check output for warnings
-            if result.stderr and 'error' in result.stderr.lower():
-                print(f"      ⚠️  ffmpeg warnings: {result.stderr[:300]}")
-            else:
-                print(f"      ✓ ffmpeg overlay successful")
-
-            return True
-
-        except subprocess.CalledProcessError as e:
-            error_msg = e.stderr if e.stderr else str(e)
-            print(f"      ❌ Overlay ffmpeg error: {error_msg[:500]}")
-            return False
-        except Exception as e:
-            print(f"      ❌ Overlay error: {e}")
-            return False
