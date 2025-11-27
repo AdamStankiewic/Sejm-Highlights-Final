@@ -269,9 +269,10 @@ class ShortsConfig:
     # Subtitles styling
     subtitle_fontsize: int = 48
     subtitle_position: str = "center"
-    
+
     # Upload settings
     upload_to_youtube: bool = False
+    privacy_status: str = "public"
     shorts_category_id: str = "25"
     add_hashtags: bool = True
 
