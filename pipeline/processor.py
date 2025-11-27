@@ -27,17 +27,28 @@ class PipelineProcessor:
     """
     Główny processor zarządzający całym pipeline'em
     """
-    
-    def __init__(self, config: Config):
+
+    def __init__(self, config: Config, upload_profile: Optional[str] = None):
+        """
+        Initialize pipeline processor
+
+        Args:
+            config: Pipeline configuration
+            upload_profile: Optional upload profile name ('sejm', 'stream', etc.)
+                          If None, auto-detects or uses default
+        """
         self.config = config
         self.config.validate()
-        
+
+        # Upload profile for YouTube
+        self.upload_profile = upload_profile
+
         # Progress callback
         self.progress_callback: Optional[Callable] = None
-        
+
         # Cancellation flag
         self._cancelled = False
-        
+
         # Timing stats
         self.timing_stats = {}
         
@@ -352,25 +363,28 @@ class PipelineProcessor:
                 youtube_results = []
                 if self.config.youtube.enabled:
                     from .stage_09_youtube import YouTubeStage
-                    youtube_stage = YouTubeStage(self.config)
+                    youtube_stage = YouTubeStage(self.config, profile_name=self.upload_profile)
                     youtube_stage.authorize()
-                    
+
+                    # Get profile settings for main videos
+                    main_settings = youtube_stage.get_profile_settings('main')
+
                     if parts_metadata:
                         # Multi-part upload z premiere scheduling
                         for i, part_meta in enumerate(parts_metadata):
                             print(f"\n📤 Upload części {part_meta['part_number']}/{part_meta['total_parts']}...")
-                            
+
                             # Generuj enhanced title
                             video_title = self.smart_splitter.generate_enhanced_title(
                                 part_meta,
                                 part_meta['clips'],
                                 use_politicians=self.config.splitter.use_politicians_in_titles
                             )
-                            
-                            # Determine privacy/premiere status
+
+                            # Determine privacy/premiere status from profile
                             premiere_datetime = datetime.fromisoformat(part_meta['premiere_datetime'])
-                            
-                            if self.config.youtube.schedule_as_premiere:
+
+                            if main_settings.get('schedule_as_premiere', False):
                                 # Schedule as premiere
                                 youtube_result = youtube_stage.schedule_premiere(
                                     video_file=export_results[i]['output_file'],
@@ -382,7 +396,7 @@ class PipelineProcessor:
                                     premiere_datetime=premiere_datetime
                                 )
                             else:
-                                # Upload unlisted/private
+                                # Upload with profile privacy settings
                                 youtube_result = youtube_stage.process(
                                     video_file=export_results[i]['output_file'],
                                     thumbnail_file=thumbnail_results[i].get('thumbnail_path') if thumbnail_results else None,
@@ -390,9 +404,16 @@ class PipelineProcessor:
                                     clips=part_meta['clips'],
                                     segments=scoring_result['segments'],
                                     output_dir=self.config.output_dir,
-                                    privacy_status='unlisted'
+                                    privacy_status=main_settings['privacy_status']
                                 )
-                            
+
+                            # Add to playlist if specified in profile
+                            if youtube_result.get('success') and main_settings.get('playlist_id'):
+                                youtube_stage.playlist_manager.add_video_to_playlist(
+                                    main_settings['playlist_id'],
+                                    youtube_result['video_id']
+                                )
+
                             youtube_results.append(youtube_result)
                     else:
                         # Single upload (standardowy)
@@ -404,8 +425,16 @@ class PipelineProcessor:
                             clips=selection_result['clips'],
                             segments=scoring_result['segments'],
                             output_dir=self.config.output_dir,
-                            privacy_status=self.config.youtube.privacy_status
+                            privacy_status=main_settings['privacy_status']
                         )
+
+                        # Add to playlist if specified in profile
+                        if youtube_result.get('success') and main_settings.get('playlist_id'):
+                            youtube_stage.playlist_manager.add_video_to_playlist(
+                                main_settings['playlist_id'],
+                                youtube_result['video_id']
+                            )
+
                         youtube_results.append(youtube_result)
                 
                 # === ETAP 10: YouTube Shorts Generation (optional) ===
@@ -434,29 +463,40 @@ class PipelineProcessor:
                     if self.config.shorts.upload_to_youtube and self.config.youtube.enabled:
                         print("\n📤 Upload Shorts na YouTube...")
                         from .stage_09_youtube import YouTubeStage
-                        youtube_stage = YouTubeStage(self.config)
-                        youtube_stage.authorize()
-                        
+                        shorts_youtube_stage = YouTubeStage(self.config, profile_name=self.upload_profile)
+                        shorts_youtube_stage.authorize()
+
+                        # Get profile settings for Shorts
+                        shorts_settings = shorts_youtube_stage.get_profile_settings('shorts')
+
                         for short_meta in shorts_results:
                             try:
                                 # Upload as Short (dodaj #Shorts w tytule)
                                 short_title = short_meta['title']
-                                if self.config.shorts.add_hashtags and '#Shorts' not in short_title:
+                                if shorts_settings.get('add_hashtags', False) and '#Shorts' not in short_title:
                                     short_title += " #Shorts"
-                                
-                                upload_result = youtube_stage.upload_video(
+
+                                # Upload using profile settings
+                                upload_result = shorts_youtube_stage.upload_video(
                                     video_file=short_meta['file'],
                                     title=short_title,
                                     description=short_meta['description'],
                                     tags=short_meta['tags'],
-                                    category_id=self.config.shorts.shorts_category_id,
-                                    privacy_status='unlisted'  # lub 'public'
+                                    category_id=shorts_settings['category_id'],
+                                    privacy_status=shorts_settings['privacy_status']
                                 )
-                                
+
                                 if upload_result.get('success'):
                                     short_meta['youtube_url'] = upload_result['video_url']
                                     print(f"   ✅ Short uploaded: {upload_result['video_url']}")
-                                
+
+                                    # Add to playlist if specified in profile
+                                    if shorts_settings.get('playlist_id'):
+                                        shorts_youtube_stage.playlist_manager.add_video_to_playlist(
+                                            shorts_settings['playlist_id'],
+                                            upload_result['video_id']
+                                        )
+
                             except Exception as e:
                                 print(f"   ⚠️ Błąd uploadu Short: {e}")
                 
