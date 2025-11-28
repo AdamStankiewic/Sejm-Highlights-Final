@@ -237,12 +237,12 @@ class ShortsConfig:
     subtitle_fontsize: int = 48
     subtitle_position: str = "center"
 
-    # Title overlay styling (for first frame)
-    title_fontsize: int = 72  # Większy rozmiar dla tytułu
+    # Title overlay styling (displayed throughout entire Short)
+    title_fontsize: int = 90  # Większy rozmiar dla tytułu (zwiększone z 72)
     title_color: str = "&H00FFFF"  # Żółty w ASS format (BGR: FFFF00)
-    title_position_y: int = 150  # Pozycja Y od góry (piksel)
-    title_outline: int = 4  # Grubość obrysu
-    title_shadow: int = 2  # Cień
+    title_position_y: int = 120  # Pozycja Y od góry (piksel) - wyżej
+    title_outline: int = 5  # Grubość obrysu (zwiększone z 4)
+    title_shadow: int = 3  # Cień (zwiększone z 2)
     title_bold: bool = True  # Pogrubienie
 
     # Upload settings

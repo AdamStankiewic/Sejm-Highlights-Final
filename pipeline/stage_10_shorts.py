@@ -272,11 +272,12 @@ Style: Default,Arial,68,&H00FFFF00,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
-        # Dodaj tytuł na pierwszej klatce (0-2.5s)
+        # Dodaj tytuł przez cały czas trwania Shorta
         if title:
-            # Zawijanie długiego tytułu - dziel na linie co ~25 znaków
-            wrapped_title = self._wrap_title(title, max_chars=25)
-            ass_content += f"Dialogue: 1,{self._format_ass_time(0)},{self._format_ass_time(2.5)},Title,,0,0,0,,{wrapped_title}\n"
+            # Zawijanie długiego tytułu - dziel na linie co ~20 znaków (mniej bo większa czcionka 90px)
+            wrapped_title = self._wrap_title(title, max_chars=20)
+            # Wyświetlaj tytuł przez cały czas: od 0 do końca klipu
+            ass_content += f"Dialogue: 1,{self._format_ass_time(0)},{self._format_ass_time(clip_end - clip_start)},Title,,0,0,0,,{wrapped_title}\n"
 
         # Generuj linie napisów z word-level timing
         words = segment.get('words', [])
@@ -363,10 +364,10 @@ Style: Default,Arial,68,&H00FFFF00,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
-        # Dodaj tytuł na pierwszej klatce
+        # Dodaj tytuł przez cały czas trwania
         if title:
-            wrapped_title = self._wrap_title(title, max_chars=25)
-            ass_content += f"Dialogue: 1,{self._format_ass_time(0)},{self._format_ass_time(2.5)},Title,,0,0,0,,{wrapped_title}\n"
+            wrapped_title = self._wrap_title(title, max_chars=20)
+            ass_content += f"Dialogue: 1,{self._format_ass_time(0)},{self._format_ass_time(duration)},Title,,0,0,0,,{wrapped_title}\n"
 
         # Dodaj główny tekst
         ass_content += f"Dialogue: 0,{self._format_ass_time(0)},{self._format_ass_time(duration)},Default,,0,0,0,,{text}\n"
