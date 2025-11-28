@@ -240,7 +240,7 @@ class ShortsConfig:
     # Title overlay styling (displayed throughout entire Short)
     title_fontsize: int = 90  # Większy rozmiar dla tytułu (zwiększone z 72)
     title_color: str = "&H00FFFF"  # Żółty w ASS format (BGR: FFFF00)
-    title_position_y: int = 120  # Pozycja Y od góry (piksel) - wyżej
+    title_position_y: int = 230  # Pozycja Y od góry (piksel) - bezpieczna strefa
     title_outline: int = 5  # Grubość obrysu (zwiększone z 4)
     title_shadow: int = 3  # Cień (zwiększone z 2)
     title_bold: bool = True  # Pogrubienie
