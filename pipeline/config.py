@@ -259,10 +259,40 @@ class ThumbnailConfig:
     width: int = 1280
     height: int = 720
     frame_selection: FrameSelectionConfig = None
+    templates: Dict[str, Dict[str, Any]] = None
 
     def __post_init__(self):
         if self.frame_selection is None:
             self.frame_selection = FrameSelectionConfig()
+
+        if self.templates is None:
+            # Default thumbnail templates
+            self.templates = {
+                'AGGRESSIVE': {
+                    'style': 'top_bottom',
+                    'text_color': '#FFFF00',  # Yellow
+                    'outline_color': '#FF0000',  # Red
+                    'emoji': '🔥😡'
+                },
+                'SENSATIONAL': {
+                    'style': 'center',
+                    'text_color': '#FFFFFF',  # White
+                    'outline_color': '#000000',  # Black
+                    'emoji': '😱💥'
+                },
+                'NEUTRAL': {
+                    'style': 'split',
+                    'text_color': '#FFFFFF',  # White
+                    'outline_color': '#333333',  # Dark gray
+                    'emoji': '📺🇵🇱'
+                },
+                'CLICKBAIT': {
+                    'style': 'top_bottom',
+                    'text_color': '#FF00FF',  # Magenta
+                    'outline_color': '#000000',  # Black
+                    'emoji': '🚨⚡'
+                }
+            }
 
 
 @dataclass
