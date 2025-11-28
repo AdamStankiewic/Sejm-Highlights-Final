@@ -134,30 +134,30 @@ class ShortsStage:
         index: int
     ) -> Dict:
         """Generuj pojedynczy Short z napisami"""
-        
+
         # Extract clip times
         t0 = max(0, clip['t0'] - self.config.shorts.pre_roll)
         t1 = clip['t1'] + self.config.shorts.post_roll
         duration = t1 - t0
-        
+
         # Output files
         output_file = output_dir / f"short_{index:02d}.mp4"
         srt_file = output_dir / f"short_{index:02d}.srt"
         ass_file = output_dir / f"short_{index:02d}.ass"
-        
+
         # Shorts format: 1080x1920 (9:16)
         width = self.config.shorts.width
         height = self.config.shorts.height
-        
-        # STEP 1: Generuj AI tytuł (potrzebny dla napisów)
-        title = self._generate_ai_short_title(clip, segments)
 
         print(f"      🎬 Renderowanie video...")
 
-        # STEP 2: Generuj ASS napisy (żółte, safe zone) + tytuł intro
-        self._generate_shorts_subtitles(clip, segments, t0, t1, ass_file, title)
+        # Generate AI title BEFORE subtitles (need it for first frame)
+        title = self._generate_ai_short_title(clip, segments)
 
-        # STEP 3: Renderuj video z napisami
+        # STEP 1: Generuj ASS napisy (żółte, safe zone) + tytuł na pierwszej klatce
+        self._generate_shorts_subtitles(clip, segments, t0, t1, ass_file, title)
+        
+        # STEP 2: Renderuj video z napisami
         # Filter complex:
         # 1. Scale + crop do 9:16
         # 2. Dodaj napisy z ASS (żółte, centered, safe zone)
@@ -197,7 +197,7 @@ class ShortsStage:
             print(f"      ⚠️ FFmpeg error: {error_msg[:200]}")
             raise
 
-        # Generate metadata
+        # Generate description (title already generated above)
         description = self._generate_short_description_fixed()
         
         return {
@@ -224,59 +224,63 @@ class ShortsStage:
         title: str = None
     ):
         """
-        Generuj napisy w formacie ASS dla Shorts
+        Generuj napisy w formacie ASS dla Shorts + tytuł na pierwszej klatce
 
         Żółte napisy z czarnym outline, positioned w safe zone
         YouTube Shorts UI:
         - Góra (0-200px): nazwa kanału, czas
         - Dół (1620-1920px): przyciski like/comment/share
         - Safe zone: 300-1500px (środek)
-
-        Args:
-            title: Opcjonalny tytuł do wyświetlenia jako intro (0.0-1.5s)
         """
-        
+
         # Znajdź segment odpowiadający clipowi
         segment = None
         for seg in segments:
             if abs(seg['t0'] - clip['t0']) < 1.0:  # Dopasowanie z tolerancją
                 segment = seg
                 break
-        
+
         if not segment or 'words' not in segment:
             # Brak transkrypcji - użyj prostego napisu
-            self._generate_simple_subtitle(clip, ass_file, clip_start, clip_end)
+            self._generate_simple_subtitle(clip, ass_file, clip_start, clip_end, title)
             return
-        
+
+        # Pobierz ustawienia z konfiguracji
+        title_fontsize = self.config.shorts.title_fontsize
+        title_color = self.config.shorts.title_color
+        title_y = self.config.shorts.title_position_y
+        title_outline = self.config.shorts.title_outline
+        title_shadow = self.config.shorts.title_shadow
+        title_bold = -1 if self.config.shorts.title_bold else 0
+
         # ASS Header - optymalizowany dla Shorts (9:16)
-        # Ustawienia napisów:
-        # - Fontsize: 68px (duży, łatwy do czytania)
-        # - MarginL/R: 30px (szersze napisy)
-        # - MarginV: 600px (niżej, ale w safe zone)
+        # Dwa style: Title (duży, żółty, góra) i Default (napisy, dół)
         ass_content = f"""[Script Info]
 Title: YouTube Short Subtitle
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
 ScaledBorderAndShadow: yes
+WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Title,Arial,{title_fontsize},{title_color},&H000000FF,&H00000000,&H80000000,{title_bold},0,0,0,100,100,0,0,1,{title_outline},{title_shadow},8,60,60,{title_y},1
 Style: Default,Arial,68,&H00FFFF00,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,2,2,30,30,600,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
-        # INTRO: Dodaj napis tytułowy (0.0 - 1.5s) jako hook
+        # Dodaj tytuł na pierwszej klatce (0-2.5s)
         if title:
-            # Skróć tytuł jeśli za długi (max 50 znaków dla lepszej czytelności)
-            intro_title = title[:50] + "..." if len(title) > 50 else title
-            ass_content += f"Dialogue: 0,{self._format_ass_time(0.0)},{self._format_ass_time(1.5)},Default,,0,0,0,,{intro_title}\n"
+            # Zawijanie długiego tytułu - dziel na linie co ~25 znaków
+            wrapped_title = self._wrap_title(title, max_chars=25)
+            ass_content += f"Dialogue: 1,{self._format_ass_time(0)},{self._format_ass_time(2.5)},Title,,0,0,0,,{wrapped_title}\n"
 
         # Generuj linie napisów z word-level timing
         words = segment.get('words', [])
-
+        
         if not words:
             # Fallback - użyj całego tekstu
             text = segment.get('text', '').strip()
@@ -285,36 +289,36 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         else:
             # Grupuj słowa w krótkie frazy (3-4 słowa) dla lepszej czytelności
             # Krótsze frazy bo większa czcionka (68px)
-            PHRASE_LENGTH = 4
+            phrase_length = 4
             i = 0
-
+            
             while i < len(words):
                 # Zbierz 4-6 słów
-                phrase_words = words[i:i+PHRASE_LENGTH]
-
+                phrase_words = words[i:i+phrase_length]
+                
                 if not phrase_words:
                     break
-
+                
                 # Oblicz timing względem początku clipu
                 start_time = phrase_words[0]['start'] - clip['t0']
                 end_time = phrase_words[-1]['end'] - clip['t0']
-
+                
                 # Zabezpieczenie przed ujemnymi czasami
                 start_time = max(0, start_time)
                 end_time = max(start_time + 0.5, end_time)
-
+                
                 # Złącz słowa
-                phrase_text = ' '.join(w['word'] for w in phrase_words)
-
+                text = ' '.join(w['word'] for w in phrase_words)
+                
                 # Dodaj linię ASS
                 ass_content += (
                     f"Dialogue: 0,"
                     f"{self._format_ass_time(start_time)},"
                     f"{self._format_ass_time(end_time)},"
-                    f"Default,,0,0,0,,{phrase_text}\n"
+                    f"Default,,0,0,0,,{text}\n"
                 )
-
-                i += PHRASE_LENGTH
+                
+                i += phrase_length
         
         # Zapisz ASS
         with open(ass_file, 'w', encoding='utf-8') as f:
@@ -327,31 +331,84 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         clip: Dict,
         ass_file: Path,
         clip_start: float,
-        clip_end: float
+        clip_end: float,
+        title: str = None
     ):
         """Fallback - prosty napis gdy brak transkrypcji"""
-        
+
         duration = clip_end - clip_start
         text = clip.get('title', 'Gorący moment z Sejmu! 🔥')
-        
+
+        # Pobierz ustawienia z konfiguracji
+        title_fontsize = self.config.shorts.title_fontsize
+        title_color = self.config.shorts.title_color
+        title_y = self.config.shorts.title_position_y
+        title_outline = self.config.shorts.title_outline
+        title_shadow = self.config.shorts.title_shadow
+        title_bold = -1 if self.config.shorts.title_bold else 0
+
         ass_content = f"""[Script Info]
 Title: YouTube Short Subtitle
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
+WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Title,Arial,{title_fontsize},{title_color},&H000000FF,&H00000000,&H80000000,{title_bold},0,0,0,100,100,0,0,1,{title_outline},{title_shadow},8,60,60,{title_y},1
 Style: Default,Arial,68,&H00FFFF00,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,3,2,30,30,600,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,{self._format_ass_time(0)},{self._format_ass_time(duration)},Default,,0,0,0,,{text}
 """
-        
+
+        # Dodaj tytuł na pierwszej klatce
+        if title:
+            wrapped_title = self._wrap_title(title, max_chars=25)
+            ass_content += f"Dialogue: 1,{self._format_ass_time(0)},{self._format_ass_time(2.5)},Title,,0,0,0,,{wrapped_title}\n"
+
+        # Dodaj główny tekst
+        ass_content += f"Dialogue: 0,{self._format_ass_time(0)},{self._format_ass_time(duration)},Default,,0,0,0,,{text}\n"
+
         with open(ass_file, 'w', encoding='utf-8') as f:
             f.write(ass_content)
     
+    def _wrap_title(self, title: str, max_chars: int = 25) -> str:
+        """
+        Zawijanie długiego tytułu do wielu linii dla lepszej czytelności
+
+        Args:
+            title: Tytuł do zawinięcia
+            max_chars: Maksymalna liczba znaków na linię
+
+        Returns:
+            Tytuł z `\\N` jako separatorami linii (ASS format)
+        """
+        words = title.split()
+        lines = []
+        current_line = []
+        current_length = 0
+
+        for word in words:
+            word_length = len(word)
+
+            # Jeśli dodanie słowa przekroczy limit, zakończ obecną linię
+            if current_length + word_length + len(current_line) > max_chars and current_line:
+                lines.append(' '.join(current_line))
+                current_line = [word]
+                current_length = word_length
+            else:
+                current_line.append(word)
+                current_length += word_length
+
+        # Dodaj ostatnią linię
+        if current_line:
+            lines.append(' '.join(current_line))
+
+        # Złącz linie używając \\N (ASS line break)
+        return '\\N'.join(lines)
+
     def _format_ass_time(self, seconds: float) -> str:
         """Format time for ASS: 0:00:00.00"""
         hours = int(seconds // 3600)
