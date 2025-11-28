@@ -268,25 +268,25 @@ class ThumbnailConfig:
         if self.templates is None:
             # Default thumbnail templates
             self.templates = {
-                'AGGRESSIVE': {
+                'aggressive': {
                     'style': 'top_bottom',
                     'text_color': '#FFFF00',  # Yellow
                     'outline_color': '#FF0000',  # Red
                     'emoji': '🔥😡'
                 },
-                'SENSATIONAL': {
+                'sensational': {
                     'style': 'center',
                     'text_color': '#FFFFFF',  # White
                     'outline_color': '#000000',  # Black
                     'emoji': '😱💥'
                 },
-                'NEUTRAL': {
+                'neutral': {
                     'style': 'split',
                     'text_color': '#FFFFFF',  # White
                     'outline_color': '#333333',  # Dark gray
                     'emoji': '📺🇵🇱'
                 },
-                'CLICKBAIT': {
+                'clickbait': {
                     'style': 'top_bottom',
                     'text_color': '#FF00FF',  # Magenta
                     'outline_color': '#000000',  # Black
