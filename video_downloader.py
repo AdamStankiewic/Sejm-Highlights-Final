@@ -85,7 +85,8 @@ class VideoDownloader:
                 capture_output=True,
                 text=True,
                 check=True,
-                encoding='utf-8'
+                encoding='utf-8',
+                errors='replace'  # Ignoruj błędy dekodowania (fix dla Windows)
             )
             
             info = json.loads(result.stdout)
@@ -179,6 +180,7 @@ class VideoDownloader:
                 stderr=subprocess.STDOUT,
                 text=True,
                 encoding='utf-8',
+                errors='replace',  # Ignoruj błędy dekodowania (fix dla Windows)
                 bufsize=1
             )
             
