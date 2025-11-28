@@ -245,11 +245,24 @@ class ShortsConfig:
 
 
 @dataclass
+class FrameSelectionConfig:
+    """Frame selection settings for thumbnails"""
+    strategy: str = "face_priority"  # face_priority, quality, center
+    quality_check: bool = True
+    search_window: int = 30  # frames to search around target
+
+
+@dataclass
 class ThumbnailConfig:
     """Thumbnail generation settings"""
     enabled: bool = True
     width: int = 1280
     height: int = 720
+    frame_selection: FrameSelectionConfig = None
+
+    def __post_init__(self):
+        if self.frame_selection is None:
+            self.frame_selection = FrameSelectionConfig()
 
 
 @dataclass
@@ -332,7 +345,16 @@ class Config:
         youtube = YouTubeConfig(**data.get('youtube', {}))
         splitter = SmartSplitterConfig(**data.get('splitter', {}))
         shorts = ShortsConfig(**data.get('shorts', {}))
-        thumbnails = ThumbnailConfig(**data.get('thumbnails', {}))
+
+        # Parse thumbnails with nested frame_selection
+        thumbnails_data = data.get('thumbnails', {})
+        if 'frame_selection' in thumbnails_data and isinstance(thumbnails_data['frame_selection'], dict):
+            frame_sel = FrameSelectionConfig(**thumbnails_data['frame_selection'])
+            thumbnails_data_copy = thumbnails_data.copy()
+            thumbnails_data_copy['frame_selection'] = frame_sel
+            thumbnails = ThumbnailConfig(**thumbnails_data_copy)
+        else:
+            thumbnails = ThumbnailConfig(**thumbnails_data)
         
         # General settings
         general = data.get('general', {})
