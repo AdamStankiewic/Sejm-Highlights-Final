@@ -241,6 +241,7 @@ class ShortsConfig:
     upload_to_youtube: bool = False
     shorts_category_id: str = "25"
     add_hashtags: bool = True
+    privacy_status: str = "unlisted"  # For backwards compatibility with old config.yml
 
 
 @dataclass
