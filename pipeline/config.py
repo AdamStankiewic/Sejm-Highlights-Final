@@ -237,6 +237,14 @@ class ShortsConfig:
     subtitle_fontsize: int = 48
     subtitle_position: str = "center"
 
+    # Title overlay styling (for first frame)
+    title_fontsize: int = 72  # Większy rozmiar dla tytułu
+    title_color: str = "&H00FFFF"  # Żółty w ASS format (BGR: FFFF00)
+    title_position_y: int = 150  # Pozycja Y od góry (piksel)
+    title_outline: int = 4  # Grubość obrysu
+    title_shadow: int = 2  # Cień
+    title_bold: bool = True  # Pogrubienie
+
     # Upload settings
     upload_to_youtube: bool = False
     shorts_category_id: str = "25"
@@ -253,17 +261,29 @@ class FrameSelectionConfig:
 
 
 @dataclass
+class ImageEnhancementsConfig:
+    """Image enhancement settings for thumbnails"""
+    contrast: float = 1.3
+    saturation: float = 1.2
+    sharpness: float = 1.1
+
+
+@dataclass
 class ThumbnailConfig:
     """Thumbnail generation settings"""
     enabled: bool = True
     width: int = 1280
     height: int = 720
     frame_selection: FrameSelectionConfig = None
+    enhancements: ImageEnhancementsConfig = None
     templates: Dict[str, Dict[str, Any]] = None
 
     def __post_init__(self):
         if self.frame_selection is None:
             self.frame_selection = FrameSelectionConfig()
+
+        if self.enhancements is None:
+            self.enhancements = ImageEnhancementsConfig()
 
         if self.templates is None:
             # Default thumbnail templates
