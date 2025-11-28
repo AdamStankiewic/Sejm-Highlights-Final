@@ -507,6 +507,20 @@ class Config:
         
         return True
     
+    def get_upload_profile(self, profile_name: Optional[str] = None) -> YouTubeConfig:
+        """
+        Get YouTube upload profile by name
+
+        Args:
+            profile_name: Name of profile (currently unused, returns default)
+
+        Returns:
+            YouTubeConfig object
+        """
+        # For now, just return the default youtube config
+        # In the future, this could support multiple profiles
+        return self.youtube
+
     def __repr__(self) -> str:
         """String representation"""
         return f"""Config(
