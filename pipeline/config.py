@@ -219,28 +219,36 @@ class YouTubeConfig:
 class ShortsConfig:
     """YouTube Shorts generation settings"""
     enabled: bool = False
-    
+
     # Selection criteria
     min_duration: float = 15.0  # Min 15s
     max_duration: float = 60.0  # Max 60s (YouTube limit)
     max_shorts_count: int = 10
-    
+
     # Video format (9:16 vertical)
     width: int = 1080
     height: int = 1920
-    
+
     # Timing
     pre_roll: float = 0.5
     post_roll: float = 0.5
-    
+
     # Subtitles styling
     subtitle_fontsize: int = 48
     subtitle_position: str = "center"
-    
+
     # Upload settings
     upload_to_youtube: bool = False
     shorts_category_id: str = "25"
     add_hashtags: bool = True
+
+
+@dataclass
+class ThumbnailConfig:
+    """Thumbnail generation settings"""
+    enabled: bool = True
+    width: int = 1280
+    height: int = 720
 
 
 @dataclass
@@ -257,6 +265,7 @@ class Config:
     splitter: SmartSplitterConfig = None
     youtube: YouTubeConfig = None
     shorts: ShortsConfig = None
+    thumbnails: ThumbnailConfig = None
     
     # General settings
     output_dir: Path = Path("output")
@@ -288,12 +297,14 @@ class Config:
             self.selection = SelectionConfig()
         if self.export is None:
             self.export = ExportConfig()
-        if self.splitter is None:  # ← TO POWINNO BYĆ TUTAJ
-            self.splitter = SmartSplitterConfig()  # ← TO POWINNO BYĆ TUTAJ
+        if self.splitter is None:
+            self.splitter = SmartSplitterConfig()
         if self.youtube is None:
             self.youtube = YouTubeConfig()
         if self.shorts is None:
             self.shorts = ShortsConfig()
+        if self.thumbnails is None:
+            self.thumbnails = ThumbnailConfig()
         
         # Ensure paths are Path objects
         self.output_dir = Path(self.output_dir)
@@ -320,6 +331,7 @@ class Config:
         youtube = YouTubeConfig(**data.get('youtube', {}))
         splitter = SmartSplitterConfig(**data.get('splitter', {}))
         shorts = ShortsConfig(**data.get('shorts', {}))
+        thumbnails = ThumbnailConfig(**data.get('thumbnails', {}))
         
         # General settings
         general = data.get('general', {})
@@ -335,6 +347,7 @@ class Config:
             youtube=youtube,
             splitter=splitter,
             shorts=shorts,
+            thumbnails=thumbnails,
             **general
         )
     
@@ -360,6 +373,9 @@ class Config:
             'selection': asdict(self.selection),
             'export': asdict(self.export),
             'youtube': asdict(self.youtube),
+            'splitter': asdict(self.splitter),
+            'shorts': asdict(self.shorts),
+            'thumbnails': asdict(self.thumbnails),
             'general': {
                 'output_dir': str(self.output_dir),
                 'temp_dir': str(self.temp_dir),
@@ -386,6 +402,9 @@ class Config:
             'selection': asdict(self.selection),
             'export': asdict(self.export),
             'youtube': asdict(self.youtube),
+            'splitter': asdict(self.splitter),
+            'shorts': asdict(self.shorts),
+            'thumbnails': asdict(self.thumbnails),
             'output_dir': str(self.output_dir),
             'temp_dir': str(self.temp_dir),
             'keep_intermediate': self.keep_intermediate,
