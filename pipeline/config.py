@@ -190,60 +190,27 @@ class SmartSplitterConfig:
 
 
 @dataclass
-class UploadProfileVideoSettings:
-    """Settings for main videos in upload profile"""
-    privacy_status: str = "unlisted"
-    schedule_as_premiere: bool = True
-    category_id: str = "25"
-    playlist_id: str = ""
-
-@dataclass
-class UploadProfileShortsSettings:
-    """Settings for Shorts in upload profile"""
-    enabled: bool = True
-    upload: bool = True
-    privacy_status: str = "public"
-    category_id: str = "25"
-    playlist_id: str = ""
-    add_hashtags: bool = True
-
-@dataclass
-class UploadProfile:
-    """Single upload profile (e.g., sejm, stream)"""
-    name: str = ""
-    channel_id: str = ""
-    token_file: str = "youtube_token.json"
-    main_videos: UploadProfileVideoSettings = None
-    shorts: UploadProfileShortsSettings = None
-
-    def __post_init__(self):
-        if self.main_videos is None:
-            self.main_videos = UploadProfileVideoSettings()
-        if self.shorts is None:
-            self.shorts = UploadProfileShortsSettings()
-
-@dataclass
 class YouTubeConfig:
     """YouTube Upload settings"""
     enabled: bool = False
     schedule_as_premiere: bool = True
     privacy_status: str = "unlisted"  # public, private, unlisted
     credentials_path: Optional[Path] = None
-    channel_id: Optional[str] = None
+    channel_id: Optional[str] = None  # ← DODAJ TĘ LINIĘ
     category_id: str = "25"  # 25 = News & Politics
     language: str = "pl"
     tags: list = field(default_factory=lambda: ["sejm", "polska", "polityka", "highlights"])
-
+    
     # Auto-generated metadata
     auto_title: bool = True
     auto_description: bool = True
     auto_tags: bool = True
-
+    
     def __post_init__(self):
         # Convert string path to Path object
         if isinstance(self.credentials_path, str):
             self.credentials_path = Path(self.credentials_path)
-
+        
         # Default credentials path
         if self.enabled and self.credentials_path is None:
             self.credentials_path = Path("client_secret.json")
@@ -252,29 +219,36 @@ class YouTubeConfig:
 class ShortsConfig:
     """YouTube Shorts generation settings"""
     enabled: bool = False
-    
+
     # Selection criteria
     min_duration: float = 15.0  # Min 15s
     max_duration: float = 60.0  # Max 60s (YouTube limit)
     max_shorts_count: int = 10
-    
+
     # Video format (9:16 vertical)
     width: int = 1080
     height: int = 1920
-    
+
     # Timing
     pre_roll: float = 0.5
     post_roll: float = 0.5
-    
+
     # Subtitles styling
     subtitle_fontsize: int = 48
     subtitle_position: str = "center"
 
     # Upload settings
     upload_to_youtube: bool = False
-    privacy_status: str = "public"
     shorts_category_id: str = "25"
     add_hashtags: bool = True
+
+
+@dataclass
+class ThumbnailConfig:
+    """Thumbnail generation settings"""
+    enabled: bool = True
+    width: int = 1280
+    height: int = 720
 
 
 @dataclass
@@ -291,15 +265,13 @@ class Config:
     splitter: SmartSplitterConfig = None
     youtube: YouTubeConfig = None
     shorts: ShortsConfig = None
-
-    # Upload profiles (multi-channel support)
-    upload_profiles: Dict[str, UploadProfile] = None
-
+    thumbnails: ThumbnailConfig = None
+    
     # General settings
     output_dir: Path = Path("output")
     temp_dir: Path = Path("temp")
     keep_intermediate: bool = False
-
+    
     # Hardware
     use_gpu: bool = True
     gpu_device: int = 0
@@ -331,13 +303,13 @@ class Config:
             self.youtube = YouTubeConfig()
         if self.shorts is None:
             self.shorts = ShortsConfig()
-        if self.upload_profiles is None:
-            self.upload_profiles = {}
-
+        if self.thumbnails is None:
+            self.thumbnails = ThumbnailConfig()
+        
         # Ensure paths are Path objects
         self.output_dir = Path(self.output_dir)
         self.temp_dir = Path(self.temp_dir)
-
+        
         # Create directories
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
@@ -347,7 +319,7 @@ class Config:
         """Load config z pliku YAML"""
         with open(yaml_path, 'r', encoding='utf-8') as f:
             data = yaml.safe_load(f)
-
+        
         # Parse sub-configs
         audio = AudioConfig(**data.get('audio', {}))
         vad = VADConfig(**data.get('vad', {}))
@@ -359,26 +331,11 @@ class Config:
         youtube = YouTubeConfig(**data.get('youtube', {}))
         splitter = SmartSplitterConfig(**data.get('splitter', {}))
         shorts = ShortsConfig(**data.get('shorts', {}))
-
-        # Parse upload profiles
-        upload_profiles = {}
-        profiles_data = data.get('upload_profiles', {})
-        for profile_name, profile_data in profiles_data.items():
-            # Parse nested configs
-            main_videos = UploadProfileVideoSettings(**profile_data.get('main_videos', {}))
-            shorts_settings = UploadProfileShortsSettings(**profile_data.get('shorts', {}))
-
-            upload_profiles[profile_name] = UploadProfile(
-                name=profile_data.get('name', profile_name),
-                channel_id=profile_data.get('channel_id', ''),
-                token_file=profile_data.get('token_file', f'youtube_token_{profile_name}.json'),
-                main_videos=main_videos,
-                shorts=shorts_settings
-            )
-
+        thumbnails = ThumbnailConfig(**data.get('thumbnails', {}))
+        
         # General settings
         general = data.get('general', {})
-
+        
         return cls(
             audio=audio,
             vad=vad,
@@ -390,7 +347,7 @@ class Config:
             youtube=youtube,
             splitter=splitter,
             shorts=shorts,
-            upload_profiles=upload_profiles,
+            thumbnails=thumbnails,
             **general
         )
     
@@ -398,28 +355,12 @@ class Config:
     def load_default(cls) -> 'Config':
         """Load default config"""
         config_path = Path("config.yml")
-
+        
         if config_path.exists():
             return cls.load_from_yaml(str(config_path))
         else:
             # Return default config
             return cls()
-
-    def get_upload_profile(self, profile_name: str) -> Optional[UploadProfile]:
-        """
-        Get upload profile by name
-
-        Args:
-            profile_name: Name of profile (e.g., 'sejm', 'stream')
-
-        Returns:
-            UploadProfile or None if not found
-        """
-        return self.upload_profiles.get(profile_name)
-
-    def list_upload_profiles(self) -> list:
-        """List all available upload profile names"""
-        return list(self.upload_profiles.keys())
     
     def save_to_yaml(self, yaml_path: str):
         """Zapisz config do YAML"""
@@ -432,6 +373,9 @@ class Config:
             'selection': asdict(self.selection),
             'export': asdict(self.export),
             'youtube': asdict(self.youtube),
+            'splitter': asdict(self.splitter),
+            'shorts': asdict(self.shorts),
+            'thumbnails': asdict(self.thumbnails),
             'general': {
                 'output_dir': str(self.output_dir),
                 'temp_dir': str(self.temp_dir),
@@ -458,6 +402,9 @@ class Config:
             'selection': asdict(self.selection),
             'export': asdict(self.export),
             'youtube': asdict(self.youtube),
+            'splitter': asdict(self.splitter),
+            'shorts': asdict(self.shorts),
+            'thumbnails': asdict(self.thumbnails),
             'output_dir': str(self.output_dir),
             'temp_dir': str(self.temp_dir),
             'keep_intermediate': self.keep_intermediate,
