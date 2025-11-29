@@ -316,6 +316,26 @@ class ThumbnailConfig:
 
 
 @dataclass
+class StreamingConfig:
+    """Streaming-specific settings (for stream_app.py)"""
+    # Chat analysis
+    chat_delay_offset: float = 10.0  # Stream delay (action happens before chat reacts)
+
+    # Copyright detection (DMCA-safe clips)
+    enable_copyright_detection: bool = True  # Scan selected clips for copyrighted music
+    audd_api_key: Optional[str] = None  # Get from https://audd.io (free tier: 300 requests/day)
+    auto_vocal_isolation: bool = True  # Auto-apply vocal isolation if music detected
+
+    # Vocal isolation settings (post-processing)
+    vocal_isolation_method: str = "highpass"  # highpass, bandpass, or spleeter
+    highpass_frequency: int = 300  # Hz - removes bass/music, keeps voice
+
+    # Detection thresholds
+    music_confidence_threshold: float = 0.7  # 0.0-1.0, higher = more strict
+    max_music_percentage: float = 0.3  # Skip clip if >30% is copyrighted music
+
+
+@dataclass
 class Config:
     """Główna konfiguracja pipeline'u"""
     # Sub-configs
@@ -330,6 +350,7 @@ class Config:
     youtube: YouTubeConfig = None
     shorts: ShortsConfig = None
     thumbnails: ThumbnailConfig = None
+    streaming: StreamingConfig = None
     
     # General settings
     output_dir: Path = Path("output")
