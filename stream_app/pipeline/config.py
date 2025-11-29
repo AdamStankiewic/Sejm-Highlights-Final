@@ -7,7 +7,7 @@ import yaml
 import os
 from pathlib import Path
 from dataclasses import dataclass, asdict, field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from dotenv import load_dotenv
 
 # Load environment variables from .env
@@ -255,6 +255,20 @@ class ShortsConfig:
     shorts_category_id: str = "25"
     add_hashtags: bool = True
     privacy_status: str = "unlisted"  # For backwards compatibility with old config.yml
+
+    # Template system (advanced layouts for streaming)
+    templates: List[str] = field(default_factory=lambda: [
+        "classic_gaming",  # Webcam bottom, gameplay top
+        "pip_modern",      # Full stream + PIP webcam in corner
+        "irl_fullface",    # Zoom on face, no separate webcam
+        "speaker_tracker", # Dynamic tracking of active speaker (bonus)
+        "simple"           # Original simple crop (fallback)
+    ])
+    default_template: str = "auto"  # auto = detect best template based on content
+
+    # Detection settings
+    face_detection: bool = True  # Enable face/webcam detection for auto template selection
+    webcam_detection: bool = True  # Detect webcam region in stream
 
 
 @dataclass

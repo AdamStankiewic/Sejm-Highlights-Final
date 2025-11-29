@@ -139,6 +139,19 @@ shorts:
   title_shadow: 3
   title_bold: true
 
+  # Template system (advanced layouts)
+  templates:
+    - "classic_gaming"   # Webcam bottom, gameplay top
+    - "pip_modern"       # Full stream + PIP webcam in corner
+    - "irl_fullface"     # Zoom on face, no separate webcam
+    - "speaker_tracker"  # Dynamic tracking (bonus)
+    - "simple"           # Original simple crop
+  default_template: "auto"  # auto = detect best, or force: classic_gaming, pip_modern, etc.
+
+  # Detection settings
+  face_detection: true      # Auto-detect faces/webcam for template selection
+  webcam_detection: true    # Detect webcam region in stream
+
   upload_to_youtube: false
   shorts_category_id: "20"  # Gaming
   add_hashtags: true

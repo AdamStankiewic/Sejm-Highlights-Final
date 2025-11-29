@@ -9,9 +9,17 @@ Stage 10: YouTube Shorts Generator (ENHANCED)
 import subprocess
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 import os
+import numpy as np
+
+try:
+    import cv2
+except ImportError:
+    cv2 = None
+    print("⚠️ OpenCV nie zainstalowany - webcam detection wyłączony")
+    print("   Instalacja: pip install opencv-python")
 
 from .config import Config
 
@@ -44,13 +52,129 @@ class ShortsStage:
     def _check_ffmpeg(self):
         """Sprawdź czy ffmpeg jest dostępny"""
         try:
-            subprocess.run(['ffmpeg', '-version'], 
-                         stdout=subprocess.PIPE, 
-                         stderr=subprocess.PIPE, 
+            subprocess.run(['ffmpeg', '-version'],
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE,
                          check=True)
         except (subprocess.CalledProcessError, FileNotFoundError):
             raise RuntimeError("ffmpeg nie jest zainstalowany lub niedostępny w PATH")
-    
+
+    def _detect_webcam_region(
+        self,
+        input_file: Path,
+        clip_start: float,
+        clip_end: float
+    ) -> Dict[str, Any]:
+        """
+        Wykryj region kamerki w streamie używając OpenCV face detection
+
+        Returns:
+            Dict with:
+                - type: "bottom_bar" | "corner" | "full_face" | "none"
+                - x, y, w, h: coordinates if webcam detected
+                - confidence: detection confidence
+        """
+        if not cv2 or not self.config.shorts.webcam_detection:
+            return {"type": "none", "confidence": 0.0}
+
+        try:
+            # Extract sample frame from middle of clip
+            sample_time = (clip_start + clip_end) / 2
+
+            # Use ffmpeg to extract one frame
+            cmd = [
+                'ffmpeg',
+                '-ss', str(sample_time),
+                '-i', str(input_file),
+                '-vframes', '1',
+                '-f', 'image2pipe',
+                '-pix_fmt', 'rgb24',
+                '-vcodec', 'rawvideo',
+                '-'
+            ]
+
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True
+            )
+
+            # Get video dimensions first
+            probe_cmd = [
+                'ffprobe',
+                '-v', 'error',
+                '-select_streams', 'v:0',
+                '-show_entries', 'stream=width,height',
+                '-of', 'csv=p=0',
+                str(input_file)
+            ]
+            probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True)
+            width, height = map(int, probe_result.stdout.strip().split(','))
+
+            # Convert raw frame to numpy array
+            frame = np.frombuffer(result.stdout, dtype=np.uint8)
+            frame = frame.reshape((height, width, 3))
+
+            # Convert to BGR for OpenCV
+            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+
+            # Load Haar Cascade for face detection
+            cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+            face_cascade = cv2.CascadeClassifier(cascade_path)
+
+            # Detect faces
+            faces = face_cascade.detectMultiScale(
+                gray,
+                scaleFactor=1.1,
+                minNeighbors=5,
+                minSize=(100, 100)  # Min face size
+            )
+
+            if len(faces) == 0:
+                return {"type": "none", "confidence": 0.0}
+
+            # Find largest face
+            largest_face = max(faces, key=lambda f: f[2] * f[3])
+            x, y, w, h = largest_face
+
+            # Calculate face position relative to frame
+            face_center_y = y + h / 2
+            face_area_ratio = (w * h) / (width * height)
+
+            # Determine webcam type based on position and size
+            if face_area_ratio > 0.4:
+                # Large face = IRL/full face stream
+                webcam_type = "full_face"
+                confidence = 0.9
+            elif face_center_y > height * 0.65:
+                # Face in bottom 35% = classic gaming layout (webcam bottom bar)
+                webcam_type = "bottom_bar"
+                confidence = 0.8
+            elif w < width * 0.3 and h < height * 0.3:
+                # Small face = PIP/corner webcam
+                webcam_type = "corner"
+                confidence = 0.7
+            else:
+                # Medium face in middle = uncertain, default to fullface
+                webcam_type = "full_face"
+                confidence = 0.5
+
+            return {
+                "type": webcam_type,
+                "x": int(x),
+                "y": int(y),
+                "w": int(w),
+                "h": int(h),
+                "confidence": confidence,
+                "face_area_ratio": float(face_area_ratio)
+            }
+
+        except Exception as e:
+            print(f"      ⚠️ Webcam detection error: {e}")
+            return {"type": "none", "confidence": 0.0}
+
     def process(
         self,
         input_file: str,
