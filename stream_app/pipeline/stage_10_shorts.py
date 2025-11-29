@@ -22,6 +22,13 @@ except ImportError:
     print("   Instalacja: pip install opencv-python")
 
 from .config import Config
+from .stage_10_shorts_templates import (
+    template_simple,
+    template_classic_gaming,
+    template_pip_modern,
+    template_irl_fullface,
+    select_template_auto
+)
 
 
 class ShortsStage:
@@ -181,20 +188,26 @@ class ShortsStage:
         shorts_clips: List[Dict],
         segments: List[Dict],
         output_dir: Path,
-        session_dir: Path
+        session_dir: Path,
+        template: str = "auto"
     ) -> Dict[str, Any]:
         """
         Główna metoda generowania Shorts
-        
+
         Args:
             shorts_clips: Już wybrane klipy dla Shorts (z Stage 6)
-            
+            template: Template to use - "auto", "classic_gaming", "pip_modern", "irl_fullface", "simple"
+
         Returns:
             Dict zawierający listę wygenerowanych Shorts
         """
         print(f"\n🎬 YouTube Shorts Generator (ENHANCED)")
         print(f"📱 Generowanie {len(shorts_clips)} Shorts...")
-        
+        print(f"📐 Template: {template}")
+
+        # Store template for use in _generate_single_short
+        self.current_template = template
+
         if not shorts_clips:
             print("   ⚠️ Brak kandydatów na Shorts")
             return {
@@ -280,16 +293,29 @@ class ShortsStage:
 
         # STEP 1: Generuj ASS napisy (żółte, safe zone) + tytuł na pierwszej klatce
         self._generate_shorts_subtitles(clip, segments, t0, t1, ass_file, title)
-        
-        # STEP 2: Renderuj video z napisami
-        # Filter complex:
-        # 1. Scale + crop do 9:16
-        # 2. Dodaj napisy z ASS (żółte, centered, safe zone)
-        filter_complex = (
-            f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
-            f"crop={width}:{height}[v];"
-            f"[v]ass='{str(ass_file).replace('\\', '/')}'"
-        )
+
+        # STEP 2: Detect webcam region (for template selection)
+        webcam_detection = self._detect_webcam_region(input_file, t0, t1)
+        print(f"      🎥 Webcam: {webcam_detection['type']} (conf: {webcam_detection['confidence']:.2f})")
+
+        # STEP 3: Select template
+        template_name = getattr(self, 'current_template', self.config.shorts.default_template)
+        if template_name == "auto":
+            template_name = select_template_auto(webcam_detection)
+            print(f"      📐 Auto-selected: {template_name}")
+
+        # STEP 4: Generate filter_complex based on template
+        if template_name == "classic_gaming":
+            filter_video = template_classic_gaming(width, height, webcam_detection)
+        elif template_name == "pip_modern":
+            filter_video = template_pip_modern(width, height, webcam_detection)
+        elif template_name == "irl_fullface":
+            filter_video = template_irl_fullface(width, height)
+        else:  # simple or unknown
+            filter_video = template_simple(width, height)
+
+        # Combine video filter with subtitles
+        filter_complex = f"{filter_video};[v]ass='{str(ass_file).replace('\\', '/')}'"
         
         cmd = [
             'ffmpeg',
