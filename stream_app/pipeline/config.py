@@ -4,9 +4,14 @@ Zarządza wszystkimi parametrami przetwarzania
 """
 
 import yaml
+import os
 from pathlib import Path
 from dataclasses import dataclass, asdict, field
 from typing import Optional, Dict, Any
+from dotenv import load_dotenv
+
+# Load environment variables from .env
+load_dotenv()
 
 
 @dataclass
@@ -392,6 +397,14 @@ class Config:
             self.thumbnails = ThumbnailConfig()
         if self.streaming is None:
             self.streaming = StreamingConfig()
+
+        # Load AudD API key from environment if not set
+        if self.streaming.audd_api_key is None:
+            env_key = os.getenv('AUDD_API_KEY')
+            if env_key:
+                self.streaming.audd_api_key = env_key
+                self.streaming.enable_copyright_detection = True
+                print(f"✓ AudD API key loaded from .env")
 
         # Ensure paths are Path objects
         self.output_dir = Path(self.output_dir)

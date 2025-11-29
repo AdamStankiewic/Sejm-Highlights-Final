@@ -38,14 +38,19 @@ class FeaturesStage:
     
     def _load_keywords(self):
         """Załaduj bazę słów kluczowych"""
+        # Skip if keywords_file is empty (streaming mode - no keywords needed)
+        if not self.config.features.keywords_file:
+            print("📝 Keywords disabled (streaming mode)")
+            return
+
         keywords_path = Path(self.config.features.keywords_file)
-        
+
         if not keywords_path.exists():
             print(f"⚠️ Brak pliku keywords: {keywords_path}")
             return
-        
+
         print(f"📚 Ładowanie keywords z {keywords_path.name}")
-        
+
         with open(keywords_path, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
