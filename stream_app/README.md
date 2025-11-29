@@ -89,15 +89,28 @@ sudo apt update
 sudo apt install ffmpeg
 ```
 
-### 4. (Opcjonalnie) AudD API Key dla copyright detection
+### 4. (Opcjonalnie) Copyright Detection - AudD API Key
+
+**Copyright detection działa automatycznie jeśli dodasz API key do `.env`:**
 
 1. Załóż darmowe konto: https://audd.io
 2. Otrzymasz API key (300 requests/day za darmo)
-3. Dodaj do `config.yml`:
-```yaml
-streaming:
-  audd_api_key: "your-api-key-here"
-```
+3. Skopiuj plik `.env.example` do `.env`:
+   ```bash
+   cp .env.example .env
+   ```
+4. Edytuj `.env` i dodaj swój klucz:
+   ```bash
+   AUDD_API_KEY=your_audd_api_key_here
+   ```
+
+**Gotowe!** Copyright detection włączy się automatycznie przy następnym uruchomieniu.
+
+**Co robi:**
+- ✅ Skanuje wybrane klipy pod kątem muzyki chronionej
+- ✅ Pomija klipy z >30% muzyki (DMCA-safe)
+- ✅ Automatycznie usuwa muzykę w tle (vocal isolation filter)
+- ✅ Zachowuje głos streamera
 
 ---
 
