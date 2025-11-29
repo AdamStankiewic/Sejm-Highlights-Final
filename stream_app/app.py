@@ -254,6 +254,69 @@ class StreamHighlightsApp(QMainWindow):
         settings_group.setLayout(settings_layout)
         layout.addWidget(settings_group)
 
+        # === COPYRIGHT DETECTION ===
+        copyright_group = QGroupBox("🎵 Copyright Detection (DMCA Protection)")
+        copyright_layout = QVBoxLayout()
+
+        # Enable copyright detection
+        self.enable_copyright = QCheckBox("🛡️ Włącz wykrywanie muzyki chronionej (wymaga AudD API)")
+        self.enable_copyright.setChecked(False)  # Default off (requires API key)
+        self.enable_copyright.stateChanged.connect(self._toggle_copyright_fields)
+        copyright_layout.addWidget(self.enable_copyright)
+
+        # AudD API key
+        api_key_layout = QHBoxLayout()
+        api_key_layout.addWidget(QLabel("🔑 AudD API Key:"))
+        self.audd_api_key = QLineEdit()
+        self.audd_api_key.setPlaceholderText("Wklej swój API key z https://audd.io (300 free/day)")
+        self.audd_api_key.setEchoMode(QLineEdit.EchoMode.Password)  # Hide API key
+        self.audd_api_key.setEnabled(False)
+        api_key_layout.addWidget(self.audd_api_key)
+        copyright_layout.addLayout(api_key_layout)
+
+        # Max music percentage
+        music_threshold_layout = QHBoxLayout()
+        music_threshold_layout.addWidget(QLabel("🎚️ Max muzyki w klipie:"))
+        self.max_music_percentage = QSpinBox()
+        self.max_music_percentage.setRange(0, 100)
+        self.max_music_percentage.setValue(30)
+        self.max_music_percentage.setSuffix("%")
+        self.max_music_percentage.setEnabled(False)
+        self.max_music_percentage.setToolTip("Klipy z większym % muzyki zostaną pominięte")
+        music_threshold_layout.addWidget(self.max_music_percentage)
+        music_threshold_layout.addWidget(QLabel("(pomiń jeśli więcej)"))
+        music_threshold_layout.addStretch()
+        copyright_layout.addLayout(music_threshold_layout)
+
+        # Vocal isolation
+        self.auto_vocal_isolation = QCheckBox("🔊 Auto-czyszczenie: usuń muzykę, zostaw głos (vocal isolation)")
+        self.auto_vocal_isolation.setChecked(True)
+        self.auto_vocal_isolation.setEnabled(False)
+        copyright_layout.addWidget(self.auto_vocal_isolation)
+
+        # Vocal isolation method
+        method_layout = QHBoxLayout()
+        method_layout.addWidget(QLabel("  ⚙️ Metoda:"))
+        self.vocal_method = QComboBox()
+        self.vocal_method.addItems(["highpass (usuwa <300Hz - bass, beat)", "bandpass (zachowuje 300-3400Hz - głos)"])
+        self.vocal_method.setCurrentIndex(0)  # Default: highpass
+        self.vocal_method.setEnabled(False)
+        method_layout.addWidget(self.vocal_method)
+        method_layout.addStretch()
+        copyright_layout.addLayout(method_layout)
+
+        # Help text
+        copyright_help = QLabel(
+            "💡 Tip: Copyright detection skanuje wybrane klipy i automatycznie usuwa muzykę w tle.\n"
+            "   Działa w 2 krokach: Pre-scan → Post-processing (vocal isolation jeśli wykryto muzykę)"
+        )
+        copyright_help.setStyleSheet("color: #FF9800; font-style: italic; font-size: 9pt; padding: 5px;")
+        copyright_help.setWordWrap(True)
+        copyright_layout.addWidget(copyright_help)
+
+        copyright_group.setLayout(copyright_layout)
+        layout.addWidget(copyright_group)
+
         # === PROCESSING ===
         process_group = QGroupBox("🚀 Przetwarzanie")
         process_layout = QVBoxLayout()
@@ -395,6 +458,14 @@ class StreamHighlightsApp(QMainWindow):
         if self.vod_path:
             self.start_btn.setEnabled(True)
 
+    def _toggle_copyright_fields(self, state):
+        """Enable/disable copyright detection fields based on checkbox"""
+        enabled = state == Qt.CheckState.Checked.value
+        self.audd_api_key.setEnabled(enabled)
+        self.max_music_percentage.setEnabled(enabled)
+        self.auto_vocal_isolation.setEnabled(enabled)
+        self.vocal_method.setEnabled(enabled)
+
     def start_processing(self):
         """Start streaming highlight processing"""
         # Validate input
@@ -406,6 +477,31 @@ class StreamHighlightsApp(QMainWindow):
         self.config.selection.max_clips = self.num_clips.value()
         self.config.selection.max_clip_duration = float(self.clip_duration.value())
         self.config.shorts.enabled = self.generate_shorts.isChecked()
+
+        # COPYRIGHT DETECTION SETTINGS
+        self.config.streaming.enable_copyright_detection = self.enable_copyright.isChecked()
+        if self.enable_copyright.isChecked():
+            api_key = self.audd_api_key.text().strip()
+            if not api_key:
+                QMessageBox.warning(
+                    self,
+                    "Missing API Key",
+                    "⚠️ Copyright detection enabled but no AudD API key provided!\n\n"
+                    "Get a free key at: https://audd.io\n\n"
+                    "Processing will continue without copyright detection."
+                )
+                self.config.streaming.enable_copyright_detection = False
+            else:
+                self.config.streaming.audd_api_key = api_key
+                self.config.streaming.max_music_percentage = self.max_music_percentage.value() / 100.0
+                self.config.streaming.auto_vocal_isolation = self.auto_vocal_isolation.isChecked()
+
+                # Map GUI selection to config value
+                method_text = self.vocal_method.currentText()
+                if "bandpass" in method_text:
+                    self.config.streaming.vocal_isolation_method = "bandpass"
+                else:
+                    self.config.streaming.vocal_isolation_method = "highpass"
 
         # STREAMING-SPECIFIC: Lower min_clip_duration for gaming streams
         # Gaming streamers speak in short bursts (15-40s), not long speeches like Sejm
@@ -426,6 +522,14 @@ class StreamHighlightsApp(QMainWindow):
 
         self.log(f"⚙️ Target clips: {self.num_clips.value()}", "INFO")
         self.log(f"⚙️ Clip duration: {self.clip_duration.value()}s", "INFO")
+
+        # Log copyright detection settings
+        if self.config.streaming.enable_copyright_detection:
+            self.log("🛡️ Copyright detection: ENABLED", "INFO")
+            self.log(f"   Max music: {int(self.config.streaming.max_music_percentage * 100)}%", "INFO")
+            self.log(f"   Vocal isolation: {self.config.streaming.vocal_isolation_method}", "INFO")
+        else:
+            self.log("🎵 Copyright detection: DISABLED", "INFO")
 
         # Disable controls
         self.start_btn.setEnabled(False)

@@ -1,0 +1,348 @@
+{
+  "comments": [
+    {
+      "content_offset_seconds": 15.2,
+      "message": {
+        "body": "hello chat",
+        "user_color": "#FF0000"
+      },
+      "commenter": {
+        "display_name": "viewer123"
+      }
+    },
+    {
+      "content_offset_seconds": 18.5,
+      "message": {
+        "body": "pog game",
+        "user_color": "#00FF00"
+      },
+      "commenter": {
+        "display_name": "gamer456"
+      }
+    },
+    {
+      "content_offset_seconds": 23.1,
+      "message": {
+        "body": "yo",
+        "user_color": "#0000FF"
+      },
+      "commenter": {
+        "display_name": "lurker789"
+      }
+    },
+    {
+      "content_offset_seconds": 120.5,
+      "message": {
+        "body": "KEKW",
+        "user_color": "#FF0000"
+      },
+      "commenter": {
+        "display_name": "viewer123"
+      }
+    },
+    {
+      "content_offset_seconds": 120.8,
+      "message": {
+        "body": "KEKW KEKW",
+        "user_color": "#00FF00"
+      },
+      "commenter": {
+        "display_name": "gamer456"
+      }
+    },
+    {
+      "content_offset_seconds": 121.2,
+      "message": {
+        "body": "KEKW",
+        "user_color": "#0000FF"
+      },
+      "commenter": {
+        "display_name": "lurker789"
+      }
+    },
+    {
+      "content_offset_seconds": 121.5,
+      "message": {
+        "body": "KEKW KEKW KEKW",
+        "user_color": "#FF00FF"
+      },
+      "commenter": {
+        "display_name": "emote_spammer"
+      }
+    },
+    {
+      "content_offset_seconds": 122.1,
+      "message": {
+        "body": "OMEGALUL",
+        "user_color": "#FFFF00"
+      },
+      "commenter": {
+        "display_name": "fanboy101"
+      }
+    },
+    {
+      "content_offset_seconds": 122.4,
+      "message": {
+        "body": "KEKW what was that",
+        "user_color": "#00FFFF"
+      },
+      "commenter": {
+        "display_name": "reaction_andy"
+      }
+    },
+    {
+      "content_offset_seconds": 122.9,
+      "message": {
+        "body": "LULW",
+        "user_color": "#FF0000"
+      },
+      "commenter": {
+        "display_name": "viewer123"
+      }
+    },
+    {
+      "content_offset_seconds": 123.2,
+      "message": {
+        "body": "KEKW KEKW",
+        "user_color": "#00FF00"
+      },
+      "commenter": {
+        "display_name": "gamer456"
+      }
+    },
+    {
+      "content_offset_seconds": 123.8,
+      "message": {
+        "body": "LUL",
+        "user_color": "#0000FF"
+      },
+      "commenter": {
+        "display_name": "lurker789"
+      }
+    },
+    {
+      "content_offset_seconds": 124.1,
+      "message": {
+        "body": "KEKW",
+        "user_color": "#FF00FF"
+      },
+      "commenter": {
+        "display_name": "emote_spammer"
+      }
+    },
+    {
+      "content_offset_seconds": 180.3,
+      "message": {
+        "body": "nice play",
+        "user_color": "#FF0000"
+      },
+      "commenter": {
+        "display_name": "viewer123"
+      }
+    },
+    {
+      "content_offset_seconds": 185.7,
+      "message": {
+        "body": "chill stream",
+        "user_color": "#00FF00"
+      },
+      "commenter": {
+        "display_name": "gamer456"
+      }
+    },
+    {
+      "content_offset_seconds": 300.1,
+      "message": {
+        "body": "PogChamp",
+        "user_color": "#FF0000"
+      },
+      "commenter": {
+        "display_name": "viewer123"
+      }
+    },
+    {
+      "content_offset_seconds": 300.3,
+      "message": {
+        "body": "PogChamp PogChamp",
+        "user_color": "#00FF00"
+      },
+      "commenter": {
+        "display_name": "gamer456"
+      }
+    },
+    {
+      "content_offset_seconds": 300.5,
+      "message": {
+        "body": "POG",
+        "user_color": "#0000FF"
+      },
+      "commenter": {
+        "display_name": "lurker789"
+      }
+    },
+    {
+      "content_offset_seconds": 300.8,
+      "message": {
+        "body": "PogChamp PogChamp PogChamp",
+        "user_color": "#FF00FF"
+      },
+      "commenter": {
+        "display_name": "emote_spammer"
+      }
+    },
+    {
+      "content_offset_seconds": 301.1,
+      "message": {
+        "body": "POGGERS",
+        "user_color": "#FFFF00"
+      },
+      "commenter": {
+        "display_name": "fanboy101"
+      }
+    },
+    {
+      "content_offset_seconds": 301.4,
+      "message": {
+        "body": "PogChamp",
+        "user_color": "#00FFFF"
+      },
+      "commenter": {
+        "display_name": "reaction_andy"
+      }
+    },
+    {
+      "content_offset_seconds": 301.7,
+      "message": {
+        "body": "POG POG POG",
+        "user_color": "#FF0000"
+      },
+      "commenter": {
+        "display_name": "viewer123"
+      }
+    },
+    {
+      "content_offset_seconds": 302.0,
+      "message": {
+        "body": "PogChamp insane",
+        "user_color": "#00FF00"
+      },
+      "commenter": {
+        "display_name": "gamer456"
+      }
+    },
+    {
+      "content_offset_seconds": 302.4,
+      "message": {
+        "body": "PogU",
+        "user_color": "#0000FF"
+      },
+      "commenter": {
+        "display_name": "lurker789"
+      }
+    },
+    {
+      "content_offset_seconds": 302.8,
+      "message": {
+        "body": "PogChamp PogChamp",
+        "user_color": "#FF00FF"
+      },
+      "commenter": {
+        "display_name": "emote_spammer"
+      }
+    },
+    {
+      "content_offset_seconds": 303.2,
+      "message": {
+        "body": "HOLY",
+        "user_color": "#FFFF00"
+      },
+      "commenter": {
+        "display_name": "fanboy101"
+      }
+    },
+    {
+      "content_offset_seconds": 303.6,
+      "message": {
+        "body": "PogChamp",
+        "user_color": "#00FFFF"
+      },
+      "commenter": {
+        "display_name": "reaction_andy"
+      }
+    },
+    {
+      "content_offset_seconds": 450.2,
+      "message": {
+        "body": "good stream",
+        "user_color": "#FF0000"
+      },
+      "commenter": {
+        "display_name": "viewer123"
+      }
+    },
+    {
+      "content_offset_seconds": 480.5,
+      "message": {
+        "body": "vibing",
+        "user_color": "#00FF00"
+      },
+      "commenter": {
+        "display_name": "gamer456"
+      }
+    },
+    {
+      "content_offset_seconds": 540.1,
+      "message": {
+        "body": "monkaS",
+        "user_color": "#0000FF"
+      },
+      "commenter": {
+        "display_name": "lurker789"
+      }
+    },
+    {
+      "content_offset_seconds": 540.3,
+      "message": {
+        "body": "monkaS",
+        "user_color": "#FF00FF"
+      },
+      "commenter": {
+        "display_name": "emote_spammer"
+      }
+    },
+    {
+      "content_offset_seconds": 540.6,
+      "message": {
+        "body": "monkaS monkaS",
+        "user_color": "#FFFF00"
+      },
+      "commenter": {
+        "display_name": "fanboy101"
+      }
+    },
+    {
+      "content_offset_seconds": 541.0,
+      "message": {
+        "body": "oh no",
+        "user_color": "#00FFFF"
+      },
+      "commenter": {
+        "display_name": "reaction_andy"
+      }
+    },
+    {
+      "content_offset_seconds": 541.5,
+      "message": {
+        "body": "monkaW",
+        "user_color": "#FF0000"
+      },
+      "commenter": {
+        "display_name": "viewer123"
+      }
+    }
+  ],
+  "video": {
+    "duration": 600,
+    "title": "Sample Stream - Epic Gaming Moments"
+  }
+}
