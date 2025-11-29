@@ -1,0 +1,211 @@
+# Stream Highlights AI - Configuration File v1.0
+# Optimized for Twitch/YouTube/Kick streams
+# All durations in seconds unless specified otherwise
+
+# === Audio Processing ===
+audio:
+  sample_rate: 16000
+  channels: 1
+  normalization: "ebu_r128"
+  target_loudness: -16.0  # LUFS
+
+# === Voice Activity Detection ===
+vad:
+  model: "silero_v4"
+  threshold: 0.5
+  min_speech_duration: 2.0  # Shorter for streams (quick reactions)
+  min_silence_duration: 1.0
+  max_segment_duration: 120.0  # 2 minutes max (streams have shorter moments)
+
+# === Automatic Speech Recognition ===
+asr:
+  model: "medium"  # Medium is faster and good enough for gaming/casual streams
+  compute_type: "float16"
+  beam_size: 3
+  language: "pl"  # Change to "en" for English streams
+  condition_on_previous_text: true
+  temperature: [0.0, 0.2]
+  initial_prompt: ""  # No specific prompt for generic streams
+  batch_size: 10
+
+# === Feature Engineering ===
+features:
+  compute_rms: true
+  compute_spectral_centroid: true
+  compute_spectral_flux: true
+  compute_zcr: true
+  compute_speech_rate: true
+  compute_pitch_variance: true
+  compute_pause_analysis: true
+  keywords_file: ""  # No keywords for generic streams
+  compute_entity_density: false
+  spacy_model: "pl_core_news_lg"
+
+# === Streaming-Specific Settings ===
+streaming:
+  # Chat analysis
+  chat_delay_offset: 10.0  # Stream delay (action happens 10s before chat reacts)
+
+  # Copyright detection (DMCA-safe clips)
+  enable_copyright_detection: true  # Scan selected clips for copyrighted music
+  audd_api_key: null  # Get free API key from https://audd.io (300 requests/day)
+  auto_vocal_isolation: true  # Auto-apply vocal isolation if music detected
+
+  # Vocal isolation settings (post-processing)
+  vocal_isolation_method: "highpass"  # highpass, bandpass, or spleeter
+  highpass_frequency: 300  # Hz - removes bass/music, keeps voice
+
+  # Detection thresholds
+  music_confidence_threshold: 0.7  # 0.0-1.0, higher = more strict
+  max_music_percentage: 0.3  # Skip clip if >30% is copyrighted music
+
+# === Clip Selection ===
+selection:
+  min_clip_duration: 20.0  # Shorter for streams (gaming highlights)
+  max_clip_duration: 90.0  # Max 1.5 min per clip
+  target_total_duration: 600.0  # 10 min total
+
+  min_clips: 5
+  max_clips: 15
+
+  # Temporal constraints (optimized for streams)
+  min_time_gap: 15.0  # Shorter gap between clips
+  smart_merge_gap: 8.0  # Merge closely related moments
+  smart_merge_min_score: 0.45  # Lower threshold for merging
+
+  # Coverage optimization
+  position_bins: 5
+  max_clips_per_bin: 4
+
+  # Trimming
+  enable_trimming: true
+  trim_percentage: 0.15
+  duration_tolerance: 1.2
+
+# === Video Export ===
+export:
+  video_codec: "libx264"
+  video_preset: "fast"  # Faster encoding for streams
+  crf: 23  # Slightly lower quality but faster
+
+  audio_codec: "aac"
+  audio_bitrate: "192k"
+
+  # Transitions (disabled for streams - keep raw energy)
+  add_transitions: false
+  title_card_duration: 2.0
+  fade_in_duration: 0.3
+  fade_out_duration: 0.3
+
+  # Title cards
+  title_font: "Arial"
+  title_fontsize: 48
+  title_fontcolor: "white"
+  title_bgcolor: "black"
+
+  # Pre/post roll
+  clip_preroll: 1.0
+  clip_postroll: 0.5
+
+  # Hardsub (optional)
+  generate_hardsub: false
+  subtitle_fontsize: 32
+  subtitle_style: "Bold=1,Outline=2,Shadow=1,MarginV=40"
+
+  movflags: "+faststart"
+
+# === YouTube Shorts ===
+shorts:
+  enabled: true  # Streams are perfect for Shorts!
+
+  min_duration: 15.0
+  max_duration: 60.0
+  max_shorts_count: 10
+
+  width: 1080
+  height: 1920
+
+  pre_roll: 0.3
+  post_roll: 0.3
+
+  subtitle_fontsize: 52
+  subtitle_position: "center"
+
+  # Title overlay
+  title_fontsize: 90
+  title_color: "&H00FFFF"  # Yellow
+  title_position_y: 230
+  title_outline: 5
+  title_shadow: 3
+  title_bold: true
+
+  upload_to_youtube: false
+  shorts_category_id: "20"  # Gaming
+  add_hashtags: true
+  privacy_status: "unlisted"
+
+# === YouTube Upload ===
+youtube:
+  enabled: false
+  schedule_as_premiere: false  # Streams usually instant publish
+  privacy_status: "unlisted"
+  credentials_path: "client_secret.json"
+  channel_id: null
+  category_id: "20"  # Gaming (change to 22 for Vlog, 24 for Entertainment)
+  language: "pl"
+  tags:
+    - "gaming"
+    - "highlights"
+    - "stream"
+    - "twitch"
+  auto_title: true
+  auto_description: true
+  auto_tags: true
+
+# === General Settings ===
+general:
+  output_dir: "output"
+  temp_dir: "temp"
+  keep_intermediate: false
+
+  use_gpu: true
+  gpu_device: 0
+  num_workers: 4
+
+  log_level: "INFO"
+  save_logs: true
+
+# === Thumbnails ===
+thumbnails:
+  enabled: true
+  width: 1280
+  height: 720
+  frame_selection:
+    strategy: "quality"  # For streams, just pick best quality frame
+    quality_check: true
+    search_window: 30
+  enhancements:
+    contrast: 1.4
+    saturation: 1.3
+    sharpness: 1.2
+  templates:
+    gaming:
+      style: 'top_bottom'
+      text_color: '#00FF00'  # Green
+      outline_color: '#000000'
+      emoji: '🎮🔥'
+    reaction:
+      style: 'center'
+      text_color: '#FFFF00'  # Yellow
+      outline_color: '#FF0000'
+      emoji: '😱💀'
+    pogchamp:
+      style: 'split'
+      text_color: '#FFFFFF'
+      outline_color: '#9146FF'  # Twitch purple
+      emoji: '🙌⚡'
+    kekw:
+      style: 'top_bottom'
+      text_color: '#FF00FF'
+      outline_color: '#000000'
+      emoji: '😂🤣'

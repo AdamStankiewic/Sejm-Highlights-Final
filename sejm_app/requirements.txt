@@ -1,0 +1,70 @@
+# Sejm Highlights AI - Requirements
+# Python 3.11+
+
+# === Core Framework ===
+PyQt6>=6.6.0
+PyYAML>=6.0.1
+
+# === GPT Integration ===
+openai>=1.0.0
+python-dotenv>=1.0.0
+
+# === Thumbnail Generation ===
+pillow>=10.0.0
+opencv-python>=4.8.0
+
+# === YouTube Upload ===
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.1.0
+google-api-python-client>=2.0.0
+
+# === Deep Learning & AI ===
+torch>=2.1.0
+torchaudio>=2.1.0
+transformers>=4.35.0
+faster-whisper>=0.10.0
+
+# === Audio/Video Processing ===
+librosa>=0.10.1
+soundfile>=0.12.1
+pydub>=0.25.1
+
+# === NLP ===
+spacy>=3.7.0
+# Pobierz model: python -m spacy download pl_core_news_lg
+
+# === Data Processing ===
+numpy>=1.24.0
+pandas>=2.1.0
+scipy>=1.11.0
+
+# === Utilities ===
+tqdm>=4.66.0
+python-dateutil>=2.8.2
+
+# === Optional: Performance ===
+# CUDA 12.1 (install separately from https://developer.nvidia.com/cuda-downloads)
+# cuDNN 8.9+ (install separately)
+
+# === Development ===
+pytest>=7.4.0  # dla testów
+
+# ==========================================
+# INSTALACJA ZEWNĘTRZNA (nie w pip):
+# ==========================================
+# 1. ffmpeg - https://ffmpeg.org/download.html
+#    Windows: choco install ffmpeg
+#    lub pobierz z: https://www.gyan.dev/ffmpeg/builds/
+#
+# 2. CUDA Toolkit 12.1+ (dla GPU)
+#    https://developer.nvidia.com/cuda-downloads
+#
+# 3. Model spaCy:
+#    python -m spacy download pl_core_news_lg
+#
+# ==========================================
+
+# UWAGA: 
+# - Silero VAD jest pobierany automatycznie przez torch.hub
+# - Whisper models są pobierane automatycznie przez faster-whisper
+# - RoBERTa NLI jest pobierane przez transformers
