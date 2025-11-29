@@ -17,6 +17,7 @@ from .stage_03_transcribe import TranscribeStage
 from .stage_04_features import FeaturesStage
 from .stage_05_scoring_gpt import ScoringStage
 from .stage_06_selection import SelectionStage
+from .stage_06b_copyright import CopyrightDetectionStage
 from .stage_07_export import ExportStage
 from .stage_08_thumbnail import ThumbnailStage
 
@@ -49,6 +50,7 @@ class PipelineProcessor:
             'features': FeaturesStage(config),
             'scoring': ScoringStage(config),
             'selection': SelectionStage(config),
+            'copyright': CopyrightDetectionStage(config),
             'export': ExportStage(config)
         }
         
@@ -282,9 +284,34 @@ class PipelineProcessor:
                 )
                 
                 self.timing_stats['selection'] = self._format_duration(time.time() - stage_start)
-                self._report_progress("Stage 6/7", 85, f"✅ Wybrano {len(selection_result['clips'])} klipów")
-                
-                # === Po stage 6 (Selection): Podział na części jeśli potrzebny ===
+                self._report_progress("Stage 6/8", 85, f"✅ Wybrano {len(selection_result['clips'])} klipów")
+
+                # === ETAP 6b: Copyright Detection (skanowanie wybranych klipów) ===
+                self._check_cancelled()
+                stage_start = time.time()
+                self._report_progress("Stage 6b/8", 87, "Skanowanie klipów pod kątem muzyki chronionej...")
+
+                copyright_result = self.stages['copyright'].process(
+                    input_file=input_file,
+                    clips=selection_result['clips'],
+                    output_dir=self.session_dir
+                )
+
+                # Update clips with copyright info (some may have been filtered out)
+                selection_result['clips'] = copyright_result['clips']
+
+                self.timing_stats['copyright'] = self._format_duration(time.time() - stage_start)
+                copyright_report = copyright_result.get('copyright_report', {})
+
+                if copyright_report.get('enabled'):
+                    clips_flagged = copyright_report.get('clips_flagged', 0)
+                    clips_skipped = copyright_report.get('clips_skipped', 0)
+                    self._report_progress("Stage 6b/8", 90,
+                        f"✅ Copyright scan: {clips_flagged} flagged, {clips_skipped} skipped")
+                else:
+                    self._report_progress("Stage 6b/8", 90, "⚠️ Copyright detection disabled")
+
+                # === Po stage 6b: Podział na części jeśli potrzebny ===
                 parts_metadata = None
                 if split_strategy:
                     print("\n✂️ Dzielę klipy na części...")

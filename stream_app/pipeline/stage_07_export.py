@@ -196,6 +196,30 @@ class ExportStage:
             'num_clips': len(clips)
         }
     
+    def _get_vocal_isolation_filter(self) -> str:
+        """
+        Get FFmpeg audio filter for vocal isolation (removes music, keeps voice)
+
+        Returns:
+            FFmpeg filter string
+        """
+        method = self.config.streaming.vocal_isolation_method
+
+        if method == "highpass":
+            # High-pass filter: removes frequencies < 300Hz (music/bass)
+            # Keeps voice (300Hz-3400Hz)
+            freq = self.config.streaming.highpass_frequency
+            return f"highpass=f={freq}"
+
+        elif method == "bandpass":
+            # Band-pass filter: keeps only voice frequencies (300-3400Hz)
+            # More aggressive, better music removal
+            return "bandpass=f=300:width_type=h:width=3100"
+
+        else:
+            # Default: highpass
+            return f"highpass=f=300"
+
     def _extract_clips(
         self,
         input_file: Path,
@@ -204,15 +228,21 @@ class ExportStage:
     ):
         """Extract individual clips from source video"""
         print(f"   Wycinanie {len(clips)} klipów...")
-        
+
+        clips_with_vocal_isolation = 0
+
         for i, clip in enumerate(clips):
             # Pre/post roll
             t0 = max(0, clip['t0'] - self.config.export.clip_preroll)
             t1 = clip['t1'] + self.config.export.clip_postroll
-            
+
             output_file = output_dir / f"clip_{i+1:03d}.mp4"
-            
-            # ffmpeg precise cut (re-encode needed for B-frames)
+
+            # Check if vocal isolation needed (copyright flag from stage 6b)
+            copyright_info = clip.get('copyright', {})
+            needs_vocal_isolation = copyright_info.get('requires_vocal_isolation', False)
+
+            # Build FFmpeg command
             cmd = [
                 'ffmpeg',
                 '-ss', str(t0),
@@ -221,13 +251,32 @@ class ExportStage:
                 '-c:v', self.config.export.video_codec,
                 '-preset', self.config.export.video_preset,
                 '-crf', str(self.config.export.crf),
-                '-c:a', self.config.export.audio_codec,
-                '-b:a', self.config.export.audio_bitrate,
+            ]
+
+            # Audio processing
+            if needs_vocal_isolation:
+                # Apply vocal isolation filter (removes copyrighted music)
+                filter_str = self._get_vocal_isolation_filter()
+                cmd.extend([
+                    '-af', filter_str,  # Audio filter
+                    '-c:a', self.config.export.audio_codec,
+                    '-b:a', self.config.export.audio_bitrate,
+                ])
+                clips_with_vocal_isolation += 1
+                print(f"      🎵 Clip {i+1}: Applying vocal isolation ({filter_str})")
+            else:
+                # Normal audio (no filter)
+                cmd.extend([
+                    '-c:a', self.config.export.audio_codec,
+                    '-b:a', self.config.export.audio_bitrate,
+                ])
+
+            cmd.extend([
                 '-movflags', self.config.export.movflags,
                 '-y',
                 str(output_file)
-            ]
-            
+            ])
+
             try:
                 subprocess.run(
                     cmd,
@@ -235,14 +284,16 @@ class ExportStage:
                     stderr=subprocess.PIPE,
                     check=True
                 )
-                
+
                 clip['clip_file'] = str(output_file)
-                
+
             except subprocess.CalledProcessError as e:
                 print(f"   ⚠️ Błąd wycinania klipu {i+1}: {e.stderr.decode()}")
                 raise
-        
+
         print(f"   ✓ Wycięto {len(clips)} klipów")
+        if clips_with_vocal_isolation > 0:
+            print(f"   🎵 Vocal isolation zastosowane: {clips_with_vocal_isolation}/{len(clips)} klipów")
     
     def _generate_title_cards(
         self,
