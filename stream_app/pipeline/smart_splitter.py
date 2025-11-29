@@ -98,21 +98,23 @@ class SmartSplitter:
         """
         Oblicz minimalny score threshold
         Im więcej materiału, tym wyższy threshold (tylko TOP momenty)
-        
-        Note: Scoring zwraca wartości 0.0-1.0, nie 0-10!
+
+        Note: STREAMING MODE - chat-based scoring daje niższe wartości (0.0-0.5)
+              niż GPT scoring (0.0-1.0), więc progi są odpowiednio niższe!
         """
-        base_threshold = 0.45  # 45% score (było 0.65 - obniżone v1.3)
-        
+        # STREAMING THRESHOLDS (obniżone dla chat-based scoring)
+        base_threshold = 0.30  # 30% score (chat-based: ~0.3-0.4 to dobre fragmenty)
+
         # Zwiększ threshold dla długich materiałów
         if source_duration > self.THRESHOLDS['long']:
-            base_threshold = 0.50  # 50% (było 0.70 - obniżone v1.3)
+            base_threshold = 0.35  # 35% dla długich streamów (2-4h)
         if source_duration > self.THRESHOLDS['very_long']:
-            base_threshold = 0.55  # 55% (było 0.75 - obniżone v1.3 - GŁÓWNA POPRAWA!)
-        
+            base_threshold = 0.40  # 40% dla bardzo długich (>6h - chcemy tylko TOP emote spam)
+
         # Dodatkowy boost dla wielu części (chcemy tylko najlepsze)
         #         if num_parts >= 4:
         #             base_threshold += 0.03  # +3%
-        
+
         return round(base_threshold, 2)
     
     def _describe_strategy(self, duration: float, num_parts: int) -> str:
