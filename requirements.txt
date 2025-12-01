@@ -29,6 +29,9 @@ librosa>=0.10.1
 soundfile>=0.12.1
 pydub>=0.25.1
 
+# === Face Detection for Shorts ===
+mediapipe>=0.10.8
+
 # === NLP ===
 spacy>=3.7.0
 # Pobierz model: python -m spacy download pl_core_news_lg

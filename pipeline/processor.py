@@ -423,7 +423,8 @@ class PipelineProcessor:
                         shorts_clips=selection_result['shorts_clips'],
                         segments=scoring_result['segments'],
                         output_dir=self.config.output_dir,
-                        session_dir=self.session_dir
+                        session_dir=self.session_dir,
+                        template=self.config.shorts.default_template  # Przekaż wybrany szablon
                     )
                     
                     shorts_results = shorts_result.get('shorts', [])
