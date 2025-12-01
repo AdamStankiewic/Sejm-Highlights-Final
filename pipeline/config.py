@@ -291,6 +291,36 @@ class ShortsConfig:
 
 
 @dataclass
+class StreamingConfig:
+    """Configuration for streaming content (Twitch/YouTube/Kick)"""
+
+    # === Mode Selection ===
+    mode: str = "polityka"  # "polityka" or "stream"
+
+    # === Chat Scoring ===
+    use_chat_scoring: bool = False  # Use chat activity for scoring
+    chat_file_path: Optional[str] = None  # Path to chat JSON file
+    chat_delay_offset: float = 10.0  # Stream delay in seconds (action -> chat reaction)
+
+    # === Copyright Detection ===
+    enable_copyright_detection: bool = False  # Enable DMCA music detection
+    audd_api_key: str = ""  # AudD API key (get from https://audd.io)
+    music_confidence_threshold: float = 0.7  # Min confidence for music detection (0-1)
+    max_music_percentage: float = 0.3  # Skip clips with >30% copyrighted music
+    auto_vocal_isolation: bool = False  # Auto-remove vocals from music
+    scan_interval: int = 10  # Scan every N seconds
+
+    # === Title Generation ===
+    stream_title_style: str = "clickbait"  # "clickbait", "descriptive", "minimal"
+    use_caps: bool = True  # Use CAPS for emphasis (NAJLEPSZY MOMENT!)
+    use_emojis: bool = True  # Add emojis to titles 🔥⚡
+
+    # === Templates (inherited from ShortsConfig) ===
+    # Streams typically use "auto", "classic_gaming", or "pip_modern"
+    default_stream_template: str = "auto"
+
+
+@dataclass
 class Config:
     """Główna konfiguracja pipeline'u"""
     # Sub-configs
@@ -304,6 +334,7 @@ class Config:
     splitter: SmartSplitterConfig = None
     youtube: YouTubeConfig = None
     shorts: ShortsConfig = None
+    streaming: StreamingConfig = None
     
     # General settings
     output_dir: Path = Path("output")
@@ -341,7 +372,9 @@ class Config:
             self.youtube = YouTubeConfig()
         if self.shorts is None:
             self.shorts = ShortsConfig()
-        
+        if self.streaming is None:
+            self.streaming = StreamingConfig()
+
         # Ensure paths are Path objects
         self.output_dir = Path(self.output_dir)
         self.temp_dir = Path(self.temp_dir)
