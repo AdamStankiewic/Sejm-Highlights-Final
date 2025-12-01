@@ -219,28 +219,75 @@ class YouTubeConfig:
 class ShortsConfig:
     """YouTube Shorts generation settings"""
     enabled: bool = False
-    
+
     # Selection criteria
     min_duration: float = 15.0  # Min 15s
     max_duration: float = 60.0  # Max 60s (YouTube limit)
     max_shorts_count: int = 10
-    
+
     # Video format (9:16 vertical)
     width: int = 1080
     height: int = 1920
-    
+
     # Timing
     pre_roll: float = 0.5
     post_roll: float = 0.5
-    
+
     # Subtitles styling
     subtitle_fontsize: int = 48
     subtitle_position: str = "center"
-    
+
     # Upload settings
     upload_to_youtube: bool = False
     shorts_category_id: str = "25"
     add_hashtags: bool = True
+
+    # === ENHANCED: Professional Templates for Streams ===
+    # Available templates: "simple", "classic_gaming", "pip_modern", "irl_fullface", "dynamic_speaker"
+    templates: list = field(default_factory=lambda: [
+        "simple",           # Prosty crop 9:16 (backward compatibility, Sejm)
+        "classic_gaming",   # Kamerka dół + gameplay góra
+        "pip_modern",       # Fullscreen + mała kamerka PIP
+        "irl_fullface",     # Zoom + crop, brak PIP (dla full-face streamów)
+        "dynamic_speaker"   # Speaker tracking (zaawansowany)
+    ])
+
+    # Default template when template="auto"
+    default_template: str = "auto"  # "auto" = automatic detection
+
+    # Face detection for webcam region detection
+    face_detection: bool = True
+    webcam_detection_confidence: float = 0.5  # Min confidence dla MediaPipe
+
+    # Template-specific settings
+    # Classic Gaming
+    webcam_height_ratio: float = 0.33  # Kamerka zajmuje 33% wysokości
+    gameplay_max_crop: float = 0.15    # Max 15% crop z boków dla gameplay
+
+    # PIP Modern
+    pip_size_ratio: float = 0.25       # PIP zajmuje 25% szerokości
+    pip_corner_radius: int = 20        # Zaokrąglenie rogów PIP (px)
+    pip_shadow_blur: int = 10          # Rozmycie cienia (px)
+
+    # IRL Full-face
+    irl_zoom_factor: float = 1.2       # Zoom 1.2x dla IRL
+    irl_crop_ratio: float = 0.12       # 12% crop z boków
+
+    # Dynamic Speaker Tracker
+    speaker_switch_interval: float = 4.0   # Co ile sekund zmiana (3-5s)
+    speaker_transition_duration: float = 0.8  # Czas cross-fade (s)
+    speaker_zoom_factor: float = 1.15     # Zoom na mówiącego
+
+    # Title card settings
+    title_enabled: bool = True
+    title_height: int = 220            # Wysokość paska tytułu (px)
+    title_fontsize: int = 56
+    title_fontcolor: str = "white"
+    title_bgcolor: str = "black@0.7"   # Półprzezroczysty
+
+    # Safe zones for subtitles
+    subtitle_safe_zone_top: int = 300     # Bezpieczna strefa góra (px)
+    subtitle_safe_zone_bottom: int = 1500  # Bezpieczna strefa dół (px)
 
 
 @dataclass

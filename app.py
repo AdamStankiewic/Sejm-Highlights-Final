@@ -16,7 +16,8 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QProgressBar, QTextEdit, QFileDialog,
     QGroupBox, QSpinBox, QDoubleSpinBox, QComboBox, QListWidget,
-    QSplitter, QMessageBox, QTabWidget, QCheckBox, QLineEdit, QTimeEdit
+    QSplitter, QMessageBox, QTabWidget, QCheckBox, QLineEdit, QTimeEdit,
+    QDialog, QRadioButton, QButtonGroup, QSlider
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QTime
 from PyQt6.QtGui import QFont, QTextCursor, QPixmap
@@ -402,7 +403,31 @@ class SejmHighlightsApp(QMainWindow):
         )
         shorts_info.setStyleSheet("color: gray; font-size: 10px;")
         layout.addWidget(shorts_info)
-        
+
+        # === NOWE: Template Settings Button ===
+        layout.addSpacing(10)
+        template_btn_layout = QHBoxLayout()
+        template_btn_layout.addWidget(QLabel("   🎨"))
+        self.shorts_template_btn = QPushButton("⚙️ Ustawienia szablonów (dla streamów)")
+        self.shorts_template_btn.clicked.connect(self.open_shorts_template_dialog)
+        self.shorts_template_btn.setStyleSheet("""
+            QPushButton {
+                background: #2196F3;
+                color: white;
+                font-weight: bold;
+                padding: 8px 16px;
+            }
+            QPushButton:hover {
+                background: #1976D2;
+            }
+        """)
+        template_btn_layout.addWidget(self.shorts_template_btn)
+        template_btn_layout.addStretch()
+        layout.addLayout(template_btn_layout)
+
+        # Store template selection (will be set by dialog)
+        self.shorts_template_selection = "auto"  # Default: auto-detect
+
         layout.addStretch()
         return tab
     
@@ -1038,6 +1063,8 @@ class SejmHighlightsApp(QMainWindow):
         if hasattr(self.config, 'shorts'):
             self.config.shorts.enabled = bool(self.shorts_enabled.isChecked())
             self.config.shorts.max_shorts_count = int(self.shorts_count.value())
+            # Template selection (set by ShortsTemplateDialog)
+            self.config.shorts.default_template = self.shorts_template_selection
         
         # Whisper model
         whisper_idx = self.whisper_model.currentIndex()
@@ -1187,6 +1214,241 @@ class SejmHighlightsApp(QMainWindow):
         for stage, time in timing.items():
             lines.append(f"  • {stage}: {time}")
         return "\n".join(lines)
+
+    def open_shorts_template_dialog(self):
+        """Otwórz dialog wyboru szablonu Shorts"""
+        dialog = ShortsTemplateDialog(self, self.config)
+        if dialog.exec():
+            # User clicked OK - get selected template
+            self.shorts_template_selection = dialog.get_selected_template()
+            # Update config with dialog values
+            dialog.apply_to_config(self.config)
+            self.log(f"Shorts template: {self.shorts_template_selection}", "INFO")
+
+
+class ShortsTemplateDialog(QDialog):
+    """
+    Dialog do wyboru szablonu YouTube Shorts
+    Profesjonalne layouty dla streamów (gaming + IRL)
+    """
+
+    def __init__(self, parent, config: Config):
+        super().__init__(parent)
+        self.config = config
+        self.selected_template = config.shorts.default_template
+
+        self.setWindowTitle("🎨 Shorts Template Settings - Profesjonalne layouty dla streamów")
+        self.setMinimumWidth(700)
+        self.setMinimumHeight(600)
+
+        self.init_ui()
+
+    def init_ui(self):
+        """Inicjalizacja UI"""
+        layout = QVBoxLayout(self)
+
+        # Header
+        header = QLabel("🎬 Wybierz szablon layoutu dla YouTube Shorts")
+        header.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(header)
+
+        info = QLabel(
+            "Automatyczna detekcja kamerki streamera + 4 profesjonalne szablony\n"
+            "⚠️ Dla materiałów z Sejmu (bez kamerki) używany jest prosty crop 9:16"
+        )
+        info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        info.setStyleSheet("color: #666; padding: 10px; background: #f5f5f5; border-radius: 4px;")
+        layout.addWidget(info)
+
+        layout.addSpacing(20)
+
+        # === TEMPLATE SELECTION ===
+        template_group = QGroupBox("📱 Wybór szablonu")
+        template_layout = QVBoxLayout()
+
+        self.template_buttons = QButtonGroup(self)
+
+        # Auto-detect (recommended)
+        self.radio_auto = QRadioButton("🤖 AUTO (Zalecane) - Automatyczna detekcja na podstawie kamerki")
+        self.radio_auto.setChecked(True)
+        self.radio_auto.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        self.template_buttons.addButton(self.radio_auto, 0)
+        template_layout.addWidget(self.radio_auto)
+
+        auto_desc = QLabel(
+            "   System wykryje pozycję kamerki i automatycznie wybierze najlepszy szablon.\n"
+            "   Używa MediaPipe Face Detection."
+        )
+        auto_desc.setStyleSheet("color: #666; font-size: 9pt; padding-left: 25px;")
+        template_layout.addWidget(auto_desc)
+
+        template_layout.addSpacing(10)
+
+        # Simple (backward compatibility)
+        self.radio_simple = QRadioButton("📐 SIMPLE - Prosty crop 9:16 (dla Sejmu)")
+        self.template_buttons.addButton(self.radio_simple, 1)
+        template_layout.addWidget(self.radio_simple)
+
+        simple_desc = QLabel("   Standardowy crop do formatu pionowego. Brak detekcji kamerki.")
+        simple_desc.setStyleSheet("color: #666; font-size: 9pt; padding-left: 25px;")
+        template_layout.addWidget(simple_desc)
+
+        template_layout.addSpacing(10)
+
+        # Classic Gaming
+        self.radio_gaming = QRadioButton("🎮 CLASSIC GAMING - Kamerka na dole + gameplay u góry")
+        self.template_buttons.addButton(self.radio_gaming, 2)
+        template_layout.addWidget(self.radio_gaming)
+
+        gaming_desc = QLabel(
+            "   Layout:\n"
+            "   • Tytuł u góry (220px)\n"
+            "   • Gameplay wyżej (65% ekranu, max 15% crop z boków)\n"
+            "   • Kamerka na dole (pełna szerokość, 33% wysokości)\n"
+            "   • Napisy pod kamerką (safe zone)"
+        )
+        gaming_desc.setStyleSheet("color: #666; font-size: 9pt; padding-left: 25px;")
+        template_layout.addWidget(gaming_desc)
+
+        template_layout.addSpacing(10)
+
+        # PIP Modern
+        self.radio_pip = QRadioButton("📺 PIP MODERN - Mała kamerka w rogu (Picture-in-Picture)")
+        self.template_buttons.addButton(self.radio_pip, 3)
+        template_layout.addWidget(self.radio_pip)
+
+        pip_desc = QLabel(
+            "   Layout:\n"
+            "   • Cały stream skalowany do 9:16 (max 15% crop)\n"
+            "   • Kamerka jako mały PIP w prawym dolnym rogu\n"
+            "   • Zaokrąglone rogi + lekki cień (drop shadow)\n"
+            "   • Napisy w środkowej safe zone"
+        )
+        pip_desc.setStyleSheet("color: #666; font-size: 9pt; padding-left: 25px;")
+        template_layout.addWidget(pip_desc)
+
+        template_layout.addSpacing(10)
+
+        # IRL Full-face
+        self.radio_irl = QRadioButton("🙋 IRL FULL-FACE - Pełna twarz (zoom + crop)")
+        self.template_buttons.addButton(self.radio_irl, 4)
+        template_layout.addWidget(self.radio_irl)
+
+        irl_desc = QLabel(
+            "   Layout:\n"
+            "   • Zoom 1.2x na twarz\n"
+            "   • Delikatny crop 12% z boków\n"
+            "   • Brak PIP - tylko główna twarz\n"
+            "   • Napisy w bezpiecznej strefie"
+        )
+        irl_desc.setStyleSheet("color: #666; font-size: 9pt; padding-left: 25px;")
+        template_layout.addWidget(irl_desc)
+
+        template_layout.addSpacing(10)
+
+        # Dynamic Speaker Tracker
+        self.radio_speaker = QRadioButton("👥 DYNAMIC SPEAKER TRACKER - Tracking mówiącego (2+ osoby)")
+        self.template_buttons.addButton(self.radio_speaker, 5)
+        template_layout.addWidget(self.radio_speaker)
+
+        speaker_desc = QLabel(
+            "   Layout (zaawansowany):\n"
+            "   • Automatyczne wykrywanie mówiącego (word-level timestamps)\n"
+            "   • Płynne przejścia co 3-5 sekund\n"
+            "   • Zoom na aktualnie mówiącego\n"
+            "   ⚠️ Wymaga 2+ twarzy w kadrze"
+        )
+        speaker_desc.setStyleSheet("color: #666; font-size: 9pt; padding-left: 25px;")
+        template_layout.addWidget(speaker_desc)
+
+        template_group.setLayout(template_layout)
+        layout.addWidget(template_group)
+
+        layout.addSpacing(20)
+
+        # === ADVANCED SETTINGS ===
+        advanced_group = QGroupBox("⚙️ Zaawansowane ustawienia")
+        advanced_layout = QVBoxLayout()
+
+        # Face detection enable/disable
+        self.face_detection_cb = QCheckBox("🔍 Włącz wykrywanie twarzy (MediaPipe)")
+        self.face_detection_cb.setChecked(self.config.shorts.face_detection)
+        self.face_detection_cb.setToolTip(
+            "Automatyczne wykrywanie regionu kamerki za pomocą MediaPipe Face Detection.\n"
+            "Wyłącz jeśli chcesz zaoszczędzić zasoby CPU."
+        )
+        advanced_layout.addWidget(self.face_detection_cb)
+
+        # Confidence threshold slider
+        conf_layout = QHBoxLayout()
+        conf_layout.addWidget(QLabel("   Próg pewności (confidence):"))
+        self.confidence_slider = QSlider(Qt.Orientation.Horizontal)
+        self.confidence_slider.setRange(30, 90)
+        self.confidence_slider.setValue(int(self.config.shorts.webcam_detection_confidence * 100))
+        self.confidence_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.confidence_slider.setTickInterval(10)
+        conf_layout.addWidget(self.confidence_slider)
+        self.confidence_label = QLabel(f"{self.confidence_slider.value()}%")
+        self.confidence_slider.valueChanged.connect(
+            lambda v: self.confidence_label.setText(f"{v}%")
+        )
+        conf_layout.addWidget(self.confidence_label)
+        advanced_layout.addLayout(conf_layout)
+
+        advanced_group.setLayout(advanced_layout)
+        layout.addWidget(advanced_group)
+
+        layout.addStretch()
+
+        # === BUTTONS ===
+        btn_layout = QHBoxLayout()
+
+        cancel_btn = QPushButton("❌ Anuluj")
+        cancel_btn.clicked.connect(self.reject)
+        cancel_btn.setMinimumWidth(120)
+        btn_layout.addWidget(cancel_btn)
+
+        btn_layout.addStretch()
+
+        ok_btn = QPushButton("✅ Zastosuj")
+        ok_btn.clicked.connect(self.accept)
+        ok_btn.setMinimumWidth(120)
+        ok_btn.setStyleSheet("""
+            QPushButton {
+                background: #4CAF50;
+                color: white;
+                font-weight: bold;
+                padding: 10px;
+            }
+            QPushButton:hover {
+                background: #45a049;
+            }
+        """)
+        btn_layout.addWidget(ok_btn)
+
+        layout.addLayout(btn_layout)
+
+    def get_selected_template(self) -> str:
+        """Pobierz wybrany szablon"""
+        selected_id = self.template_buttons.checkedId()
+
+        template_map = {
+            0: "auto",
+            1: "simple",
+            2: "classic_gaming",
+            3: "pip_modern",
+            4: "irl_fullface",
+            5: "dynamic_speaker"
+        }
+
+        return template_map.get(selected_id, "auto")
+
+    def apply_to_config(self, config: Config):
+        """Zastosuj ustawienia do obiektu Config"""
+        config.shorts.default_template = self.get_selected_template()
+        config.shorts.face_detection = self.face_detection_cb.isChecked()
+        config.shorts.webcam_detection_confidence = self.confidence_slider.value() / 100.0
 
 
 def main():
