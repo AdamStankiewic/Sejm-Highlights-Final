@@ -265,8 +265,9 @@ class SejmHighlightsApp(QMainWindow):
         """)
         self.mode_button_group.addButton(self.stream_radio, 1)
 
-        # Connect signal
+        # Connect signals - both radio buttons
         self.polityka_radio.toggled.connect(self.on_mode_changed)
+        self.stream_radio.toggled.connect(self.on_mode_changed)
 
         # Add to layout
         layout.addWidget(self.polityka_radio)
