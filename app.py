@@ -426,7 +426,7 @@ class SejmHighlightsApp(QMainWindow):
         layout.addLayout(template_btn_layout)
 
         # Store template selection (will be set by dialog)
-        self.shorts_template_selection = "auto"  # Default: auto-detect
+        self.shorts_template_selection = "simple"  # Default: simple crop (Sejm)
 
         layout.addStretch()
         return tab

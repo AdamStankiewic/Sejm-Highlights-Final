@@ -252,8 +252,8 @@ class ShortsConfig:
         "dynamic_speaker"   # Speaker tracking (zaawansowany)
     ])
 
-    # Default template when template="auto"
-    default_template: str = "auto"  # "auto" = automatic detection
+    # Default template: "simple" for Sejm (backward compat), "auto" for streams
+    default_template: str = "simple"  # "simple" = prosty crop, "auto" = auto-detect
 
     # Face detection for webcam region detection
     face_detection: bool = True
