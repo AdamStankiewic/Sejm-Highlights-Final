@@ -302,6 +302,13 @@ class SejmHighlightsApp(QMainWindow):
             if hasattr(self, 'chat_file_group'):
                 self.chat_file_group.setVisible(False)
 
+            # Update GUI fields for Polityka mode
+            if hasattr(self, 'target_duration'):
+                self.target_duration.setValue(15)  # 15 min
+                self.num_clips.setValue(12)
+                self.min_clip_duration.setValue(90)
+                self.max_clip_duration.setValue(180)
+
         else:  # Stream mode
             mode = "stream"
             self.mode_info_label.setText("💬 Chat scoring + Templates + Copyright detection")
@@ -312,6 +319,13 @@ class SejmHighlightsApp(QMainWindow):
             # Show chat input
             if hasattr(self, 'chat_file_group'):
                 self.chat_file_group.setVisible(True)
+
+            # Update GUI fields for Stream mode
+            if hasattr(self, 'target_duration'):
+                self.target_duration.setValue(12)  # 12 min for streams
+                self.num_clips.setValue(25)  # More clips (shorter)
+                self.min_clip_duration.setValue(20)  # 20s minimum
+                self.max_clip_duration.setValue(90)  # 90s maximum
 
         # Log only if log widget exists (might be called during init)
         if hasattr(self, 'log_text'):
@@ -520,39 +534,39 @@ class SejmHighlightsApp(QMainWindow):
         
         # Target duration
         dur_layout = QHBoxLayout()
-        dur_layout.addWidget(QLabel("🎯 Docelowa długość filmu (sekundy):"))
+        dur_layout.addWidget(QLabel("🎯 Docelowa długość filmu (minuty):"))
         self.target_duration = QSpinBox()
-        self.target_duration.setRange(600, 2400)  # 10-40 min
-        self.target_duration.setValue(900)  # 15 min default
-        self.target_duration.setSuffix(" s")
+        self.target_duration.setRange(10, 40)  # 10-40 min
+        self.target_duration.setValue(15)  # 15 min default
+        self.target_duration.setSuffix(" min")
         dur_layout.addWidget(self.target_duration)
         dur_layout.addStretch()
         layout.addLayout(dur_layout)
-        
+
         # Number of clips
         clips_layout = QHBoxLayout()
         clips_layout.addWidget(QLabel("📊 Liczba klipów:"))
         self.num_clips = QSpinBox()
-        self.num_clips.setRange(5, 20)
+        self.num_clips.setRange(5, 30)  # Increased max for streams
         self.num_clips.setValue(12)
         clips_layout.addWidget(self.num_clips)
         clips_layout.addStretch()
         layout.addLayout(clips_layout)
-        
+
         # Min/Max clip duration
         min_clip_layout = QHBoxLayout()
         min_clip_layout.addWidget(QLabel("⏱️ Min. długość klipu (s):"))
         self.min_clip_duration = QSpinBox()
-        self.min_clip_duration.setRange(60, 180)
+        self.min_clip_duration.setRange(20, 180)  # Allow down to 20s for streams
         self.min_clip_duration.setValue(90)
         min_clip_layout.addWidget(self.min_clip_duration)
         min_clip_layout.addStretch()
         layout.addLayout(min_clip_layout)
-        
+
         max_clip_layout = QHBoxLayout()
         max_clip_layout.addWidget(QLabel("⏱️ Max. długość klipu (s):"))
         self.max_clip_duration = QSpinBox()
-        self.max_clip_duration.setRange(90, 300)
+        self.max_clip_duration.setRange(60, 300)
         self.max_clip_duration.setValue(180)
         max_clip_layout.addWidget(self.max_clip_duration)
         max_clip_layout.addStretch()
