@@ -312,7 +312,9 @@ class SejmHighlightsApp(QMainWindow):
             if hasattr(self, 'chat_file_group'):
                 self.chat_file_group.setVisible(True)
 
-        self.log(f"Tryb zmieniony na: {mode}", "INFO")
+        # Log only if log widget exists (might be called during init)
+        if hasattr(self, 'log_text'):
+            self.log(f"Tryb zmieniony na: {mode}", "INFO")
 
     def create_file_input_section(self) -> QGroupBox:
         """Sekcja wyboru pliku wejściowego (URL lub lokalny plik)"""
