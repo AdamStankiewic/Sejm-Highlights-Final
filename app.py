@@ -173,6 +173,9 @@ class SejmHighlightsApp(QMainWindow):
         # === SEKCJA 3: Configuration ===
         config_tabs = self.create_config_tabs()
         main_layout.addWidget(config_tabs)
+
+        # Initialize visibility based on default mode
+        self.update_mode_visibility()
         
         # === SEKCJA 4: Processing Control ===
         control_group = self.create_control_section()
@@ -284,14 +287,19 @@ class SejmHighlightsApp(QMainWindow):
         if not checked:
             return
 
+        self.update_mode_visibility()
+
+    def update_mode_visibility(self):
+        """Update UI visibility based on selected mode"""
         if self.polityka_radio.isChecked():
             mode = "polityka"
             self.mode_info_label.setText("📊 GPT scoring + Smart Splitter")
             self.config.streaming.mode = "polityka"
             self.config.shorts.default_template = "simple"
 
-            # Show/hide relevant sections
-            self.show_polityka_options()
+            # Hide chat input
+            if hasattr(self, 'chat_file_group'):
+                self.chat_file_group.setVisible(False)
 
         else:  # Stream mode
             mode = "stream"
@@ -300,30 +308,11 @@ class SejmHighlightsApp(QMainWindow):
             self.config.streaming.use_chat_scoring = True
             self.config.shorts.default_template = "auto"
 
-            # Show/hide relevant sections
-            self.show_stream_options()
+            # Show chat input
+            if hasattr(self, 'chat_file_group'):
+                self.chat_file_group.setVisible(True)
 
         self.log(f"Tryb zmieniony na: {mode}", "INFO")
-
-    def show_polityka_options(self):
-        """Show Polityka-specific options, hide Stream options"""
-        # Hide chat input if exists
-        if hasattr(self, 'chat_file_group'):
-            self.chat_file_group.setVisible(False)
-
-        # Show smart splitter tab
-        # (Already visible by default)
-        pass
-
-    def show_stream_options(self):
-        """Show Stream-specific options, hide Polityka options"""
-        # Show chat input if exists
-        if hasattr(self, 'chat_file_group'):
-            self.chat_file_group.setVisible(True)
-
-        # Could hide smart splitter tab (streams usually don't need it)
-        # But we'll keep it available for now
-        pass
 
     def create_file_input_section(self) -> QGroupBox:
         """Sekcja wyboru pliku wejściowego (URL lub lokalny plik)"""
