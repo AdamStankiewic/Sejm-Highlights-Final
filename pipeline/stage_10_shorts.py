@@ -832,21 +832,41 @@ Dialogue: 0,{self._format_ass_time(0)},{self._format_ass_time(duration)},Default
         transcript = segment.get('transcript', '...') if segment else '...'
         keywords = ', '.join(clip.get('keywords', [])[:3])
 
-        # Prompt dla GPT
-        prompt = f"""Jesteś ekspertem od viralowych tytułów YouTube Shorts.
+        # Prompt dla GPT - różne style dla Polityka vs Stream
+        if self.config.streaming.mode == "stream":
+            # Stream mode: clickbait, CAPS, emojis, viral style
+            prompt = f"""Jesteś ekspertem od viralowych tytułów gaming/IRL YouTube Shorts.
 
 TRANSKRYPCJA MOMENTU:
 {transcript[:300]}
 
 SŁOWA KLUCZOWE: {keywords}
 
-Wygeneruj JEDEN chwytliwy tytuł dla YouTube Short (max 60 znaków):
-- Krótki, dynamiczny, emocjonalny
-- Polskie litery (ą, ę, ć, etc.)
-- Może zawierać emoji (🔥, 💥, 😱, ⚡)
-- W stylu: "To ZMIAŻDŻYŁO czat! 💥", "Taka reakcja! 😱"
+Wygeneruj JEDEN chwytliwy clickbait tytuł dla YouTube Short (max 60 znaków):
+- BARDZO dynamiczny, emocjonalny, energiczny
+- Dużo CAPSÓW dla dramatycznego EFEKTU
+- Emoji gaming/reaction: 🔥 💥 😱 ⚡ 🎮 KEKW POG
+- W stylu: "CHAT OSZALAŁ! 😱🔥", "JAK TO ZROBIŁ?! 💥", "NAJLEPSZY CLUTCH! ⚡"
+- Pytania: "CO TO BYŁO?!", "JAK?!", "SERIO?!"
 - NIE używaj [TOP], [HOT], etc.
-- Kapitalizacja dla EFEKTU
+
+Tylko tytuł, bez cudzysłowów, bez wyjaśnień:"""
+        else:
+            # Polityka mode: więcej kontekstu, mniej clickbait, merytoryczny
+            prompt = f"""Jesteś ekspertem od tytułów politycznych YouTube Shorts.
+
+TRANSKRYPCJA MOMENTU:
+{transcript[:300]}
+
+SŁOWA KLUCZOWE: {keywords}
+
+Wygeneruj JEDEN chwytliwy tytuł dla YouTube Short o polityce (max 60 znaków):
+- Merytoryczny ale przyciągający uwagę
+- Polskie litery (ą, ę, ć, etc.)
+- Minimalne użycie emoji (🔥, 💥, ⚡) - opcjonalne
+- W stylu: "Gorąca wymiana w Sejmie! 🔥", "Minister odpowiada!", "Tak zareagował na..."
+- NIE używaj [TOP], [HOT], etc.
+- Umiarkowana kapitalizacja (nie pełne CAPS)
 
 Tylko tytuł, bez cudzysłowów, bez wyjaśnień:"""
 

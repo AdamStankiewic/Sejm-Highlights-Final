@@ -157,11 +157,19 @@ class SejmHighlightsApp(QMainWindow):
         # === SEKCJA 1: Header ===
         header = self.create_header()
         main_layout.addWidget(header)
-        
+
+        # === SEKCJA 1.5: Mode Selector (Polityka vs Stream) ===
+        mode_selector = self.create_mode_selector()
+        main_layout.addWidget(mode_selector)
+
         # === SEKCJA 2: File Input ===
         file_group = self.create_file_input_section()
         main_layout.addWidget(file_group)
-        
+
+        # === SEKCJA 2.5: Chat Input (for Stream mode) ===
+        chat_input = self.create_chat_input_section()
+        main_layout.addWidget(chat_input)
+
         # === SEKCJA 3: Configuration ===
         config_tabs = self.create_config_tabs()
         main_layout.addWidget(config_tabs)
@@ -214,7 +222,109 @@ class SejmHighlightsApp(QMainWindow):
         layout.addWidget(gpu_label)
         
         return header
-    
+
+    def create_mode_selector(self) -> QGroupBox:
+        """Mode selector: Polityka vs Stream"""
+        group = QGroupBox("🎯 Tryb przetwarzania")
+        layout = QHBoxLayout()
+
+        # Radio buttons for mode selection
+        self.mode_button_group = QButtonGroup(self)
+
+        # Polityka mode
+        self.polityka_radio = QRadioButton("🏛️ Polityka (Sejm)")
+        self.polityka_radio.setChecked(True)  # Default
+        self.polityka_radio.setStyleSheet("""
+            QRadioButton {
+                font-size: 14px;
+                font-weight: bold;
+                padding: 10px;
+            }
+            QRadioButton::indicator {
+                width: 20px;
+                height: 20px;
+            }
+        """)
+        self.mode_button_group.addButton(self.polityka_radio, 0)
+
+        # Stream mode
+        self.stream_radio = QRadioButton("🎮 Stream (Gaming/IRL)")
+        self.stream_radio.setStyleSheet("""
+            QRadioButton {
+                font-size: 14px;
+                font-weight: bold;
+                padding: 10px;
+            }
+            QRadioButton::indicator {
+                width: 20px;
+                height: 20px;
+            }
+        """)
+        self.mode_button_group.addButton(self.stream_radio, 1)
+
+        # Connect signal
+        self.polityka_radio.toggled.connect(self.on_mode_changed)
+
+        # Add to layout
+        layout.addWidget(self.polityka_radio)
+        layout.addSpacing(30)
+        layout.addWidget(self.stream_radio)
+        layout.addStretch()
+
+        # Info label
+        self.mode_info_label = QLabel("📊 GPT scoring + Smart Splitter")
+        self.mode_info_label.setStyleSheet("color: #666; font-style: italic; padding: 5px;")
+        layout.addWidget(self.mode_info_label)
+
+        group.setLayout(layout)
+        return group
+
+    def on_mode_changed(self, checked: bool):
+        """Handle mode change"""
+        if not checked:
+            return
+
+        if self.polityka_radio.isChecked():
+            mode = "polityka"
+            self.mode_info_label.setText("📊 GPT scoring + Smart Splitter")
+            self.config.streaming.mode = "polityka"
+            self.config.shorts.default_template = "simple"
+
+            # Show/hide relevant sections
+            self.show_polityka_options()
+
+        else:  # Stream mode
+            mode = "stream"
+            self.mode_info_label.setText("💬 Chat scoring + Templates + Copyright detection")
+            self.config.streaming.mode = "stream"
+            self.config.streaming.use_chat_scoring = True
+            self.config.shorts.default_template = "auto"
+
+            # Show/hide relevant sections
+            self.show_stream_options()
+
+        self.log(f"Tryb zmieniony na: {mode}", "INFO")
+
+    def show_polityka_options(self):
+        """Show Polityka-specific options, hide Stream options"""
+        # Hide chat input if exists
+        if hasattr(self, 'chat_file_group'):
+            self.chat_file_group.setVisible(False)
+
+        # Show smart splitter tab
+        # (Already visible by default)
+        pass
+
+    def show_stream_options(self):
+        """Show Stream-specific options, hide Polityka options"""
+        # Show chat input if exists
+        if hasattr(self, 'chat_file_group'):
+            self.chat_file_group.setVisible(True)
+
+        # Could hide smart splitter tab (streams usually don't need it)
+        # But we'll keep it available for now
+        pass
+
     def create_file_input_section(self) -> QGroupBox:
         """Sekcja wyboru pliku wejściowego (URL lub lokalny plik)"""
         group = QGroupBox("📂 Input Video")
@@ -294,7 +404,102 @@ class SejmHighlightsApp(QMainWindow):
         layout.addWidget(tabs)
         group.setLayout(layout)
         return group
-    
+
+    def create_chat_input_section(self) -> QGroupBox:
+        """Sekcja wyboru pliku chat JSON (tylko dla trybu Stream)"""
+        self.chat_file_group = QGroupBox("💬 Chat File (opcjonalne - dla lepszego scoringu)")
+        layout = QVBoxLayout()
+
+        # File path display
+        file_layout = QHBoxLayout()
+        self.chat_file_label = QLabel("Nie wybrano pliku chat")
+        self.chat_file_label.setStyleSheet("padding: 8px; background: #f0f0f0; border-radius: 4px;")
+        file_layout.addWidget(self.chat_file_label, stretch=1)
+
+        # Browse button
+        browse_chat_btn = QPushButton("📁 Wybierz chat.json")
+        browse_chat_btn.clicked.connect(self.browse_chat_file)
+        browse_chat_btn.setStyleSheet("padding: 8px;")
+        file_layout.addWidget(browse_chat_btn)
+
+        # Clear button
+        clear_chat_btn = QPushButton("❌")
+        clear_chat_btn.setFixedWidth(40)
+        clear_chat_btn.clicked.connect(self.clear_chat_file)
+        clear_chat_btn.setStyleSheet("padding: 8px;")
+        file_layout.addWidget(clear_chat_btn)
+
+        layout.addLayout(file_layout)
+
+        # Info
+        info_label = QLabel("💡 Obsługiwane formaty: Twitch Downloader, YouTube, Kick")
+        info_label.setStyleSheet("color: #666; font-size: 11px; padding: 5px;")
+        layout.addWidget(info_label)
+
+        # Chat stats (hidden by default)
+        self.chat_stats_label = QLabel()
+        self.chat_stats_label.setVisible(False)
+        self.chat_stats_label.setStyleSheet("padding: 8px; background: #e8f5e9; border-radius: 4px; font-size: 11px;")
+        layout.addWidget(self.chat_stats_label)
+
+        layout.addStretch()
+        self.chat_file_group.setLayout(layout)
+
+        # Hidden by default (shown when Stream mode selected)
+        self.chat_file_group.setVisible(False)
+
+        return self.chat_file_group
+
+    def browse_chat_file(self):
+        """Browse for chat JSON file"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Wybierz plik chat JSON",
+            "",
+            "JSON Files (*.json);;All Files (*)"
+        )
+
+        if file_path:
+            self.chat_file_label.setText(Path(file_path).name)
+            self.config.streaming.chat_file_path = file_path
+            self.config.streaming.use_chat_scoring = True
+
+            # Try to parse and show stats
+            try:
+                import json
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    chat_data = json.load(f)
+
+                # Detect format and count messages
+                if isinstance(chat_data, dict) and 'comments' in chat_data:
+                    msg_count = len(chat_data['comments'])
+                    platform = "Twitch"
+                elif isinstance(chat_data, list):
+                    msg_count = len(chat_data)
+                    platform = "Custom"
+                else:
+                    msg_count = 0
+                    platform = "Unknown"
+
+                self.chat_stats_label.setText(
+                    f"✅ Loaded: {msg_count:,} messages ({platform} format)"
+                )
+                self.chat_stats_label.setVisible(True)
+                self.log(f"Chat loaded: {msg_count} messages from {file_path}", "SUCCESS")
+
+            except Exception as e:
+                self.log(f"Error loading chat: {e}", "WARNING")
+                self.chat_stats_label.setText(f"⚠️ Error: {str(e)}")
+                self.chat_stats_label.setVisible(True)
+
+    def clear_chat_file(self):
+        """Clear chat file selection"""
+        self.chat_file_label.setText("Nie wybrano pliku chat")
+        self.config.streaming.chat_file_path = None
+        self.config.streaming.use_chat_scoring = False
+        self.chat_stats_label.setVisible(False)
+        self.log("Chat file cleared", "INFO")
+
     def create_config_tabs(self) -> QTabWidget:
         """Zakładki z konfiguracją"""
         tabs = QTabWidget()

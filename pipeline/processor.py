@@ -16,7 +16,9 @@ from .stage_02_vad import VADStage
 from .stage_03_transcribe import TranscribeStage
 from .stage_04_features import FeaturesStage
 from .stage_05_scoring_gpt import ScoringStage
+from .stage_05_scoring_streaming import StreamingScoringStage
 from .stage_06_selection import SelectionStage
+from .stage_06b_copyright import CopyrightDetectionStage
 from .stage_07_export import ExportStage
 from .stage_08_thumbnail import ThumbnailStage
 
@@ -41,17 +43,45 @@ class PipelineProcessor:
         # Timing stats
         self.timing_stats = {}
         
+        # Initialize chat scorer for streaming mode (if applicable)
+        self.chat_scorer = None
+        if config.streaming.mode == "stream" and config.streaming.use_chat_scoring:
+            if config.streaming.chat_file_path:
+                try:
+                    from modules.streaming.chat_scorer import create_scorer_from_chat
+                    self.chat_scorer = create_scorer_from_chat(
+                        chat_json_path=config.streaming.chat_file_path,
+                        chat_delay_offset=config.streaming.chat_delay_offset
+                    )
+                    print(f"✅ Chat scorer initialized from: {config.streaming.chat_file_path}")
+                except Exception as e:
+                    print(f"⚠️ Failed to initialize chat scorer: {e}")
+
+        # Initialize scoring stage (conditional based on mode)
+        if config.streaming.mode == "stream":
+            scoring_stage = StreamingScoringStage(config, chat_scorer=self.chat_scorer)
+            print("🎮 Using StreamingScoringStage (chat-based scoring)")
+        else:
+            scoring_stage = ScoringStage(config)
+            print("🏛️ Using ScoringStage (GPT-based scoring)")
+
         # Initialize stages
         self.stages = {
             'ingest': IngestStage(config),
             'vad': VADStage(config),
             'transcribe': TranscribeStage(config),
             'features': FeaturesStage(config),
-            'scoring': ScoringStage(config),
+            'scoring': scoring_stage,
             'selection': SelectionStage(config),
             'export': ExportStage(config)
         }
-        
+
+        # Initialize copyright detection stage (for streaming mode)
+        self.copyright_stage = None
+        if config.streaming.mode == "stream" and config.streaming.enable_copyright_detection:
+            self.copyright_stage = CopyrightDetectionStage(config)
+            print("🎵 Copyright detection enabled")
+
         # Initialize thumbnail stage
         self.thumbnail_stage = ThumbnailStage(config)
         
@@ -283,7 +313,25 @@ class PipelineProcessor:
                 
                 self.timing_stats['selection'] = self._format_duration(time.time() - stage_start)
                 self._report_progress("Stage 6/7", 85, f"✅ Wybrano {len(selection_result['clips'])} klipów")
-                
+
+                # === ETAP 6b: Copyright Detection (tylko dla streamów) ===
+                if self.copyright_stage:
+                    stage_start = time.time()
+                    self._report_progress("Stage 6b/7", 87, "Skanowanie muzyki (DMCA)...")
+
+                    copyright_result = self.copyright_stage.process(
+                        input_file=input_file,
+                        clips=selection_result['clips'],
+                        output_dir=self.session_dir
+                    )
+
+                    # Update clips with copyright-filtered ones
+                    selection_result['clips'] = copyright_result['clips']
+                    selection_result['copyright_report'] = copyright_result['copyright_report']
+
+                    self.timing_stats['copyright'] = self._format_duration(time.time() - stage_start)
+                    self._report_progress("Stage 6b/7", 90, f"✅ Copyright: {len(copyright_result['clips'])} safe clips")
+
                 # === Po stage 6 (Selection): Podział na części jeśli potrzebny ===
                 parts_metadata = None
                 if split_strategy:
