@@ -93,6 +93,8 @@ class PipelineProcessor:
                 premiere_hour=config.splitter.premiere_hour,
                 premiere_minute=config.splitter.premiere_minute
             )
+            # Set mode hint for threshold calculation
+            self.smart_splitter._stream_mode_hint = (config.streaming.mode == "stream")
 
 
         self.session_dir: Optional[Path] = None

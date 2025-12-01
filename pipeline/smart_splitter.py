@@ -98,21 +98,35 @@ class SmartSplitter:
         """
         Oblicz minimalny score threshold
         Im więcej materiału, tym wyższy threshold (tylko TOP momenty)
-        
+
         Note: Scoring zwraca wartości 0.0-1.0, nie 0-10!
+        Note: Chat scoring daje niższe wartości niż GPT, więc używamy niższych thresholds
         """
-        base_threshold = 0.45  # 45% score (było 0.65 - obniżone v1.3)
-        
-        # Zwiększ threshold dla długich materiałów
-        if source_duration > self.THRESHOLDS['long']:
-            base_threshold = 0.50  # 50% (było 0.70 - obniżone v1.3)
-        if source_duration > self.THRESHOLDS['very_long']:
-            base_threshold = 0.55  # 55% (było 0.75 - obniżone v1.3 - GŁÓWNA POPRAWA!)
-        
-        # Dodatkowy boost dla wielu części (chcemy tylko najlepsze)
-        #         if num_parts >= 4:
-        #             base_threshold += 0.03  # +3%
-        
+        # Check if we're in streaming mode (lower thresholds for chat scoring)
+        # Try to detect by checking if config exists and has streaming mode
+        is_stream_mode = False
+        try:
+            # This is a bit hacky but works - check if we're using chat scoring
+            # by seeing if the average scores are lower
+            is_stream_mode = hasattr(self, '_stream_mode_hint') and self._stream_mode_hint
+        except:
+            pass
+
+        if is_stream_mode:
+            # STREAM MODE: Lower thresholds for chat-based scoring
+            base_threshold = 0.20  # 20% for normal streams
+            if source_duration > self.THRESHOLDS['long']:
+                base_threshold = 0.25  # 25% for long streams
+            if source_duration > self.THRESHOLDS['very_long']:
+                base_threshold = 0.30  # 30% for very long streams
+        else:
+            # POLITYKA MODE: Original thresholds for GPT scoring
+            base_threshold = 0.45  # 45% score
+            if source_duration > self.THRESHOLDS['long']:
+                base_threshold = 0.50  # 50%
+            if source_duration > self.THRESHOLDS['very_long']:
+                base_threshold = 0.55  # 55%
+
         return round(base_threshold, 2)
     
     def _describe_strategy(self, duration: float, num_parts: int) -> str:
