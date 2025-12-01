@@ -1261,7 +1261,8 @@ class SejmHighlightsApp(QMainWindow):
     def update_config_from_gui(self):
         """Aktualizuj obiekt Config wartościami z GUI"""
         # Selection settings
-        self.config.selection.target_total_duration = float(self.target_duration.value())
+        # IMPORTANT: target_duration is in MINUTES in GUI, but config expects SECONDS
+        self.config.selection.target_total_duration = float(self.target_duration.value()) * 60
         self.config.selection.max_clips = int(self.num_clips.value())
         self.config.selection.min_clip_duration = float(self.min_clip_duration.value())
         self.config.selection.max_clip_duration = float(self.max_clip_duration.value())
