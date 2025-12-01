@@ -119,18 +119,26 @@ class ScoringConfig:
 @dataclass
 class SelectionConfig:
     """Clip selection settings"""
-    # Duration constraints
-    min_clip_duration: float = 90.0
-    max_clip_duration: float = 180.0
+    # Duration constraints (mode-specific defaults applied in processor)
+    min_clip_duration: float = 90.0  # Polityka default
+    max_clip_duration: float = 180.0  # Polityka default
     target_total_duration: float = 900.0  # 15 min
-    
+
+    # Stream mode overrides (applied when mode="stream")
+    min_clip_duration_stream: float = 20.0  # Shorter for gaming highlights
+    max_clip_duration_stream: float = 90.0  # Max 1.5 min for stream clips
+    target_total_duration_stream: float = 720.0  # 12 min for streams
+
     # Number of clips
     min_clips: int = 8
     max_clips: int = 15
-    
+    max_clips_stream: int = 25  # More clips for streams (shorter)
+
     # Temporal constraints
-    min_time_gap: float = 30.0  # Między klipami
-    smart_merge_gap: float = 5.0  # Gap dla merge'owania
+    min_time_gap: float = 30.0  # Między klipami (Polityka)
+    min_time_gap_stream: float = 10.0  # Faster paced for streams
+    smart_merge_gap: float = 5.0  # Gap dla merge'owania (Polityka)
+    smart_merge_gap_stream: float = 3.0  # Tighter for stream action sequences
     smart_merge_min_score: float = 0.6
     
     # Coverage optimization

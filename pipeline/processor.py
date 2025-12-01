@@ -302,10 +302,21 @@ class PipelineProcessor:
                 self._check_cancelled()
                 stage_start = time.time()
                 self._report_progress("Stage 6/7", 77, "Selekcja najlepszych klipów...")
-                
+
+                # Apply mode-specific selection settings
+                if self.config.streaming.mode == "stream":
+                    # Stream mode: shorter clips, more clips, faster pacing
+                    self.config.selection.min_clip_duration = self.config.selection.min_clip_duration_stream
+                    self.config.selection.max_clip_duration = self.config.selection.max_clip_duration_stream
+                    self.config.selection.target_total_duration = self.config.selection.target_total_duration_stream
+                    self.config.selection.max_clips = self.config.selection.max_clips_stream
+                    self.config.selection.min_time_gap = self.config.selection.min_time_gap_stream
+                    self.config.selection.smart_merge_gap = self.config.selection.smart_merge_gap_stream
+                    print(f"   🎮 Stream mode: clips {self.config.selection.min_clip_duration}s-{self.config.selection.max_clip_duration}s, max {self.config.selection.max_clips} clips")
+
                 # Jeśli jest split_strategy, użyj wyższego threshold
                 min_score = split_strategy['min_score_threshold'] if split_strategy else 0.0  # Bez filtrowania gdy brak strategii
-                
+
                 selection_result = self.stages['selection'].process(
                     segments=scoring_result['segments'],
                     total_duration=source_duration,
