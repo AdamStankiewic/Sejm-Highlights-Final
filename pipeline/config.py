@@ -73,7 +73,7 @@ class FeatureConfig:
     compute_entity_density: bool = True
     
     # NLP model dla entity recognition
-    spacy_model: str = "pl_core_news_lg"
+    spacy_model: str = "pl_core_news_sm"  # Mniejszy model (szybszy, działa z Python 3.11)
 
 
 @dataclass
