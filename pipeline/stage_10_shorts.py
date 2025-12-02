@@ -539,7 +539,8 @@ class ShortsStage:
             f"crop={width}:{webcam_h}[webcam_scaled];"
 
             # === TITLE BAR (black bg with text overlay) ===
-            f"color=black:{width}x{title_height}:d=1[title_bg];"
+            # Note: No duration needed - vstack will auto-match to clip duration
+            f"color=black:{width}x{title_height}[title_bg];"
 
             # === STACK: Title + Gameplay + Webcam ===
             f"[title_bg][gameplay_scaled][webcam_scaled]vstack=inputs=3[stacked];"
