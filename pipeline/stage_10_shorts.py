@@ -337,6 +337,11 @@ class ShortsStage:
             detected_webcam = self._detect_webcam_region(input_path, t_sample=shorts_clips[0]['t0'] + 5.0)
             template = self._select_template(detected_webcam)
 
+        # Fallback to simple if MediaPipe not available and template requires it
+        if not self.face_detector and template in ["classic_gaming", "pip_modern", "irl_fullface", "dynamic_speaker"]:
+            print(f"   ⚠️ MediaPipe niedostępne - fallback z '{template}' na 'simple'")
+            template = "simple"
+
         # Generate each Short
         generated_shorts = []
 
