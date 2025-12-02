@@ -527,9 +527,9 @@ class ShortsStage:
 
             # === GAMEPLAY (top region) ===
             # Zakładamy że gameplay to górna część ekranu
-            # Crop top region, scale to fit, center crop
+            # Crop top region, scale UP to cover area (increase), then center crop
             f"[gameplay]crop=iw:ih*0.65:0:0,"  # Top 65% of original
-            f"scale={gameplay_target_w}:{gameplay_h}:force_original_aspect_ratio=decrease,"
+            f"scale={gameplay_target_w}:{gameplay_h}:force_original_aspect_ratio=increase,"  # Scale UP to cover
             f"crop={width}:{gameplay_h}[gameplay_scaled];"
 
             # === WEBCAM (bottom region) ===
@@ -540,10 +540,11 @@ class ShortsStage:
 
             # === TITLE BAR (black bg with text overlay) ===
             # Note: No duration needed - vstack will auto-match to clip duration
-            f"color=black:{width}x{title_height}[title_bg];"
+            f"color=c=black:s={width}x{title_height}[title_bg];"
 
             # === STACK: Title + Gameplay + Webcam ===
-            f"[title_bg][gameplay_scaled][webcam_scaled]vstack=inputs=3[stacked];"
+            # Use shortest=1 to sync color source with video duration
+            f"[title_bg][gameplay_scaled][webcam_scaled]vstack=inputs=3:shortest=1[stacked];"
 
             # === ADD SUBTITLES ===
             f"[stacked]ass='{ass_file.replace(chr(92), '/')}'"
