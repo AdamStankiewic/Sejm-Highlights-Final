@@ -65,9 +65,10 @@ class ShortsStage:
             # Initialize MediaPipe Face Detection
             self.mp_face_detection = mp.solutions.face_detection
             self.face_detector = self.mp_face_detection.FaceDetection(
-                model_selection=0,  # 0 = short-range (< 2m), 1 = full-range
-                min_detection_confidence=self.config.shorts.webcam_detection_confidence
+                model_selection=1,  # 1 = full-range (lepiej dla małych twarzy w rogu)
+                min_detection_confidence=0.3  # Niższy próg dla małych webcam
             )
+            print(f"   🎯 Model: full-range, confidence: 0.3 (zoptymalizowane dla streamów)")
 
             print("   ✓ MediaPipe Face Detection gotowy")
 
@@ -124,6 +125,9 @@ class ShortsStage:
             with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
                 tmp_frame = tmp.name
 
+            print(f"      🔍 Próbkuję klatkę z timestamp: {t_sample:.1f}s")
+            print(f"      📂 Input file: {input_file.name}")
+
             cmd = [
                 'ffmpeg',
                 '-ss', str(t_sample),
@@ -134,19 +138,34 @@ class ShortsStage:
                 tmp_frame
             ]
 
-            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            print(f"      ✓ Klatka wyekstrahowana: {Path(tmp_frame).name}")
 
             # Load frame with OpenCV
             frame = self.cv2.imread(tmp_frame)
             if frame is None:
+                print(f"      ❌ Nie można wczytać klatki z OpenCV")
                 return {'type': 'none', 'x': 0, 'y': 0, 'w': 0, 'h': 0, 'confidence': 0.0, 'num_faces': 0, 'frame_width': 1920, 'frame_height': 1080}
 
             # Convert BGR to RGB
             frame_rgb = self.cv2.cvtColor(frame, self.cv2.COLOR_BGR2RGB)
             h, w, _ = frame.shape
+            print(f"      📐 Wymiary klatki: {w}x{h}px")
+
+            # Save debug frame for inspection
+            debug_frame_path = Path(input_file).parent / "face_detection_debug.jpg"
+            self.cv2.imwrite(str(debug_frame_path), frame)
+            print(f"      💾 Debug frame: {debug_frame_path.name}")
 
             # Detect faces
+            print(f"      🤖 MediaPipe detection...")
             results = self.face_detector.process(frame_rgb)
+
+            if results.detections:
+                print(f"      ✓ Wykryto {len(results.detections)} twarz(y)!")
+            else:
+                print(f"      ❌ MediaPipe nie wykrył żadnych twarzy")
+                print(f"      💡 Sprawdź plik: {debug_frame_path}")
 
             # Clean up temp file
             os.unlink(tmp_frame)
