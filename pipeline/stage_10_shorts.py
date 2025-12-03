@@ -103,7 +103,9 @@ class ShortsStage:
                 'type': 'bottom_bar' | 'corner' | 'full_face' | 'none',
                 'x': int, 'y': int, 'w': int, 'h': int,
                 'confidence': float,
-                'num_faces': int
+                'num_faces': int,
+                'frame_width': int,
+                'frame_height': int
             }
         """
 
@@ -112,7 +114,9 @@ class ShortsStage:
                 'type': 'none',
                 'x': 0, 'y': 0, 'w': 0, 'h': 0,
                 'confidence': 0.0,
-                'num_faces': 0
+                'num_faces': 0,
+                'frame_width': 1920,
+                'frame_height': 1080
             }
 
         try:
@@ -135,7 +139,7 @@ class ShortsStage:
             # Load frame with OpenCV
             frame = self.cv2.imread(tmp_frame)
             if frame is None:
-                return {'type': 'none', 'x': 0, 'y': 0, 'w': 0, 'h': 0, 'confidence': 0.0, 'num_faces': 0}
+                return {'type': 'none', 'x': 0, 'y': 0, 'w': 0, 'h': 0, 'confidence': 0.0, 'num_faces': 0, 'frame_width': 1920, 'frame_height': 1080}
 
             # Convert BGR to RGB
             frame_rgb = self.cv2.cvtColor(frame, self.cv2.COLOR_BGR2RGB)
@@ -148,7 +152,7 @@ class ShortsStage:
             os.unlink(tmp_frame)
 
             if not results.detections:
-                return {'type': 'none', 'x': 0, 'y': 0, 'w': 0, 'h': 0, 'confidence': 0.0, 'num_faces': 0}
+                return {'type': 'none', 'x': 0, 'y': 0, 'w': 0, 'h': 0, 'confidence': 0.0, 'num_faces': 0, 'frame_width': w, 'frame_height': h}
 
             # Analyze detected faces
             faces = []
@@ -173,7 +177,7 @@ class ShortsStage:
 
             # Classify webcam region type based on face positions
             if num_faces == 0:
-                return {'type': 'none', 'x': 0, 'y': 0, 'w': 0, 'h': 0, 'confidence': 0.0, 'num_faces': 0}
+                return {'type': 'none', 'x': 0, 'y': 0, 'w': 0, 'h': 0, 'confidence': 0.0, 'num_faces': 0, 'frame_width': w, 'frame_height': h}
 
             # Sort by confidence
             faces = sorted(faces, key=lambda f: f['confidence'], reverse=True)
@@ -225,12 +229,14 @@ class ShortsStage:
                 'w': region_bbox['w'],
                 'h': region_bbox['h'],
                 'confidence': main_face['confidence'],
-                'num_faces': num_faces
+                'num_faces': num_faces,
+                'frame_width': w,
+                'frame_height': h
             }
 
         except Exception as e:
             print(f"      ⚠️ Błąd wykrywania kamerki: {e}")
-            return {'type': 'none', 'x': 0, 'y': 0, 'w': 0, 'h': 0, 'confidence': 0.0, 'num_faces': 0}
+            return {'type': 'none', 'x': 0, 'y': 0, 'w': 0, 'h': 0, 'confidence': 0.0, 'num_faces': 0, 'frame_width': 1920, 'frame_height': 1080}
 
     def _select_template(self, webcam_detection: Dict[str, Any]) -> str:
         """
@@ -533,6 +539,9 @@ class ShortsStage:
         - Gameplay wyżej (skalowany, max 15% crop z boków)
         - Kamerka streamera na dole (pełna szerokość, 33% wysokości)
         - Napisy pod kamerką (safe zone)
+
+        Jeśli wykryto twarz: używa wykrytej pozycji do inteligentnego croppingu
+        Jeśli nie wykryto: fallback do domyślnych proporcji (65% gameplay / 35% webcam)
         """
 
         title_height = self.config.shorts.title_height  # 220px
@@ -544,21 +553,55 @@ class ShortsStage:
         # Gameplay: scale do szerokości, crop do wysokości (max 15% crop z boków)
         gameplay_target_w = int(width * 1.15)  # Allow 15% crop
 
+        # === INTELLIGENT CROP BASED ON FACE DETECTION ===
+        if webcam_detection and webcam_detection.get('num_faces', 0) > 0:
+            # Wykryto twarz - użyj wykrytej pozycji
+            det_y = webcam_detection.get('y', 0)
+            det_h = webcam_detection.get('h', 0)
+            video_h = webcam_detection.get('frame_height', 1080)  # Original video height
+
+            # Określ gdzie jest webcam w stosunku do wysokości video
+            webcam_center_y = det_y + (det_h / 2)
+            webcam_position_ratio = webcam_center_y / video_h
+
+            print(f"      🎯 Wykryto twarz na pozycji {webcam_position_ratio:.1%} wysokości video")
+
+            # Jeśli twarz jest w dolnej połowie (typowe dla streamów gaming)
+            if webcam_position_ratio > 0.5:
+                # Dolny pasek - crop dolną część dla webcama, górną dla gameplay
+                webcam_start_ratio = max(0.6, webcam_position_ratio - 0.2)  # Zaczynamy trochę wyżej niż twarz
+                gameplay_end_ratio = webcam_start_ratio  # Gameplay kończy się tam gdzie zaczyna webcam
+
+                print(f"      📐 Gameplay: top {gameplay_end_ratio:.1%}, Webcam: bottom {1-webcam_start_ratio:.1%}")
+
+                gameplay_crop = f"crop=iw:ih*{gameplay_end_ratio:.3f}:0:0"
+                webcam_crop = f"crop=iw:ih*{1-webcam_start_ratio:.3f}:0:ih*{webcam_start_ratio:.3f}"
+            else:
+                # Twarz w górnej połowie (nietypowe ale obsługujemy)
+                # Fallback do domyślnych proporcji
+                print(f"      ⚠️ Twarz w górnej połowie - używam domyślnych proporcji")
+                gameplay_crop = "crop=iw:ih*0.65:0:0"
+                webcam_crop = "crop=iw:ih*0.35:0:ih*0.65"
+        else:
+            # Nie wykryto twarzy - użyj domyślnych proporcji
+            print(f"      📐 Brak detekcji - domyślne proporcje: 65% gameplay / 35% webcam")
+            gameplay_crop = "crop=iw:ih*0.65:0:0"
+            webcam_crop = "crop=iw:ih*0.35:0:ih*0.65"
+
         filter_complex = (
             # [0] = Original video
             # Split video into 2 streams - gameplay (top) i webcam (bottom)
             f"[0:v]split=2[gameplay][webcam];"
 
             # === GAMEPLAY (top region) ===
-            # Zakładamy że gameplay to górna część ekranu
-            # Crop top region, scale UP to cover area (increase), then center crop
-            f"[gameplay]crop=iw:ih*0.65:0:0,"  # Top 65% of original
+            # Crop top region (używa wykrytej pozycji lub domyślnej)
+            f"[gameplay]{gameplay_crop},"
             f"scale={gameplay_target_w}:{gameplay_h}:force_original_aspect_ratio=increase,"  # Scale UP to cover
             f"crop={width}:{gameplay_h}[gameplay_scaled];"
 
             # === WEBCAM (bottom region) ===
-            # Zakładamy że kamerka to dolna część ekranu
-            f"[webcam]crop=iw:ih*0.35:0:ih*0.65,"  # Bottom 35%
+            # Crop bottom region (używa wykrytej pozycji lub domyślnej)
+            f"[webcam]{webcam_crop},"
             f"scale={width}:{webcam_h}:force_original_aspect_ratio=increase,"
             f"crop={width}:{webcam_h}[webcam_scaled];"
 
