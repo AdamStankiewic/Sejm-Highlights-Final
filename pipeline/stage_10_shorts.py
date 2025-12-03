@@ -330,12 +330,31 @@ class ShortsStage:
         shorts_dir = session_dir / "shorts"
         shorts_dir.mkdir(exist_ok=True)
 
-        # Auto-detect template if requested
+        # Face detection for templates that need it
         detected_webcam = None
-        if template == "auto":
-            print(f"   🔍 Automatyczna detekcja szablonu...")
-            detected_webcam = self._detect_webcam_region(input_path, t_sample=shorts_clips[0]['t0'] + 5.0)
-            template = self._select_template(detected_webcam)
+        templates_needing_detection = ["classic_gaming", "pip_modern", "irl_fullface", "dynamic_speaker", "auto"]
+
+        if template in templates_needing_detection:
+            if self.face_detector:
+                print(f"   🔍 Wykrywanie twarzy dla szablonu '{template}'...")
+                detected_webcam = self._detect_webcam_region(input_path, t_sample=shorts_clips[0]['t0'] + 5.0)
+
+                if detected_webcam and detected_webcam.get('num_faces', 0) > 0:
+                    print(f"      📷 Znaleziono {detected_webcam['num_faces']} twarz(y)")
+                    print(f"      📍 Pozycja: x={detected_webcam['x']}, y={detected_webcam['y']}, w={detected_webcam['w']}, h={detected_webcam['h']}")
+                    print(f"      📊 Confidence: {detected_webcam['confidence']:.2f}")
+                    print(f"      🎨 Typ regionu: {detected_webcam['type']}")
+                else:
+                    print(f"      ⚠️ Nie znaleziono twarzy - użyję domyślnego layoutu")
+
+                # Auto-select template only if requested
+                if template == "auto":
+                    template = self._select_template(detected_webcam)
+                    print(f"   🤖 Auto-wybrano szablon: {template}")
+            else:
+                print(f"   ⚠️ MediaPipe niedostępne dla szablonu '{template}'")
+                if template == "auto":
+                    template = "simple"
 
         # Fallback to simple if MediaPipe not available and template requires it
         if not self.face_detector and template in ["classic_gaming", "pip_modern", "irl_fullface", "dynamic_speaker"]:

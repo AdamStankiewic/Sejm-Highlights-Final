@@ -314,8 +314,7 @@ class SejmHighlightsApp(QMainWindow):
             self.mode_info_label.setText("💬 Chat scoring + Templates + Copyright detection")
             self.config.streaming.mode = "stream"
             self.config.streaming.use_chat_scoring = True
-            self.config.shorts.default_template = "auto"
-            self.shorts_template_selection = "auto"  # Also update GUI variable
+            # Template is chosen by user via template dialog - face detection runs for all templates
 
             # Show chat input
             if hasattr(self, 'chat_file_group'):
