@@ -315,6 +315,7 @@ class SejmHighlightsApp(QMainWindow):
             self.config.streaming.mode = "stream"
             self.config.streaming.use_chat_scoring = True
             self.config.shorts.default_template = "auto"
+            self.shorts_template_selection = "auto"  # Also update GUI variable
 
             # Show chat input
             if hasattr(self, 'chat_file_group'):
