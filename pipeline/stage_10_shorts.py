@@ -125,9 +125,6 @@ class ShortsStage:
             with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
                 tmp_frame = tmp.name
 
-            print(f"      🔍 Próbkuję klatkę z timestamp: {t_sample:.1f}s")
-            print(f"      📂 Input file: {input_file.name}")
-
             cmd = [
                 'ffmpeg',
                 '-ss', str(t_sample),
@@ -139,33 +136,18 @@ class ShortsStage:
             ]
 
             result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
-            print(f"      ✓ Klatka wyekstrahowana: {Path(tmp_frame).name}")
 
             # Load frame with OpenCV
             frame = self.cv2.imread(tmp_frame)
             if frame is None:
-                print(f"      ❌ Nie można wczytać klatki z OpenCV")
                 return {'type': 'none', 'x': 0, 'y': 0, 'w': 0, 'h': 0, 'confidence': 0.0, 'num_faces': 0, 'frame_width': 1920, 'frame_height': 1080}
 
             # Convert BGR to RGB
             frame_rgb = self.cv2.cvtColor(frame, self.cv2.COLOR_BGR2RGB)
             h, w, _ = frame.shape
-            print(f"      📐 Wymiary klatki: {w}x{h}px")
-
-            # Save debug frame for inspection
-            debug_frame_path = Path(input_file).parent / "face_detection_debug.jpg"
-            self.cv2.imwrite(str(debug_frame_path), frame)
-            print(f"      💾 Debug frame: {debug_frame_path.name}")
 
             # Detect faces
-            print(f"      🤖 MediaPipe detection...")
             results = self.face_detector.process(frame_rgb)
-
-            if results.detections:
-                print(f"      ✓ Wykryto {len(results.detections)} twarz(y)!")
-            else:
-                print(f"      ❌ MediaPipe nie wykrył żadnych twarzy")
-                print(f"      💡 Sprawdź plik: {debug_frame_path}")
 
             # Clean up temp file
             os.unlink(tmp_frame)
@@ -355,31 +337,8 @@ class ShortsStage:
         shorts_dir = session_dir / "shorts"
         shorts_dir.mkdir(exist_ok=True)
 
-        # Face detection for templates that need it
-        detected_webcam = None
+        # Check if template needs face detection
         templates_needing_detection = ["classic_gaming", "pip_modern", "irl_fullface", "dynamic_speaker", "auto"]
-
-        if template in templates_needing_detection:
-            if self.face_detector:
-                print(f"   🔍 Wykrywanie twarzy dla szablonu '{template}'...")
-                detected_webcam = self._detect_webcam_region(input_path, t_sample=shorts_clips[0]['t0'] + 5.0)
-
-                if detected_webcam and detected_webcam.get('num_faces', 0) > 0:
-                    print(f"      📷 Znaleziono {detected_webcam['num_faces']} twarz(y)")
-                    print(f"      📍 Pozycja: x={detected_webcam['x']}, y={detected_webcam['y']}, w={detected_webcam['w']}, h={detected_webcam['h']}")
-                    print(f"      📊 Confidence: {detected_webcam['confidence']:.2f}")
-                    print(f"      🎨 Typ regionu: {detected_webcam['type']}")
-                else:
-                    print(f"      ⚠️ Nie znaleziono twarzy - użyję domyślnego layoutu")
-
-                # Auto-select template only if requested
-                if template == "auto":
-                    template = self._select_template(detected_webcam)
-                    print(f"   🤖 Auto-wybrano szablon: {template}")
-            else:
-                print(f"   ⚠️ MediaPipe niedostępne dla szablonu '{template}'")
-                if template == "auto":
-                    template = "simple"
 
         # Fallback to simple if MediaPipe not available and template requires it
         if not self.face_detector and template in ["classic_gaming", "pip_modern", "irl_fullface", "dynamic_speaker"]:
@@ -392,6 +351,30 @@ class ShortsStage:
         for i, clip in enumerate(shorts_clips, 1):
             print(f"\n   📱 Short {i}/{len(shorts_clips)}")
 
+            # Face detection PER SHORT (each short gets individual detection)
+            detected_webcam = None
+            current_template = template  # May change for "auto" mode
+
+            if template in templates_needing_detection:
+                if self.face_detector:
+                    # Detect face at middle of THIS short
+                    clip_middle = clip['t0'] + (clip['t1'] - clip['t0']) / 2
+                    print(f"      🔍 Wykrywanie twarzy na {clip_middle:.1f}s...")
+                    detected_webcam = self._detect_webcam_region(input_path, t_sample=clip_middle)
+
+                    if detected_webcam and detected_webcam.get('num_faces', 0) > 0:
+                        print(f"      ✓ Wykryto {detected_webcam['num_faces']} twarz | pozycja: {detected_webcam['y']}/{detected_webcam['frame_height']}px")
+                    else:
+                        print(f"      ⚠️ Brak twarzy - domyślny layout")
+
+                    # Auto-select template only if requested
+                    if template == "auto":
+                        current_template = self._select_template(detected_webcam)
+                        print(f"      🤖 Auto: {current_template}")
+                else:
+                    if template == "auto":
+                        current_template = "simple"
+
             try:
                 short_result = self._generate_single_short(
                     input_path,
@@ -399,7 +382,7 @@ class ShortsStage:
                     segments,
                     shorts_dir,
                     i,
-                    template=template,
+                    template=current_template,
                     webcam_detection=detected_webcam
                 )
                 generated_shorts.append(short_result)
