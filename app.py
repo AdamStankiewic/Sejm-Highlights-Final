@@ -7,6 +7,10 @@ Automatyczne generowanie najlepszych momentów z transmisji Sejmu
 + Inteligentny podział długich materiałów na części z auto-premiering
 """
 
+# Fix OpenMP conflict between PyTorch and other libraries
+import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
 import sys
 import json
 from video_downloader import VideoDownloader
