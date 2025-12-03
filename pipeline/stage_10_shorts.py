@@ -556,6 +556,8 @@ class ShortsStage:
         gameplay_target_w = int(width * 1.15)  # Allow 15% crop
 
         # === INTELLIGENT CROP BASED ON FACE DETECTION ===
+        webcam_on_top = False  # Track if webcam is at top or bottom
+
         if webcam_detection and webcam_detection.get('num_faces', 0) > 0:
             # Wykryto twarz - użyj wykrytej pozycji
             det_y = webcam_detection.get('y', 0)
@@ -574,50 +576,75 @@ class ShortsStage:
                 webcam_start_ratio = max(0.6, webcam_position_ratio - 0.2)  # Zaczynamy trochę wyżej niż twarz
                 gameplay_end_ratio = webcam_start_ratio  # Gameplay kończy się tam gdzie zaczyna webcam
 
-                print(f"      📐 Gameplay: top {gameplay_end_ratio:.1%}, Webcam: bottom {1-webcam_start_ratio:.1%}")
+                print(f"      📐 Webcam na dole | Gameplay: top {gameplay_end_ratio:.1%}, Webcam: bottom {1-webcam_start_ratio:.1%}")
 
                 gameplay_crop = f"crop=iw:ih*{gameplay_end_ratio:.3f}:0:0"
                 webcam_crop = f"crop=iw:ih*{1-webcam_start_ratio:.3f}:0:ih*{webcam_start_ratio:.3f}"
+                webcam_on_top = False
             else:
-                # Twarz w górnej połowie (nietypowe ale obsługujemy)
-                # Fallback do domyślnych proporcji
-                print(f"      ⚠️ Twarz w górnej połowie - używam domyślnych proporcji")
-                gameplay_crop = "crop=iw:ih*0.65:0:0"
-                webcam_crop = "crop=iw:ih*0.35:0:ih*0.65"
+                # Twarz w górnej połowie - webcam w górnym rogu!
+                webcam_end_ratio = min(0.4, webcam_position_ratio + 0.2)  # Kończymy trochę niżej niż twarz
+                gameplay_start_ratio = webcam_end_ratio  # Gameplay zaczyna się tam gdzie kończy webcam
+
+                print(f"      📐 Webcam na górze | Webcam: top {webcam_end_ratio:.1%}, Gameplay: bottom {1-gameplay_start_ratio:.1%}")
+
+                webcam_crop = f"crop=iw:ih*{webcam_end_ratio:.3f}:0:0"
+                gameplay_crop = f"crop=iw:ih*{1-gameplay_start_ratio:.3f}:0:ih*{gameplay_start_ratio:.3f}"
+                webcam_on_top = True
         else:
-            # Nie wykryto twarzy - użyj domyślnych proporcji
+            # Nie wykryto twarzy - użyj domyślnych proporcji (webcam na dole)
             print(f"      📐 Brak detekcji - domyślne proporcje: 65% gameplay / 35% webcam")
             gameplay_crop = "crop=iw:ih*0.65:0:0"
             webcam_crop = "crop=iw:ih*0.35:0:ih*0.65"
+            webcam_on_top = False
 
-        filter_complex = (
-            # [0] = Original video
-            # Split video into 2 streams - gameplay (top) i webcam (bottom)
-            f"[0:v]split=2[gameplay][webcam];"
+        # Build filter based on webcam position
+        if webcam_on_top:
+            # Layout: Title → Webcam (top) → Gameplay (bottom)
+            filter_complex = (
+                f"[0:v]split=2[gameplay][webcam];"
 
-            # === GAMEPLAY (top region) ===
-            # Crop top region (używa wykrytej pozycji lub domyślnej)
-            f"[gameplay]{gameplay_crop},"
-            f"scale={gameplay_target_w}:{gameplay_h}:force_original_aspect_ratio=increase,"  # Scale UP to cover
-            f"crop={width}:{gameplay_h}[gameplay_scaled];"
+                # Webcam at top
+                f"[webcam]{webcam_crop},"
+                f"scale={width}:{webcam_h}:force_original_aspect_ratio=increase,"
+                f"crop={width}:{webcam_h}[webcam_scaled];"
 
-            # === WEBCAM (bottom region) ===
-            # Crop bottom region (używa wykrytej pozycji lub domyślnej)
-            f"[webcam]{webcam_crop},"
-            f"scale={width}:{webcam_h}:force_original_aspect_ratio=increase,"
-            f"crop={width}:{webcam_h}[webcam_scaled];"
+                # Gameplay at bottom
+                f"[gameplay]{gameplay_crop},"
+                f"scale={gameplay_target_w}:{gameplay_h}:force_original_aspect_ratio=increase,"
+                f"crop={width}:{gameplay_h}[gameplay_scaled];"
 
-            # === TITLE BAR (black bg with text overlay) ===
-            # Note: No duration needed - vstack will auto-match to clip duration
-            f"color=c=black:s={width}x{title_height}[title_bg];"
+                # Title bar
+                f"color=c=black:s={width}x{title_height}[title_bg];"
 
-            # === STACK: Title + Gameplay + Webcam ===
-            # Use shortest=1 to sync color source with video duration
-            f"[title_bg][gameplay_scaled][webcam_scaled]vstack=inputs=3:shortest=1[stacked];"
+                # Stack: Title + Webcam + Gameplay
+                f"[title_bg][webcam_scaled][gameplay_scaled]vstack=inputs=3:shortest=1[stacked];"
 
-            # === ADD SUBTITLES ===
-            f"[stacked]ass='{ass_file.replace(chr(92), '/')}'"
-        )
+                f"[stacked]ass='{ass_file.replace(chr(92), '/')}'"
+            )
+        else:
+            # Layout: Title → Gameplay (top) → Webcam (bottom) [default]
+            filter_complex = (
+                f"[0:v]split=2[gameplay][webcam];"
+
+                # Gameplay at top
+                f"[gameplay]{gameplay_crop},"
+                f"scale={gameplay_target_w}:{gameplay_h}:force_original_aspect_ratio=increase,"
+                f"crop={width}:{gameplay_h}[gameplay_scaled];"
+
+                # Webcam at bottom
+                f"[webcam]{webcam_crop},"
+                f"scale={width}:{webcam_h}:force_original_aspect_ratio=increase,"
+                f"crop={width}:{webcam_h}[webcam_scaled];"
+
+                # Title bar
+                f"color=c=black:s={width}x{title_height}[title_bg];"
+
+                # Stack: Title + Gameplay + Webcam
+                f"[title_bg][gameplay_scaled][webcam_scaled]vstack=inputs=3:shortest=1[stacked];"
+
+                f"[stacked]ass='{ass_file.replace(chr(92), '/')}'"
+            )
 
         return filter_complex
 
