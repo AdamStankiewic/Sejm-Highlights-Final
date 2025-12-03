@@ -363,7 +363,7 @@ class ShortsStage:
                     detected_webcam = self._detect_webcam_region(input_path, t_sample=clip_middle)
 
                     if detected_webcam and detected_webcam.get('num_faces', 0) > 0:
-                        print(f"      ✓ Wykryto {detected_webcam['num_faces']} twarz | pozycja: {detected_webcam['y']}/{detected_webcam['frame_height']}px")
+                        print(f"      ✓ Wykryto {detected_webcam['num_faces']} twarz | pozycja: {detected_webcam['y']}/{detected_webcam['frame_height']}px | typ: {detected_webcam.get('type', 'unknown')}")
                     else:
                         print(f"      ⚠️ Brak twarzy - domyślny layout")
 
