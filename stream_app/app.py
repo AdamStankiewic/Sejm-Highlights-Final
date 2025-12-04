@@ -249,7 +249,25 @@ class StreamHighlightsApp(QMainWindow):
         # Shorts
         self.generate_shorts = QCheckBox("📱 Generuj też Shorts (9:16, max 60s)")
         self.generate_shorts.setChecked(True)
+        self.generate_shorts.stateChanged.connect(self._toggle_shorts_fields)
         settings_layout.addWidget(self.generate_shorts)
+
+        # Shorts template selector
+        template_layout = QHBoxLayout()
+        template_layout.addWidget(QLabel("  📐 Szablon:"))
+        self.shorts_template = QComboBox()
+        self.shorts_template.addItems([
+            "auto (wykryj automatycznie)",
+            "classic_gaming (webcam dół)",
+            "pip_modern (PIP w rogu)",
+            "irl_fullface (zoom na twarz)",
+            "simple (prosty crop)"
+        ])
+        self.shorts_template.setCurrentIndex(0)  # Default: auto
+        self.shorts_template.setToolTip("Auto wykrywa layout na podstawie kamerki w streamie")
+        template_layout.addWidget(self.shorts_template)
+        template_layout.addStretch()
+        settings_layout.addLayout(template_layout)
 
         settings_group.setLayout(settings_layout)
         layout.addWidget(settings_group)
@@ -447,6 +465,11 @@ class StreamHighlightsApp(QMainWindow):
         """Enable process button when VOD is selected"""
         if self.vod_path:
             self.start_btn.setEnabled(True)
+
+    def _toggle_shorts_fields(self, state):
+        """Enable/disable shorts template selector based on checkbox"""
+        enabled = state == Qt.CheckState.Checked.value
+        self.shorts_template.setEnabled(enabled)
 
     def _toggle_copyright_fields(self, state):
         """Enable/disable copyright detection fields based on checkbox"""

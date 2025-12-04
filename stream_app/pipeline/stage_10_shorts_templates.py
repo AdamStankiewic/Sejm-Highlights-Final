@@ -82,7 +82,7 @@ def template_pip_modern(
     PIP Modern template:
     - Full stream scaled to 9:16 (max 15% horizontal crop)
     - Small webcam PIP in bottom-right corner
-    - Rounded corners and drop shadow on PIP
+    - Simple version without rounded corners (for stability)
 
     Returns:
         FFmpeg filter_complex string
@@ -104,25 +104,18 @@ def template_pip_modern(
 
         webcam_crop = f"crop={wc_w}:{wc_h}:{wc_x}:{wc_y},"
     else:
-        # Fallback: crop bottom-right corner
-        webcam_crop = f"crop=iw/3:ih/3:iw*2/3:ih*2/3,"
+        # Fallback: crop bottom 35% of frame (common webcam position)
+        webcam_crop = f"crop=iw:ih*0.35:0:ih*0.65,"
 
     filter_complex = (
         # BACKGROUND: scale main stream to 9:16
         f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
         f"crop={width}:{height}[bg];"
 
-        # PIP: extract webcam, scale, add rounded corners
+        # PIP: extract webcam, scale to small size
         f"[0:v]{webcam_crop}"  # Extract webcam region
         f"scale={pip_w}:{pip_h}:force_original_aspect_ratio=increase,"
-        f"crop={pip_w}:{pip_h},"
-        # Rounded corners using geq filter
-        f"format=yuva420p,geq="
-        f"lum='p(X,Y)':a='"
-        f"if(lt(X,20)*lt(Y,20),if(lt(hypot(20-X,20-Y),20),255,0),"  # Top-left
-        f"if(gt(X,W-20)*lt(Y,20),if(lt(hypot(X-(W-20),20-Y),20),255,0),"  # Top-right
-        f"if(lt(X,20)*gt(Y,H-20),if(lt(hypot(20-X,Y-(H-20)),20),255,0),"  # Bottom-left
-        f"if(gt(X,W-20)*gt(Y,H-20),if(lt(hypot(X-(W-20),Y-(H-20)),20),255,0),255))))'[pip];"  # Bottom-right
+        f"crop={pip_w}:{pip_h}[pip];"
 
         # Overlay PIP on background
         f"[bg][pip]overlay={pip_x}:{pip_y}[v]"
