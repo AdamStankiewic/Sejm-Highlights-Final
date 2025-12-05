@@ -1239,8 +1239,8 @@ class SejmHighlightsApp(QMainWindow):
         if hasattr(self.config, 'chat'):
             # Enable chat analysis tylko gdy:
             # 1. chat_json_path jest podany
-            # 2. mode to "Stream Highlights"
-            if self.chat_json_path and self.mode_combo.currentText() == "Stream Highlights":
+            # 2. mode to "Stream Highlights" (stream_mode_radio checked)
+            if self.chat_json_path and self.stream_mode_radio.isChecked():
                 self.config.chat.enabled = True
                 self.config.chat.chat_json_path = Path(self.chat_json_path)
                 self.log(f"✓ Chat analysis ENABLED: {Path(self.chat_json_path).name}", "INFO")
