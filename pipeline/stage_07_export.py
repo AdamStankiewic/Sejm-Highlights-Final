@@ -271,8 +271,8 @@ class ExportStage:
                 '-i', f'color=c={bgcolor}:s=1920x1080:d={duration}',
                 '-vf', f"drawtext=text='{title_safe}':fontsize={fontsize}:fontcolor={fontcolor}:x=(w-text_w)/2:y=(h-text_h)/2",
                 '-c:v', self.config.export.video_codec,
-                '-preset', 'ultrafast',
-                '-crf', '23',
+                '-preset', self.config.export.video_preset,  # Use GPU preset (p5 for NVENC)
+                '-crf', str(self.config.export.crf),
                 '-pix_fmt', 'yuv420p',
                 '-y',
                 str(output_file)
@@ -330,7 +330,7 @@ class ExportStage:
                 '-vf', f"fade=t=in:st=0:d={fade_in},fade=t=out:st={fade_out_start}:d={fade_out}",
                 '-af', f"afade=t=in:st=0:d={fade_in},afade=t=out:st={fade_out_start}:d={fade_out}",
                 '-c:v', self.config.export.video_codec,
-                '-preset', 'fast',
+                '-preset', self.config.export.video_preset,  # Use GPU preset (p5 for NVENC)
                 '-crf', str(self.config.export.crf),
                 '-c:a', self.config.export.audio_codec,
                 '-b:a', self.config.export.audio_bitrate,
@@ -484,7 +484,7 @@ class ExportStage:
             '-i', str(input_file.absolute()),
             '-vf', f"subtitles='{srt_path_escaped}':force_style='Fontsize={fontsize},Bold=1,Outline=2,Shadow=1,MarginV=40'",
             '-c:v', self.config.export.video_codec,
-            '-preset', 'medium',
+            '-preset', self.config.export.video_preset,  # Use GPU preset (p5 for NVENC)
             '-crf', str(self.config.export.crf),
             '-c:a', 'copy',
             '-y',
@@ -674,7 +674,7 @@ class ExportStage:
             '-i', str(input_file.absolute()),
             '-vf', f"ass='{ass_path_escaped}'",
             '-c:v', self.config.export.video_codec,
-            '-preset', 'medium',
+            '-preset', self.config.export.video_preset,  # Use GPU preset (p5 for NVENC)
             '-crf', str(self.config.export.crf),
             '-c:a', 'copy',
             '-y',

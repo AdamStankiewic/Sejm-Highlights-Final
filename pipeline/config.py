@@ -146,10 +146,10 @@ class SelectionConfig:
 @dataclass
 class ExportConfig:
     """Video export settings"""
-    # Video codec
-    video_codec: str = "libx264"
-    video_preset: str = "medium"  # ultrafast, fast, medium, slow
-    crf: int = 21  # Quality (18-28, lower=better)
+    # Video codec - NVIDIA GPU acceleration (Ampere NVENC 7th gen)
+    video_codec: str = "h264_nvenc"
+    video_preset: str = "p5"  # NVENC presets: p1 (fastest) to p7 (slowest/best quality)
+    crf: int = 21  # Quality (0-51 for NVENC, lower=better)
     
     # Audio codec
     audio_codec: str = "aac"

@@ -437,9 +437,9 @@ class ShortsStage:
             '-i', str(input_file),
             '-filter_complex', filter_complex,
             '-map', '0:a',
-            '-c:v', 'libx264',
-            '-preset', 'medium',
-            '-crf', '23',
+            '-c:v', self.config.export.video_codec,  # Use GPU encoder (h264_nvenc)
+            '-preset', self.config.export.video_preset,  # Use GPU preset (p5 for NVENC)
+            '-crf', str(self.config.export.crf),
             '-c:a', 'aac',
             '-b:a', '128k',
             '-movflags', '+faststart',
