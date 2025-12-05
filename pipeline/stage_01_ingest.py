@@ -152,11 +152,12 @@ class IngestStage:
     
     def _extract_audio(self, input_file: Path, output_file: Path):
         """
-        Ekstrakcja audio z video
+        Ekstrakcja audio z video - GPU accelerated decoding
         Output: 16kHz mono WAV (wymóg Whisper)
         """
         cmd = [
             'ffmpeg',
+            '-hwaccel', 'cuda',  # GPU hardware decoding for faster audio extraction
             '-i', str(input_file),
             '-vn',  # No video
             '-ac', str(self.config.audio.channels),  # Mono
