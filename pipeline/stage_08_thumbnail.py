@@ -503,9 +503,12 @@ class ThumbnailStage:
             old_path = Path(result['thumbnail_path'])
             new_filename = f"thumbnail_part{part_number}.jpg"
             new_path = old_path.parent / new_filename
-            
-            # Przenieś plik
+
+            # Przenieś plik (usuń istniejący jeśli istnieje)
             if old_path.exists():
+                # Delete target file if it exists (Windows compatibility)
+                if new_path.exists():
+                    new_path.unlink()
                 old_path.rename(new_path)
                 result['thumbnail_path'] = str(new_path)
                 print(f"   ✅ Miniaturka części {part_number}: {new_path.name}")
