@@ -538,17 +538,32 @@ class ThumbnailStage:
         print("="*60)
         
         try:
-            # Wybierz najlepszy klip (najwyższy score)
+            # Wybierz najlepszy klip (najwyższy score) lub użyj fallback
             if not clips:
-                raise ValueError("Brak klipów do wygenerowania miniaturki")
-            
-            best_clip = max(clips, key=lambda c: c.get('score', 0))
-            
-            # Timestamp środka najlepszego klipu
-            mid_timestamp = (best_clip['t0'] + best_clip['t1']) / 2
-            
+                # Fallback: użyj środkowej klatki video gdy brak klipów
+                print("   ℹ️ Brak klipów, używam środkowej klatki video")
+
+                # Get video duration
+                import cv2
+                cap = cv2.VideoCapture(video_file)
+                if not cap.isOpened():
+                    raise ValueError(f"Nie można otworzyć video: {video_file}")
+
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                duration = total_frames / fps if fps > 0 else 0
+                cap.release()
+
+                mid_timestamp = duration / 2
+                best_clip = None  # No clip context
+            else:
+                best_clip = max(clips, key=lambda c: c.get('score', 0))
+                # Timestamp środka najlepszego klipu
+                mid_timestamp = (best_clip['t0'] + best_clip['t1']) / 2
+
             print(f"📸 Wybieram klatkę z {mid_timestamp:.1f}s")
-            print(f"   Score klipu: {best_clip.get('score', 0):.2f}")
+            if best_clip:
+                print(f"   Score klipu: {best_clip.get('score', 0):.2f}")
             
             # Extract best frame
             frame = self._extract_best_frame(
@@ -569,7 +584,11 @@ class ThumbnailStage:
             if custom_title:
                 top_text = custom_title
             else:
-                top_text = self._generate_title_from_clip(best_clip)
+                # If no best_clip (empty clips list), use generic title
+                if best_clip is None:
+                    top_text = "GORĄCE MOMENTY!"
+                else:
+                    top_text = self._generate_title_from_clip(best_clip)
             
             if custom_bottom_text:
                 bottom_text = custom_bottom_text
@@ -603,7 +622,7 @@ class ThumbnailStage:
                 'success': True,
                 'thumbnail_path': str(thumbnail_path),
                 'source_timestamp': mid_timestamp,
-                'source_clip_id': best_clip.get('id'),
+                'source_clip_id': best_clip.get('id') if best_clip else None,
                 'text': top_text,
                 'dimensions': f"{self.target_width}x{self.target_height}"
             }
