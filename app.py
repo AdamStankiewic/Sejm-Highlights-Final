@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QLabel, QProgressBar, QTextEdit, QFileDialog,
     QGroupBox, QSpinBox, QDoubleSpinBox, QComboBox, QListWidget,
     QSplitter, QMessageBox, QTabWidget, QCheckBox, QLineEdit, QTimeEdit,
-    QDialog, QRadioButton, QButtonGroup, QSlider
+    QDialog, QRadioButton, QButtonGroup, QSlider, QScrollArea
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QTime
 from PyQt6.QtGui import QFont, QTextCursor, QPixmap
@@ -298,25 +298,34 @@ class SejmHighlightsApp(QMainWindow):
         group.setLayout(layout)
         return group
     
+    def _make_scrollable(self, widget: QWidget) -> QScrollArea:
+        """Wrap a widget in a scroll area for better responsiveness"""
+        scroll = QScrollArea()
+        scroll.setWidget(widget)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        return scroll
+
     def create_config_tabs(self) -> QTabWidget:
         """Zakładki z konfiguracją"""
         tabs = QTabWidget()
-        
-        # TAB 1: Output Settings
-        tabs.addTab(self.create_output_tab(), "📊 Output")
-        
-        # TAB 2: Smart Splitter (NOWY!)
-        tabs.addTab(self.create_smart_splitter_tab(), "🤖 Smart Splitter")
-        
-        # TAB 3: Model Settings
-        tabs.addTab(self.create_model_tab(), "🧠 AI Models")
-        
-        # TAB 4: Advanced
-        tabs.addTab(self.create_advanced_tab(), "⚙️ Advanced")
-        
-        # TAB 5: YouTube (rozszerzony)
-        tabs.addTab(self.create_youtube_tab(), "📺 YouTube")
-        
+
+        # TAB 1: Output Settings (scrollable)
+        tabs.addTab(self._make_scrollable(self.create_output_tab()), "📊 Output")
+
+        # TAB 2: Smart Splitter (NOWY!) (scrollable)
+        tabs.addTab(self._make_scrollable(self.create_smart_splitter_tab()), "🤖 Smart Splitter")
+
+        # TAB 3: Model Settings (scrollable)
+        tabs.addTab(self._make_scrollable(self.create_model_tab()), "🧠 AI Models")
+
+        # TAB 4: Advanced (scrollable)
+        tabs.addTab(self._make_scrollable(self.create_advanced_tab()), "⚙️ Advanced")
+
+        # TAB 5: YouTube (rozszerzony) (scrollable)
+        tabs.addTab(self._make_scrollable(self.create_youtube_tab()), "📺 YouTube")
+
         return tabs
     
     def create_output_tab(self) -> QWidget:
@@ -326,6 +335,7 @@ class SejmHighlightsApp(QMainWindow):
 
         # === MODE SELECTION (Sejm vs Stream) ===
         mode_group = QGroupBox("🎯 Tryb przetwarzania")
+        mode_group.setMinimumHeight(80)  # Ensure visibility
         mode_layout = QHBoxLayout()
 
         self.mode_button_group = QButtonGroup()
@@ -352,13 +362,13 @@ class SejmHighlightsApp(QMainWindow):
 
         layout.addSpacing(15)
 
-        # Target duration
+        # Target duration (in minutes now)
         dur_layout = QHBoxLayout()
-        dur_layout.addWidget(QLabel("🎯 Docelowa długość filmu (sekundy):"))
+        dur_layout.addWidget(QLabel("🎯 Docelowa długość filmu (minuty):"))
         self.target_duration = QSpinBox()
-        self.target_duration.setRange(600, 2400)  # 10-40 min
-        self.target_duration.setValue(900)  # 15 min default
-        self.target_duration.setSuffix(" s")
+        self.target_duration.setRange(10, 40)  # 10-40 min
+        self.target_duration.setValue(15)  # 15 min default
+        self.target_duration.setSuffix(" min")
         dur_layout.addWidget(self.target_duration)
         dur_layout.addStretch()
         layout.addLayout(dur_layout)
@@ -373,21 +383,23 @@ class SejmHighlightsApp(QMainWindow):
         clips_layout.addStretch()
         layout.addLayout(clips_layout)
         
-        # Min/Max clip duration
+        # Min/Max clip duration (wider range to support both modes)
         min_clip_layout = QHBoxLayout()
         min_clip_layout.addWidget(QLabel("⏱️ Min. długość klipu (s):"))
         self.min_clip_duration = QSpinBox()
-        self.min_clip_duration.setRange(60, 180)
-        self.min_clip_duration.setValue(90)
+        self.min_clip_duration.setRange(20, 180)  # 20s-180s to support stream mode
+        self.min_clip_duration.setValue(20)  # Default for stream mode
+        self.min_clip_duration.setSuffix(" s")
         min_clip_layout.addWidget(self.min_clip_duration)
         min_clip_layout.addStretch()
         layout.addLayout(min_clip_layout)
-        
+
         max_clip_layout = QHBoxLayout()
         max_clip_layout.addWidget(QLabel("⏱️ Max. długość klipu (s):"))
         self.max_clip_duration = QSpinBox()
-        self.max_clip_duration.setRange(90, 300)
-        self.max_clip_duration.setValue(180)
+        self.max_clip_duration.setRange(60, 300)  # 60s-300s (5min max)
+        self.max_clip_duration.setValue(90)  # Default for stream mode
+        self.max_clip_duration.setSuffix(" s")
         max_clip_layout.addWidget(self.max_clip_duration)
         max_clip_layout.addStretch()
         layout.addLayout(max_clip_layout)
@@ -458,6 +470,11 @@ class SejmHighlightsApp(QMainWindow):
 
         # Store template selection (will be set by dialog)
         self.shorts_template_selection = "auto"  # Default: auto-detect
+
+        # Visual indicator for current template selection
+        self.shorts_template_label = QLabel("   📋 Wybrany szablon: <b>Auto-detect (inteligentny wybór)</b>")
+        self.shorts_template_label.setStyleSheet("color: #2196F3; font-size: 10px; padding: 5px;")
+        layout.addWidget(self.shorts_template_label)
 
         layout.addStretch()
         return tab
@@ -897,23 +914,23 @@ class SejmHighlightsApp(QMainWindow):
 
         if is_stream:
             # STREAM MODE - Shorter, more dynamic
-            self.target_duration.setValue(1200)  # 20 min
+            self.target_duration.setValue(20)  # 20 min
             self.num_clips.setValue(15)
-            self.min_clip_duration.setValue(20)  # Shorter clips for streams
+            self.min_clip_duration.setValue(20)  # 20s minimum for streams
             self.max_clip_duration.setValue(90)
             self.shorts_enabled.setChecked(True)  # Enable Shorts by default for streams
             self.shorts_count.setValue(10)
         else:
             # SEJM MODE - Longer, more context
-            self.target_duration.setValue(1380)  # 23 min (fits YT algorithm)
+            self.target_duration.setValue(23)  # 23 min (fits YT algorithm)
             self.num_clips.setValue(10)
-            self.min_clip_duration.setValue(90)  # Longer clips for Sejm
+            self.min_clip_duration.setValue(40)  # 40s minimum for Sejm
             self.max_clip_duration.setValue(180)
             self.shorts_enabled.setChecked(False)  # Shorts optional for Sejm
             self.shorts_count.setValue(5)
 
         # Log new settings
-        self.log(f"  Docelowa długość: {self.target_duration.value()}s", "INFO")
+        self.log(f"  Docelowa długość: {self.target_duration.value()} min", "INFO")
         self.log(f"  Liczba klipów: {self.num_clips.value()}", "INFO")
         self.log(f"  Długość klipu: {self.min_clip_duration.value()}-{self.max_clip_duration.value()}s", "INFO")
 
@@ -1109,8 +1126,8 @@ class SejmHighlightsApp(QMainWindow):
     
     def update_config_from_gui(self):
         """Aktualizuj obiekt Config wartościami z GUI"""
-        # Selection settings
-        self.config.selection.target_total_duration = float(self.target_duration.value())
+        # Selection settings (convert minutes to seconds for target_duration)
+        self.config.selection.target_total_duration = float(self.target_duration.value() * 60)  # Convert minutes to seconds
         self.config.selection.max_clips = int(self.num_clips.value())
         self.config.selection.min_clip_duration = float(self.min_clip_duration.value())
         self.config.selection.max_clip_duration = float(self.max_clip_duration.value())
@@ -1284,6 +1301,20 @@ class SejmHighlightsApp(QMainWindow):
             # Update config with dialog values
             dialog.apply_to_config(self.config)
             self.log(f"Shorts template: {self.shorts_template_selection}", "INFO")
+            # Update visual indicator
+            self._update_template_label()
+
+    def _update_template_label(self):
+        """Update the visual template selection label"""
+        template_names = {
+            "auto": "Auto-detect (inteligentny wybór)",
+            "simple": "Simple (czyste, minimalistyczne)",
+            "pip_modern": "PiP Modern (obraz w obrazie)",
+            "classic_gaming": "Classic Gaming (retro styl)",
+            "irl_fullface": "IRL Fullface (pełny ekran)"
+        }
+        template_display = template_names.get(self.shorts_template_selection, self.shorts_template_selection)
+        self.shorts_template_label.setText(f"   📋 Wybrany szablon: <b>{template_display}</b>")
 
 
 class ShortsTemplateDialog(QDialog):
