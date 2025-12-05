@@ -3,6 +3,8 @@ Stage 4: Feature Engineering
 - Acoustic features (RMS, spectral, prosodic)
 - Lexical features (keywords, entities)
 - Contextual features (speaker change, position)
+
+GPU-accelerated version using torchaudio + CUDA
 """
 
 import json
@@ -10,8 +12,9 @@ import csv
 from pathlib import Path
 from typing import Dict, Any, List
 import numpy as np
-import librosa
-import soundfile as sf
+import torch
+import torchaudio
+import torchaudio.transforms as T
 from collections import defaultdict
 
 try:
@@ -99,20 +102,33 @@ class FeaturesStage:
         audio_path = Path(audio_file)
         
         print(f"🔍 Ekstrakcja cech dla {len(segments)} segmentów...")
-        
-        # Wczytaj audio raz (dla wszystkich segmentów)
-        y, sr = librosa.load(str(audio_path), sr=None)
-        
-        # Przetworz każdy segment
+
+        # Wczytaj audio raz (dla wszystkich segmentów) - GPU accelerated
+        waveform, sr = torchaudio.load(str(audio_path))
+
+        # Convert to mono if stereo
+        if waveform.shape[0] > 1:
+            waveform = torch.mean(waveform, dim=0, keepdim=True)
+
+        # Move to GPU if available
+        device = torch.device('cuda' if (self.config.use_gpu and torch.cuda.is_available()) else 'cpu')
+        waveform = waveform.to(device)
+
+        if device.type == 'cuda':
+            print(f"   ✓ Audio załadowane na GPU ({waveform.shape[1]/sr/3600:.2f}h, {sr}Hz)")
+        else:
+            print(f"   ✓ Audio załadowane na CPU")
+
+        # Przetworz każdy segment (TODO: batch processing for even better speed)
         enriched_segments = []
-        
+
         for i, seg in enumerate(segments):
             if i % 20 == 0:
                 print(f"   Przetwarzanie segmentu {i+1}/{len(segments)}")
-            
-            # Extract features
-            features = self._extract_segment_features(seg, y, sr, len(segments))
-            
+
+            # Extract features (GPU accelerated)
+            features = self._extract_segment_features(seg, waveform, sr, len(segments), device)
+
             # Merge z oryginalnym segmentem
             enriched = {**seg, 'features': features}
             enriched_segments.append(enriched)
@@ -133,74 +149,108 @@ class FeaturesStage:
         }
     
     def _extract_segment_features(
-        self, 
-        segment: Dict, 
-        audio: np.ndarray, 
+        self,
+        segment: Dict,
+        audio: torch.Tensor,  # Changed from np.ndarray to torch.Tensor
         sr: int,
-        total_segments: int
+        total_segments: int,
+        device: torch.device
     ) -> Dict[str, Any]:
-        """Ekstrakcja wszystkich cech dla segmentu"""
-        
+        """Ekstrakcja wszystkich cech dla segmentu - GPU accelerated"""
+
         features = {}
-        
-        # 1. ACOUSTIC FEATURES
+
+        # 1. ACOUSTIC FEATURES (GPU accelerated)
         if self.config.features.compute_rms:
-            features.update(self._extract_acoustic_features(segment, audio, sr))
-        
-        # 2. PROSODIC FEATURES
+            features.update(self._extract_acoustic_features_gpu(segment, audio, sr, device))
+
+        # 2. PROSODIC FEATURES (CPU - lightweight)
         if self.config.features.compute_speech_rate:
             features.update(self._extract_prosodic_features(segment))
-        
-        # 3. LEXICAL FEATURES
+
+        # 3. LEXICAL FEATURES (CPU - NLP)
         features.update(self._extract_lexical_features(segment))
-        
-        # 4. CONTEXTUAL FEATURES
+
+        # 4. CONTEXTUAL FEATURES (CPU - simple calc)
         features.update(self._extract_contextual_features(segment, total_segments))
-        
+
         return features
-    
-    def _extract_acoustic_features(
-        self, 
-        segment: Dict, 
-        audio: np.ndarray, 
-        sr: int
+
+    def _extract_acoustic_features_gpu(
+        self,
+        segment: Dict,
+        audio: torch.Tensor,
+        sr: int,
+        device: torch.device
     ) -> Dict[str, float]:
-        """Ekstrakcja cech akustycznych"""
-        
+        """Ekstrakcja cech akustycznych - GPU accelerated using torch"""
+
         # Wytnij audio dla tego segmentu
         t0 = int(segment['t0'] * sr)
         t1 = int(segment['t1'] * sr)
-        seg_audio = audio[t0:t1]
-        
-        if len(seg_audio) == 0:
+        seg_audio = audio[:, t0:t1]  # [1, samples]
+
+        if seg_audio.shape[1] == 0:
             return {
                 'rms': 0.0,
                 'spectral_centroid': 0.0,
                 'spectral_flux': 0.0,
                 'zcr': 0.0
             }
-        
-        # RMS Energy (głośność)
-        rms = float(np.sqrt(np.mean(seg_audio**2)))
-        
-        # Spectral Centroid (środek ciężkości spektrum)
-        centroid = librosa.feature.spectral_centroid(y=seg_audio, sr=sr)
-        spectral_centroid = float(np.mean(centroid))
-        
-        # Spectral Flux (zmienność spektrum)
-        spec = np.abs(librosa.stft(seg_audio))
-        flux = np.sqrt(np.sum(np.diff(spec, axis=1)**2, axis=0))
-        spectral_flux = float(np.mean(flux))
-        
-        # Zero Crossing Rate
-        zcr = librosa.feature.zero_crossing_rate(seg_audio)
-        zcr_mean = float(np.mean(zcr))
-        
+
+        # RMS Energy (głośność) - GPU
+        with torch.no_grad():
+            rms = torch.sqrt(torch.mean(seg_audio ** 2)).item()
+
+            # STFT for spectral features - GPU
+            n_fft = min(2048, seg_audio.shape[1])
+            hop_length = n_fft // 4
+
+            if n_fft < 32:  # Too short for STFT
+                return {
+                    'rms': rms,
+                    'spectral_centroid': 0.0,
+                    'spectral_flux': 0.0,
+                    'zcr': 0.0
+                }
+
+            # Compute STFT on GPU
+            stft = torch.stft(
+                seg_audio.squeeze(0),
+                n_fft=n_fft,
+                hop_length=hop_length,
+                window=torch.hann_window(n_fft, device=device),
+                return_complex=True
+            )
+
+            # Magnitude spectrum
+            spec = torch.abs(stft)  # [freq_bins, time_frames]
+
+            # Spectral Centroid - GPU
+            freqs = torch.linspace(0, sr / 2, spec.shape[0], device=device)
+            freqs = freqs.unsqueeze(1)  # [freq_bins, 1]
+            centroid = torch.sum(freqs * spec, dim=0) / (torch.sum(spec, dim=0) + 1e-10)
+            spectral_centroid = torch.mean(centroid).item()
+
+            # Spectral Flux - GPU
+            if spec.shape[1] > 1:
+                spec_diff = spec[:, 1:] - spec[:, :-1]
+                flux = torch.sqrt(torch.sum(spec_diff ** 2, dim=0))
+                spectral_flux = torch.mean(flux).item()
+            else:
+                spectral_flux = 0.0
+
+            # Zero Crossing Rate - GPU
+            # Count sign changes
+            signs = torch.sign(seg_audio.squeeze(0))
+            sign_changes = torch.abs(signs[1:] - signs[:-1])
+            zcr = torch.sum(sign_changes > 0).item() / (2.0 * seg_audio.shape[1])
+
         return {
             'rms': rms,
             'spectral_centroid': spectral_centroid,
             'spectral_flux': spectral_flux,
-            'zcr': zcr_mean
+            'zcr': zcr
         }
     
     def _extract_prosodic_features(self, segment: Dict) -> Dict[str, float]:

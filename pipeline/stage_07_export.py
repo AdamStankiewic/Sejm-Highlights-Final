@@ -215,6 +215,8 @@ class ExportStage:
             # ffmpeg precise cut (re-encode needed for B-frames)
             cmd = [
                 'ffmpeg',
+                '-hwaccel', 'cuda',  # GPU hardware decoding
+                '-hwaccel_output_format', 'cuda',  # Keep frames on GPU
                 '-ss', str(t0),
                 '-to', str(t1),
                 '-i', str(input_file),
@@ -481,6 +483,8 @@ class ExportStage:
         # Use subtitles filter with proper escaping
         cmd = [
             'ffmpeg',
+            '-hwaccel', 'cuda',  # GPU hardware decoding
+            '-hwaccel_output_format', 'cuda',  # Keep frames on GPU
             '-i', str(input_file.absolute()),
             '-vf', f"subtitles='{srt_path_escaped}':force_style='Fontsize={fontsize},Bold=1,Outline=2,Shadow=1,MarginV=40'",
             '-c:v', self.config.export.video_codec,
@@ -668,9 +672,11 @@ class ExportStage:
         
         # Use ass filter (more reliable than subtitles filter on Windows)
         ass_path_escaped = str(ass_file.absolute()).replace('\\', '\\\\').replace(':', '\\:')
-        
+
         cmd = [
             'ffmpeg',
+            '-hwaccel', 'cuda',  # GPU hardware decoding
+            '-hwaccel_output_format', 'cuda',  # Keep frames on GPU
             '-i', str(input_file.absolute()),
             '-vf', f"ass='{ass_path_escaped}'",
             '-c:v', self.config.export.video_codec,
