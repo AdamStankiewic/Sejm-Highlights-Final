@@ -433,7 +433,6 @@ class ShortsStage:
         cmd = [
             'ffmpeg',
             '-hwaccel', 'cuda',  # GPU hardware decoding
-            '-hwaccel_output_format', 'cuda',  # Keep frames on GPU
             '-ss', str(t0),
             '-to', str(t1),
             '-i', str(input_file),
