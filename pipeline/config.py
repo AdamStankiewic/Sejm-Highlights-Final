@@ -291,6 +291,87 @@ class ShortsConfig:
 
 
 @dataclass
+class ChatConfig:
+    """Chat Analysis settings (Twitch/YouTube/Kick) - tylko dla Stream mode"""
+    enabled: bool = False  # Auto-enable gdy chat_json_path podany
+    chat_json_path: Optional[Path] = None
+
+    # Chat lag compensation (KLUCZOWE!)
+    # Czat reaguje z opóźnieniem - akcja na streamie dzieje się WCZEŚNIEJ
+    chat_lag_offset: float = 5.0  # Sekund przed spike czatu (3-8s typowo)
+    chat_window_expansion: float = 3.0  # Rozszerz okno clipu przed spike (sekund)
+
+    # Spike detection
+    spike_threshold: float = 2.0  # 2x baseline = spike (2.0-3.0 recommended)
+    baseline_window: int = 60  # Sekund dla obliczenia baseline activity
+
+    # Emote weights (Twitch/YouTube/Kick)
+    # Positive emotes (comedy, hype, excitement)
+    emote_weights: Dict[str, float] = None
+
+    # Chat score weight w final scoring
+    chat_score_weight: float = 0.15  # 15% wagi dla chat activity
+
+    # Multi-platform support
+    auto_detect_platform: bool = True  # Auto-detect z formatu JSON
+
+    def __post_init__(self):
+        """Initialize emote weights dla Twitch/YouTube/Kick"""
+        if self.emote_weights is None:
+            self.emote_weights = {
+                # === TWITCH ===
+                # Laugh (comedy gold)
+                "KEKW": 2.8, "OMEGALUL": 3.0, "LUL": 2.0, "LULW": 2.2,
+                "LMAO": 2.0, "ICANT": 2.5, "KEKL": 2.3,
+
+                # Hype/excitement (viral moments)
+                "Pog": 2.5, "PogChamp": 2.5, "PogU": 2.5, "POGGERS": 2.8,
+                "POG": 2.5, "PagMan": 2.3,
+
+                # Shock/surprise
+                "monkaW": 2.0, "monkaS": 1.8, "monkaOMEGA": 2.2,
+                "gasp": 1.8, "D:": 1.7,
+
+                # Support/positive
+                "Clap": 1.8, "GIGACHAD": 2.7, "Clueless": 1.5,
+                "YEP": 1.5, "Aware": 1.6, "Bedge": 1.4,
+
+                # Controversy (interesting)
+                "WeirdChamp": 1.7, "NOPE": 1.5, "modCheck": 1.6,
+
+                # Negative (lower score)
+                "ResidentSleeper": -2.0, "NotLikeThis": -0.8,
+                "zzz": -1.8, "BabyRage": -1.0,
+
+                # === KICK ===
+                "PepeLaugh": 2.3, "HYPERS": 2.5, "EZ": 1.5,
+                "Madge": 1.7, "Copium": 1.9,
+
+                # === YOUTUBE (emoji + text) ===
+                # Laugh
+                "😂": 2.2, "🤣": 2.5, "💀": 2.3, "☠️": 2.3,
+                "lol": 1.8, "lmao": 2.0, "haha": 1.7,
+
+                # Fire/hype
+                "🔥": 2.3, "💯": 1.9, "⚡": 2.0,
+                "wow": 1.9, "omg": 2.0, "insane": 2.2,
+
+                # Support
+                "👏": 1.8, "❤️": 1.5, "💪": 1.7,
+                "nice": 1.4, "good": 1.3, "great": 1.6,
+
+                # Negative
+                "😴": -1.8, "💤": -1.8, "👎": -1.5,
+                "boring": -2.0, "skip": -2.5, "cringe": -1.8,
+                "yawn": -2.0, "zzz": -2.0,
+            }
+
+        # Convert chat_json_path to Path if string
+        if self.chat_json_path and not isinstance(self.chat_json_path, Path):
+            self.chat_json_path = Path(self.chat_json_path)
+
+
+@dataclass
 class Config:
     """Główna konfiguracja pipeline'u"""
     # Sub-configs
@@ -304,7 +385,8 @@ class Config:
     splitter: SmartSplitterConfig = None
     youtube: YouTubeConfig = None
     shorts: ShortsConfig = None
-    
+    chat: ChatConfig = None  # Chat analysis (Twitch/YouTube/Kick) - tylko Stream mode
+
     # General settings
     output_dir: Path = Path("output")
     temp_dir: Path = Path("temp")
@@ -341,7 +423,9 @@ class Config:
             self.youtube = YouTubeConfig()
         if self.shorts is None:
             self.shorts = ShortsConfig()
-        
+        if self.chat is None:
+            self.chat = ChatConfig()
+
         # Ensure paths are Path objects
         self.output_dir = Path(self.output_dir)
         self.temp_dir = Path(self.temp_dir)
@@ -367,7 +451,8 @@ class Config:
         youtube = YouTubeConfig(**data.get('youtube', {}))
         splitter = SmartSplitterConfig(**data.get('splitter', {}))
         shorts = ShortsConfig(**data.get('shorts', {}))
-        
+        chat = ChatConfig(**data.get('chat', {}))
+
         # General settings
         general = data.get('general', {})
         
@@ -382,6 +467,7 @@ class Config:
             youtube=youtube,
             splitter=splitter,
             shorts=shorts,
+            chat=chat,
             **general
         )
     

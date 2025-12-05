@@ -29,28 +29,58 @@ load_dotenv()
 
 class ScoringStage:
     """Stage 5: AI Semantic Scoring with GPT"""
-    
+
     def __init__(self, config: Config):
         self.config = config
         self.openai_client = None
         self._load_gpt()
+
+        # Chat analyzer (optional - tylko dla Stream mode)
+        self.chat_analyzer = None
+        self._load_chat_analyzer()
     
     def _load_gpt(self):
         """Załaduj GPT API"""
         api_key = os.getenv("OPENAI_API_KEY")
-        
+
         if not api_key:
             print("⚠️ OPENAI_API_KEY nie znaleziony w .env")
             print("   Używam fallback (bez GPT scoring)")
             return
-        
+
         try:
             self.openai_client = OpenAI(api_key=api_key)
             print("✓ GPT-4o-mini API załadowane")
         except Exception as e:
             print(f"⚠️ Błąd ładowania GPT: {e}")
             self.openai_client = None
-    
+
+    def _load_chat_analyzer(self):
+        """Załaduj Chat Analyzer (tylko gdy chat.json podany)"""
+        if not hasattr(self.config, 'chat'):
+            return
+
+        if not self.config.chat.enabled:
+            return
+
+        if not self.config.chat.chat_json_path:
+            return
+
+        try:
+            from .stage_chat_analysis import ChatAnalyzer
+            self.chat_analyzer = ChatAnalyzer(self.config.chat)
+
+            success = self.chat_analyzer.load_chat(self.config.chat.chat_json_path)
+            if success:
+                print(f"✓ Chat analyzer załadowany ({self.chat_analyzer.platform})")
+                print(f"   Lag compensation: {self.config.chat.chat_lag_offset}s przed spike")
+            else:
+                self.chat_analyzer = None
+
+        except Exception as e:
+            print(f"⚠️ Nie można załadować chat.json: {e}")
+            self.chat_analyzer = None
+
     def process(
         self,
         segments: List[Dict],
@@ -260,28 +290,53 @@ Tablica ma {len(batch)} elementów - po jednym score dla każdego [N]."""
         for seg in all_segments:
             seg_id = seg['id']
             features = seg.get('features', {})
-            
+
             # Base scores
             acoustic_score = seg.get('pre_score', 0) * 0.6
             keyword_score = min(features.get('keyword_score', 0) / 10, 1.0)
             speaker_change = features.get('speaker_change_prob', 0.5)
-            
+
+            # === CHAT SCORE (NEW!) ===
+            chat_score = 0.0
+            if self.chat_analyzer:
+                chat_data = self.chat_analyzer.score_segment(seg['t0'], seg['t1'])
+                chat_score = chat_data['total_score']
+                seg['chat_data'] = chat_data  # Store for debugging
+
             if seg_id in ai_scores:
                 # Full formula z GPT
                 semantic_score = ai_scores[seg_id].get('semantic_score', 0)
-                
-                final_score = (
-                    self.config.scoring.weight_acoustic * acoustic_score +
-                    self.config.scoring.weight_keyword * keyword_score +
-                    self.config.scoring.weight_semantic * semantic_score +
-                    self.config.scoring.weight_speaker_change * speaker_change
-                )
-                
+
+                # Adjust weights based on chat availability
+                if self.chat_analyzer:
+                    # Redistribute weights gdy chat dostępny (total = 1.0)
+                    # Zmniejszamy inne wagi o ~15% żeby zrobić miejsce na chat
+                    final_score = (
+                        0.20 * acoustic_score +      # was 0.25
+                        0.12 * keyword_score +       # was 0.15
+                        0.43 * semantic_score +      # was 0.50
+                        0.10 * speaker_change +      # unchanged
+                        0.15 * chat_score            # NEW!
+                    )
+                else:
+                    # Original formula (bez chat)
+                    final_score = (
+                        self.config.scoring.weight_acoustic * acoustic_score +
+                        self.config.scoring.weight_keyword * keyword_score +
+                        self.config.scoring.weight_semantic * semantic_score +
+                        self.config.scoring.weight_speaker_change * speaker_change
+                    )
+
                 seg['semantic_score'] = semantic_score
-                
+
             else:
                 # Only heuristics (penalty)
-                final_score = (acoustic_score + keyword_score) / 2 * 0.6
+                if self.chat_analyzer:
+                    # Z chat score
+                    final_score = (acoustic_score + keyword_score + chat_score) / 3 * 0.6
+                else:
+                    # Bez chat score
+                    final_score = (acoustic_score + keyword_score) / 2 * 0.6
                 seg['semantic_score'] = 0.0
             
             # Position diversity bonus
@@ -298,9 +353,10 @@ Tablica ma {len(batch)} elementów - po jednym score dla każdego [N]."""
                 'acoustic': float(acoustic_score),
                 'keyword': float(keyword_score),
                 'semantic': seg['semantic_score'],
-                'speaker_change': float(speaker_change)
+                'speaker_change': float(speaker_change),
+                'chat': float(chat_score)  # NEW! (0.0 gdy brak chat)
             }
-            
+
             scored.append(seg)
         
         return scored

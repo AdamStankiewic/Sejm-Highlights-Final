@@ -1234,7 +1234,20 @@ class SejmHighlightsApp(QMainWindow):
             
             if self.youtube_creds.text():
                 self.config.youtube.credentials_path = Path(self.youtube_creds.text())
-        
+
+        # Chat settings (NOWE! - tylko dla Stream mode)
+        if hasattr(self.config, 'chat'):
+            # Enable chat analysis tylko gdy:
+            # 1. chat_json_path jest podany
+            # 2. mode to "Stream Highlights"
+            if self.chat_json_path and self.mode_combo.currentText() == "Stream Highlights":
+                self.config.chat.enabled = True
+                self.config.chat.chat_json_path = Path(self.chat_json_path)
+                self.log(f"✓ Chat analysis ENABLED: {Path(self.chat_json_path).name}", "INFO")
+            else:
+                self.config.chat.enabled = False
+                self.config.chat.chat_json_path = None
+
         # Advanced settings
         self.config.output_dir = Path(self.output_dir.text())
         self.config.keep_intermediate = bool(self.keep_intermediate.isChecked())
