@@ -140,29 +140,33 @@ class VideoDownloader:
         # - best[height<=1080]: Fallback dla platform bez oddzielnych strumieni
         cmd = [
             'yt-dlp',
-            
+
             # Format selection (1080p max dla długich video)
             '-f', f'bestvideo[height<={max_quality}]+bestaudio/best[height<={max_quality}]',
-            
+
             # Merge to MP4
             '--merge-output-format', 'mp4',
-            
+
             # Output
             '-o', output_template,
-            
+
+            # Filename sanitization - CRITICAL for Windows + Polish characters
+            '--restrict-filenames',  # Replace problematic chars with underscores
+            '--windows-filenames',   # Ensure Windows-compatible filenames
+
             # Progress
             '--newline',  # Progress na nowych liniach (łatwiej parsować)
-            
+
             # Continue on errors
             '--no-abort-on-error',
-            
+
             # Retry
             '--retries', '3',
             '--fragment-retries', '3',
-            
+
             # No playlist (tylko pojedyncze video)
             '--no-playlist',
-            
+
             # URL
             url
         ]
@@ -249,23 +253,29 @@ class VideoDownloader:
     def _find_downloaded_file(self, expected_name: Optional[str] = None) -> Optional[Path]:
         """
         Znajdź ostatnio pobrany plik w katalogu
-        
+
         Args:
             expected_name: Oczekiwana nazwa (bez rozszerzenia)
+
+        Note:
+            yt-dlp może zmienić nazwę pliku przez --restrict-filenames,
+            więc zawsze szukamy najnowszego pliku jako fallback
         """
         # Get all MP4 files
         mp4_files = list(self.download_dir.glob("*.mp4"))
-        
+
         if not mp4_files:
             return None
-        
-        # If expected name provided, try to find it
+
+        # If expected name provided, try to find it (case-insensitive)
         if expected_name:
+            expected_lower = expected_name.lower()
             for file in mp4_files:
-                if expected_name in file.stem:
+                if expected_lower in file.stem.lower():
                     return file
-        
-        # Otherwise return newest file
+
+        # Always fallback to newest file (important after --restrict-filenames)
+        # yt-dlp może zmienić nazwę, więc najnowszy plik to najpewniejszy sposób
         newest_file = max(mp4_files, key=lambda f: f.stat().st_mtime)
         return newest_file
     
