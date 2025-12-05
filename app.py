@@ -165,7 +165,10 @@ class SejmHighlightsApp(QMainWindow):
         # === SEKCJA 3: Configuration ===
         config_tabs = self.create_config_tabs()
         main_layout.addWidget(config_tabs)
-        
+
+        # Initialize default mode (Stream) after GUI is created
+        QTimer.singleShot(0, self.on_mode_changed)
+
         # === SEKCJA 4: Processing Control ===
         control_group = self.create_control_section()
         main_layout.addWidget(control_group)
@@ -320,7 +323,35 @@ class SejmHighlightsApp(QMainWindow):
         """TAB 1: Output Settings"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        
+
+        # === MODE SELECTION (Sejm vs Stream) ===
+        mode_group = QGroupBox("🎯 Tryb przetwarzania")
+        mode_layout = QHBoxLayout()
+
+        self.mode_button_group = QButtonGroup()
+
+        self.sejm_mode_radio = QRadioButton("🏛️ Sejm Highlights")
+        self.sejm_mode_radio.setChecked(False)  # Stream domyślnie
+        self.sejm_mode_radio.setToolTip("Optymalizowane dla transmisji Sejmu - dłuższe klipy, fokus na debatach")
+        self.mode_button_group.addButton(self.sejm_mode_radio, 0)
+        mode_layout.addWidget(self.sejm_mode_radio)
+
+        self.stream_mode_radio = QRadioButton("🎮 Stream Highlights")
+        self.stream_mode_radio.setChecked(True)  # Domyślny tryb
+        self.stream_mode_radio.setToolTip("Optymalizowane dla streamów Twitch/YouTube - krótsze klipy, dynamiczne momenty")
+        self.mode_button_group.addButton(self.stream_mode_radio, 1)
+        mode_layout.addWidget(self.stream_mode_radio)
+
+        mode_layout.addStretch()
+        mode_group.setLayout(mode_layout)
+        layout.addWidget(mode_group)
+
+        # Connect mode change to update presets
+        self.sejm_mode_radio.toggled.connect(self.on_mode_changed)
+        self.stream_mode_radio.toggled.connect(self.on_mode_changed)
+
+        layout.addSpacing(15)
+
         # Target duration
         dur_layout = QHBoxLayout()
         dur_layout.addWidget(QLabel("🎯 Docelowa długość filmu (sekundy):"))
@@ -856,7 +887,36 @@ class SejmHighlightsApp(QMainWindow):
         """)
     
     # === EVENT HANDLERS ===
-    
+
+    def on_mode_changed(self):
+        """Handler dla zmiany trybu (Sejm vs Stream)"""
+        is_stream = self.stream_mode_radio.isChecked()
+        mode_name = "stream" if is_stream else "sejm"
+
+        self.log(f"Tryb zmieniony na: {mode_name}", "INFO")
+
+        if is_stream:
+            # STREAM MODE - Shorter, more dynamic
+            self.target_duration.setValue(1200)  # 20 min
+            self.num_clips.setValue(15)
+            self.min_clip_duration.setValue(20)  # Shorter clips for streams
+            self.max_clip_duration.setValue(90)
+            self.shorts_enabled.setChecked(True)  # Enable Shorts by default for streams
+            self.shorts_count.setValue(10)
+        else:
+            # SEJM MODE - Longer, more context
+            self.target_duration.setValue(1380)  # 23 min (fits YT algorithm)
+            self.num_clips.setValue(10)
+            self.min_clip_duration.setValue(90)  # Longer clips for Sejm
+            self.max_clip_duration.setValue(180)
+            self.shorts_enabled.setChecked(False)  # Shorts optional for Sejm
+            self.shorts_count.setValue(5)
+
+        # Log new settings
+        self.log(f"  Docelowa długość: {self.target_duration.value()}s", "INFO")
+        self.log(f"  Liczba klipów: {self.num_clips.value()}", "INFO")
+        self.log(f"  Długość klipu: {self.min_clip_duration.value()}-{self.max_clip_duration.value()}s", "INFO")
+
     def browse_file(self):
         """Wybór pliku MP4"""
         file_path, _ = QFileDialog.getOpenFileName(
