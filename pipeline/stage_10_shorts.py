@@ -489,7 +489,7 @@ class ShortsStage:
         Backward compatibility - dla materiałów z Sejmu
         """
         # Escape path for ffmpeg - convert backslashes and escape special chars
-        escaped_path = ass_file.replace('\\', '/').replace(':', '\\:').replace('[', '\\[').replace(']', '\\]')
+        escaped_path = ass_file.replace('\\', '/').replace(':', '\\\\:').replace('[', '\\\\[').replace(']', '\\\\]')
         filter_complex = (
             f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
             f"crop={width}:{height}[v];"
@@ -523,7 +523,7 @@ class ShortsStage:
         gameplay_target_w = int(width * 1.15)  # Allow 15% crop
 
         # Escape path for ffmpeg - convert backslashes and escape special chars
-        escaped_path = ass_file.replace('\\', '/').replace(':', '\\:').replace('[', '\\[').replace(']', '\\]')
+        escaped_path = ass_file.replace('\\', '/').replace(':', '\\\\:').replace('[', '\\\\[').replace(']', '\\\\]')
 
         filter_complex = (
             # [0] = Original video
@@ -581,7 +581,7 @@ class ShortsStage:
         corner_radius = self.config.shorts.pip_corner_radius  # 20px
 
         # Escape path for ffmpeg - convert backslashes and escape special chars
-        escaped_path = ass_file.replace('\\', '/').replace(':', '\\:').replace('[', '\\[').replace(']', '\\]')
+        escaped_path = ass_file.replace('\\', '/').replace(':', '\\\\:').replace('[', '\\\\[').replace(']', '\\\\]')
 
         filter_complex = (
             # [0] = Original video
@@ -638,7 +638,7 @@ class ShortsStage:
         scaled_h = int(height * zoom_factor)
 
         # Escape path for ffmpeg - convert backslashes and escape special chars
-        escaped_path = ass_file.replace('\\', '/').replace(':', '\\:').replace('[', '\\[').replace(']', '\\]')
+        escaped_path = ass_file.replace('\\', '/').replace(':', '\\\\:').replace('[', '\\\\[').replace(']', '\\\\]')
 
         filter_complex = (
             # Zoom + crop
