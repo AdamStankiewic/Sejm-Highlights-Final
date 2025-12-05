@@ -488,10 +488,12 @@ class ShortsStage:
         Szablon SIMPLE - prosty crop + scale do 9:16
         Backward compatibility - dla materiałów z Sejmu
         """
+        # Escape path for ffmpeg - convert backslashes and escape special chars
+        escaped_path = ass_file.replace('\\', '/').replace(':', '\\:').replace('[', '\\[').replace(']', '\\]')
         filter_complex = (
             f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
             f"crop={width}:{height}[v];"
-            f"[v]ass='{ass_file.replace(chr(92), '/')}'"
+            f"[v]ass={escaped_path}"
         )
         return filter_complex
 
@@ -520,6 +522,9 @@ class ShortsStage:
         # Gameplay: scale do szerokości, crop do wysokości (max 15% crop z boków)
         gameplay_target_w = int(width * 1.15)  # Allow 15% crop
 
+        # Escape path for ffmpeg - convert backslashes and escape special chars
+        escaped_path = ass_file.replace('\\', '/').replace(':', '\\:').replace('[', '\\[').replace(']', '\\]')
+
         filter_complex = (
             # [0] = Original video
             # Split video into 2 streams - gameplay (top) i webcam (bottom)
@@ -545,7 +550,7 @@ class ShortsStage:
             f"[title_bg][gameplay_scaled][webcam_scaled]vstack=inputs=3[stacked];"
 
             # === ADD SUBTITLES ===
-            f"[stacked]ass='{ass_file.replace(chr(92), '/')}'"
+            f"[stacked]ass={escaped_path}"
         )
 
         return filter_complex
@@ -574,6 +579,9 @@ class ShortsStage:
         pip_y = height - pip_h - 150  # 150px margin (żeby nie zasłaniał napisów)
 
         corner_radius = self.config.shorts.pip_corner_radius  # 20px
+
+        # Escape path for ffmpeg - convert backslashes and escape special chars
+        escaped_path = ass_file.replace('\\', '/').replace(':', '\\:').replace('[', '\\[').replace(']', '\\]')
 
         filter_complex = (
             # [0] = Original video
@@ -607,7 +615,7 @@ class ShortsStage:
             f"[main_scaled][pip_rounded]overlay={pip_x}:{pip_y}[composed];"
 
             # === ADD SUBTITLES ===
-            f"[composed]ass='{ass_file.replace(chr(92), '/')}'"
+            f"[composed]ass={escaped_path}"
         )
 
         return filter_complex
@@ -629,6 +637,9 @@ class ShortsStage:
         scaled_w = int(width * (1 + crop_ratio) * zoom_factor)
         scaled_h = int(height * zoom_factor)
 
+        # Escape path for ffmpeg - convert backslashes and escape special chars
+        escaped_path = ass_file.replace('\\', '/').replace(':', '\\:').replace('[', '\\[').replace(']', '\\]')
+
         filter_complex = (
             # Zoom + crop
             f"[0:v]scale={scaled_w}:{scaled_h}:force_original_aspect_ratio=decrease,"
@@ -636,7 +647,7 @@ class ShortsStage:
 
             # Add subtle gradient border/vignette effect
             # (optional - można dodać gradient overlay)
-            f"[zoomed]ass='{ass_file.replace(chr(92), '/')}'"
+            f"[zoomed]ass={escaped_path}"
         )
 
         return filter_complex
