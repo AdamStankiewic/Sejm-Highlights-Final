@@ -7,6 +7,10 @@ Automatyczne generowanie najlepszych momentów z transmisji Sejmu
 + Inteligentny podział długich materiałów na części z auto-premiering
 """
 
+# Workaround for OpenMP conflict (libiomp5md.dll vs libomp140.x86_64.dll)
+import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
 import sys
 import json
 from video_downloader import VideoDownloader
@@ -166,9 +170,6 @@ class SejmHighlightsApp(QMainWindow):
         config_tabs = self.create_config_tabs()
         main_layout.addWidget(config_tabs)
 
-        # Initialize default mode (Stream) after GUI is created
-        QTimer.singleShot(0, self.on_mode_changed)
-
         # === SEKCJA 4: Processing Control ===
         control_group = self.create_control_section()
         main_layout.addWidget(control_group)
@@ -191,7 +192,10 @@ class SejmHighlightsApp(QMainWindow):
         self.results_widget = self.create_results_section()
         self.results_widget.setVisible(False)
         main_layout.addWidget(self.results_widget)
-    
+
+        # Initialize default mode (Stream) - call directly to avoid QBasicTimer errors
+        self.on_mode_changed()
+
     def create_header(self) -> QWidget:
         """Header z logo i opisem"""
         header = QWidget()
@@ -293,8 +297,43 @@ class SejmHighlightsApp(QMainWindow):
         
         local_layout.addStretch()
         tabs.addTab(local_tab, "📁 Plik lokalny")
-        
+
         layout.addWidget(tabs)
+
+        # === Chat JSON Section (for Stream mode only) ===
+        layout.addSpacing(15)
+        self.chat_json_group = QGroupBox("💬 Chat dla streamów (opcjonalne)")
+        chat_layout = QVBoxLayout()
+
+        chat_info = QLabel("📝 Dodaj plik chat.json dla lepszej analizy czatu Twitch/YouTube")
+        chat_info.setStyleSheet("color: #666; font-size: 11px; padding: 5px;")
+        chat_layout.addWidget(chat_info)
+
+        chat_file_layout = QHBoxLayout()
+        self.chat_file_label = QLabel("Nie wybrano pliku chat.json")
+        self.chat_file_label.setStyleSheet("padding: 8px; background: #f0f0f0; border-radius: 4px;")
+        chat_file_layout.addWidget(self.chat_file_label, stretch=1)
+
+        # Browse button for chat JSON
+        chat_browse_btn = QPushButton("📁 Wybierz chat.json")
+        chat_browse_btn.clicked.connect(self.browse_chat_json)
+        chat_file_layout.addWidget(chat_browse_btn)
+
+        # Clear button
+        chat_clear_btn = QPushButton("✖️")
+        chat_clear_btn.setFixedWidth(40)
+        chat_clear_btn.clicked.connect(self.clear_chat_json)
+        chat_clear_btn.setToolTip("Usuń plik chat.json")
+        chat_file_layout.addWidget(chat_clear_btn)
+
+        chat_layout.addLayout(chat_file_layout)
+        self.chat_json_group.setLayout(chat_layout)
+        layout.addWidget(self.chat_json_group)
+
+        # Initially hidden (will be shown only in Stream mode)
+        self.chat_json_group.setVisible(False)
+        self.chat_json_path = None  # Store the selected chat.json path
+
         group.setLayout(layout)
         return group
     
@@ -920,6 +959,8 @@ class SejmHighlightsApp(QMainWindow):
             self.max_clip_duration.setValue(90)
             self.shorts_enabled.setChecked(True)  # Enable Shorts by default for streams
             self.shorts_count.setValue(10)
+            # Show chat.json option for streams
+            self.chat_json_group.setVisible(True)
         else:
             # SEJM MODE - Longer, more context
             self.target_duration.setValue(23)  # 23 min (fits YT algorithm)
@@ -928,6 +969,8 @@ class SejmHighlightsApp(QMainWindow):
             self.max_clip_duration.setValue(180)
             self.shorts_enabled.setChecked(False)  # Shorts optional for Sejm
             self.shorts_count.setValue(5)
+            # Hide chat.json option for Sejm (not needed)
+            self.chat_json_group.setVisible(False)
 
         # Log new settings
         self.log(f"  Docelowa długość: {self.target_duration.value()} min", "INFO")
@@ -958,7 +1001,29 @@ class SejmHighlightsApp(QMainWindow):
             
             # Detect file duration and suggest split strategy
             self.detect_and_suggest_strategy(file_path)
-    
+
+    def browse_chat_json(self):
+        """Wybór pliku chat.json dla streamów"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Wybierz plik chat.json",
+            str(Path.home()),
+            "JSON Files (*.json)"
+        )
+
+        if file_path:
+            self.chat_json_path = file_path
+            self.chat_file_label.setText(f"✅ {Path(file_path).name}")
+            self.chat_file_label.setStyleSheet("padding: 8px; background: #e8f5e9; border-radius: 4px; color: #2e7d32;")
+            self.log(f"Chat JSON załadowany: {Path(file_path).name}", "INFO")
+
+    def clear_chat_json(self):
+        """Usuń wybrany plik chat.json"""
+        self.chat_json_path = None
+        self.chat_file_label.setText("Nie wybrano pliku chat.json")
+        self.chat_file_label.setStyleSheet("padding: 8px; background: #f0f0f0; border-radius: 4px;")
+        self.log("Chat JSON usunięty", "INFO")
+
     def detect_and_suggest_strategy(self, file_path: str):
         """Wykryj długość pliku i zasugeruj strategię"""
         try:
