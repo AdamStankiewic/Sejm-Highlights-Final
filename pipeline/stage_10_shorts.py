@@ -412,22 +412,25 @@ class ShortsStage:
         self._generate_shorts_subtitles(clip, segments, t0, t1, ass_file, template)
 
         # STEP 2: Wybierz filter_complex na podstawie szablonu
+        # Convert Path to string with forward slashes (Windows compatible)
+        ass_path_str = str(ass_file).replace('\\', '/')
+
         if template == "simple":
-            filter_complex = self._build_simple_template(width, height, str(ass_file))
+            filter_complex = self._build_simple_template(width, height, ass_path_str)
         elif template == "classic_gaming":
-            filter_complex = self._build_classic_gaming_template(width, height, str(ass_file), webcam_detection)
+            filter_complex = self._build_classic_gaming_template(width, height, ass_path_str, webcam_detection)
         elif template == "pip_modern":
-            filter_complex = self._build_pip_modern_template(width, height, str(ass_file), webcam_detection)
+            filter_complex = self._build_pip_modern_template(width, height, ass_path_str, webcam_detection)
         elif template == "irl_fullface":
-            filter_complex = self._build_irl_fullface_template(width, height, str(ass_file))
+            filter_complex = self._build_irl_fullface_template(width, height, ass_path_str)
         elif template == "dynamic_speaker":
             filter_complex = self._build_dynamic_speaker_tracker_template(
-                width, height, str(ass_file), clip, segments, t0, t1
+                width, height, ass_path_str, clip, segments, t0, t1
             )
         else:
             # Fallback to simple
             print(f"      ⚠️ Nieznany szablon '{template}', używam 'simple'")
-            filter_complex = self._build_simple_template(width, height, str(ass_file))
+            filter_complex = self._build_simple_template(width, height, ass_path_str)
 
         # STEP 3: Renderuj video z FFmpeg
         # NOTE: No -hwaccel cuda because complex filters (alphamerge, overlay, geq) are CPU-only
@@ -490,16 +493,14 @@ class ShortsStage:
         Szablon SIMPLE - prosty crop + scale do 9:16
         Backward compatibility - dla materiałów z Sejmu
         """
-        # Escape path for ffmpeg (SIMPLIFIED v2.0)
-        # Windows FFmpeg accepts forward slashes, reduce escaping complexity
-        # Only escape characters that break filter_complex parsing
+        # Escape path for ffmpeg (v3.0 - PRE-CONVERTED TO FORWARD SLASHES)
+        # ass_file is already forward-slashed from caller
+        # Only escape brackets which are FFmpeg filter syntax
         escaped_path = (
             ass_file
-            .replace('\\', '/')           # Windows backslash → forward slash
-            .replace(':', '\\:')          # Colon needs escape (drive letters)
-            .replace('[', '\\[')          # Brackets are filter syntax
+            .replace(':', '\\:')   # Drive letter colon (C:)
+            .replace('[', '\\[')   # Brackets are filter syntax
             .replace(']', '\\]')
-            # NO space escape - causes double-escaping issues
         )
         filter_complex = (
             f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
@@ -533,16 +534,14 @@ class ShortsStage:
         # Gameplay: scale do szerokości, crop do wysokości (max 15% crop z boków)
         gameplay_target_w = int(width * 1.15)  # Allow 15% crop
 
-        # Escape path for ffmpeg (SIMPLIFIED v2.0)
-        # Windows FFmpeg accepts forward slashes, reduce escaping complexity
-        # Only escape characters that break filter_complex parsing
+        # Escape path for ffmpeg (v3.0 - PRE-CONVERTED TO FORWARD SLASHES)
+        # ass_file is already forward-slashed from caller
+        # Only escape brackets which are FFmpeg filter syntax
         escaped_path = (
             ass_file
-            .replace('\\', '/')           # Windows backslash → forward slash
-            .replace(':', '\\:')          # Colon needs escape (drive letters)
-            .replace('[', '\\[')          # Brackets are filter syntax
+            .replace(':', '\\:')   # Drive letter colon (C:)
+            .replace('[', '\\[')   # Brackets are filter syntax
             .replace(']', '\\]')
-            # NO space escape - causes double-escaping issues
         )
 
         filter_complex = (
@@ -600,16 +599,14 @@ class ShortsStage:
 
         corner_radius = self.config.shorts.pip_corner_radius  # 20px
 
-        # Escape path for ffmpeg (SIMPLIFIED v2.0)
-        # Windows FFmpeg accepts forward slashes, reduce escaping complexity
-        # Only escape characters that break filter_complex parsing
+        # Escape path for ffmpeg (v3.0 - PRE-CONVERTED TO FORWARD SLASHES)
+        # ass_file is already forward-slashed from caller
+        # Only escape brackets which are FFmpeg filter syntax
         escaped_path = (
             ass_file
-            .replace('\\', '/')           # Windows backslash → forward slash
-            .replace(':', '\\:')          # Colon needs escape (drive letters)
-            .replace('[', '\\[')          # Brackets are filter syntax
+            .replace(':', '\\:')   # Drive letter colon (C:)
+            .replace('[', '\\[')   # Brackets are filter syntax
             .replace(']', '\\]')
-            # NO space escape - causes double-escaping issues
         )
 
         filter_complex = (
@@ -666,16 +663,14 @@ class ShortsStage:
         scaled_w = int(width * (1 + crop_ratio) * zoom_factor)
         scaled_h = int(height * zoom_factor)
 
-        # Escape path for ffmpeg (SIMPLIFIED v2.0)
-        # Windows FFmpeg accepts forward slashes, reduce escaping complexity
-        # Only escape characters that break filter_complex parsing
+        # Escape path for ffmpeg (v3.0 - PRE-CONVERTED TO FORWARD SLASHES)
+        # ass_file is already forward-slashed from caller
+        # Only escape brackets which are FFmpeg filter syntax
         escaped_path = (
             ass_file
-            .replace('\\', '/')           # Windows backslash → forward slash
-            .replace(':', '\\:')          # Colon needs escape (drive letters)
-            .replace('[', '\\[')          # Brackets are filter syntax
+            .replace(':', '\\:')   # Drive letter colon (C:)
+            .replace('[', '\\[')   # Brackets are filter syntax
             .replace(']', '\\]')
-            # NO space escape - causes double-escaping issues
         )
 
         filter_complex = (

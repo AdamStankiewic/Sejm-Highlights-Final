@@ -97,7 +97,7 @@ scoring:
 # === Clip Selection ===
 selection:
   # Duration constraints
-  min_clip_duration: 45.0      # było 60.0 (krótsze OK)
+  min_clip_duration: 15.0      # 15s (stream viral moments - było 45.0)
   max_clip_duration: 180.0     # bez zmian (3 min max)
   target_total_duration: 2400.0  # było 1320.0 (40 min zamiast 22)
   
