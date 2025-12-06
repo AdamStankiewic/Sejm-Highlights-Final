@@ -38,32 +38,42 @@ class SmartSplitter:
         self.premiere_hour = premiere_hour
         self.premiere_minute = premiere_minute
     
-    def calculate_split_strategy(self, source_duration: float) -> Dict[str, Any]:
+    def calculate_split_strategy(
+        self,
+        source_duration: float,
+        user_target_total: float = None
+    ) -> Dict[str, Any]:
         """
         Oblicz optymalną strategię podziału
-        
+
         Args:
             source_duration: Długość źródła w sekundach
-            
+            user_target_total: User-specified target duration (total for all parts)
+
         Returns:
             Dict ze strategią podziału
         """
         # Określ liczbę części
         num_parts = self._calculate_num_parts(source_duration)
-        
-        # Oblicz docelową długość każdej części
-        target_duration_per_part = self._calculate_target_duration(source_duration, num_parts)
-        
+
+        # Oblicz docelową długość każdej części (RESPEKTUJ USER SETTINGS!)
+        target_duration_per_part = self._calculate_target_duration(
+            source_duration,
+            num_parts,
+            user_target_total
+        )
+
         # Oblicz score threshold (wyższy dla dłuższych materiałów)
         min_score_threshold = self._calculate_score_threshold(source_duration, num_parts)
-        
+
         return {
             'num_parts': num_parts,
             'target_duration_per_part': target_duration_per_part,
             'total_target_duration': target_duration_per_part * num_parts,
             'min_score_threshold': min_score_threshold,
             'compression_ratio': (target_duration_per_part * num_parts) / source_duration,
-            'strategy': self._describe_strategy(source_duration, num_parts)
+            'strategy': self._describe_strategy(source_duration, num_parts),
+            'used_user_target': user_target_total is not None
         }
     
     def _calculate_num_parts(self, duration: float) -> int:
@@ -80,19 +90,36 @@ class SmartSplitter:
             # Dla bardzo długich: ceil(duration / 4h) z max 6 części
             return min(6, math.ceil(duration / 14400))
     
-    def _calculate_target_duration(self, source_duration: float, num_parts: int) -> int:
-        """Oblicz docelową długość jednej części"""
-        # Cel: 10% źródła, ale podzielone na części
-        total_target = source_duration * 0.10
-        duration_per_part = total_target / num_parts
-        
-        # Clamp do optymalnego zakresu
-        if duration_per_part < self.OPTIMAL_PART_DURATION['min']:
-            return self.OPTIMAL_PART_DURATION['min']
-        elif duration_per_part > self.OPTIMAL_PART_DURATION['max']:
-            return self.OPTIMAL_PART_DURATION['max']
+    def _calculate_target_duration(
+        self,
+        source_duration: float,
+        num_parts: int,
+        user_target_total: float = None
+    ) -> int:
+        """
+        Oblicz docelową długość jednej części
+
+        Args:
+            source_duration: Długość źródła
+            num_parts: Liczba części
+            user_target_total: User-specified total target (all parts combined)
+        """
+        if user_target_total:
+            # PRIORYTET: Użyj user settings!
+            duration_per_part = user_target_total / num_parts
         else:
-            return int(duration_per_part)
+            # Fallback: 10% źródła, podzielone na części
+            total_target = source_duration * 0.10
+            duration_per_part = total_target / num_parts
+
+        # Clamp do optymalnego zakresu (tylko jeśli user nie ustawił custom)
+        if not user_target_total:
+            if duration_per_part < self.OPTIMAL_PART_DURATION['min']:
+                return self.OPTIMAL_PART_DURATION['min']
+            elif duration_per_part > self.OPTIMAL_PART_DURATION['max']:
+                return self.OPTIMAL_PART_DURATION['max']
+
+        return int(duration_per_part)
     
     def _calculate_score_threshold(self, source_duration: float, num_parts: int) -> float:
         """
@@ -184,7 +211,64 @@ class SmartSplitter:
             part.sort(key=lambda c: c['t0'])
         
         return parts
-    
+
+    def validate_part_balance(
+        self,
+        parts: List[List[Dict]],
+        max_duration_variance: float = 420.0  # 7 minut default
+    ) -> Dict[str, Any]:
+        """
+        Sprawdź czy części są równomiernie zbalansowane
+
+        Args:
+            parts: Lista części (każda część = lista klipów)
+            max_duration_variance: Maksymalna dopuszczalna różnica między najdłuższą
+                                  a najkrótszą częścią (w sekundach). Default: 420s (7 min)
+
+        Returns:
+            Dict zawierający:
+                - is_balanced: bool - czy części są zbalansowane
+                - max_duration: float - długość najdłuższej części
+                - min_duration: float - długość najkrótszej części
+                - variance: float - różnica między max a min
+                - warning: str - komunikat ostrzegawczy (jeśli niezbalansowane)
+        """
+        if len(parts) <= 1:
+            return {
+                'is_balanced': True,
+                'max_duration': sum(c['duration'] for c in parts[0]) if parts else 0,
+                'min_duration': sum(c['duration'] for c in parts[0]) if parts else 0,
+                'variance': 0.0,
+                'warning': None
+            }
+
+        # Oblicz długości wszystkich części
+        durations = [sum(clip['duration'] for clip in part) for part in parts]
+
+        max_dur = max(durations)
+        min_dur = min(durations)
+        variance = max_dur - min_dur
+
+        is_balanced = variance <= max_duration_variance
+
+        warning = None
+        if not is_balanced:
+            warning = (
+                f"⚠️ Części są NIEZBALANSOWANE!\n"
+                f"   Najdłuższa: {max_dur/60:.1f} min\n"
+                f"   Najkrótsza: {min_dur/60:.1f} min\n"
+                f"   Różnica: {variance/60:.1f} min (max: {max_duration_variance/60:.1f} min)\n"
+                f"   💡 Sugestia: Rozważ zmniejszenie liczby części lub dostosowanie target duration"
+            )
+
+        return {
+            'is_balanced': is_balanced,
+            'max_duration': max_dur,
+            'min_duration': min_dur,
+            'variance': variance,
+            'warning': warning
+        }
+
     def generate_part_metadata(
         self,
         parts: List[List[Dict]],

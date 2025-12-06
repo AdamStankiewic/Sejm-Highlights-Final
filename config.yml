@@ -176,6 +176,7 @@ splitter:
   min_duration_for_split: 3600.0  # 1h
   use_politicians_in_titles: true
   first_premiere_days_offset: 1
+  max_duration_variance: 420.0  # Max różnica między częściami (7 min = 420s)
 
 # config.yml
 youtube:

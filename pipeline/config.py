@@ -187,6 +187,7 @@ class SmartSplitterConfig:
     min_duration_for_split: float = 3600.0
     use_politicians_in_titles: bool = True
     first_premiere_days_offset: int = 1
+    max_duration_variance: float = 420.0  # Max różnica między częściami (7 min)
 
 
 @dataclass

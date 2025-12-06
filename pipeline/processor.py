@@ -204,13 +204,19 @@ class PipelineProcessor:
                 split_strategy = None
                 if self.smart_splitter and source_duration >= self.config.splitter.min_duration_for_split:
                     print("\n🤖 Wykryto długi materiał - uruchamiam Smart Splitter...")
-                    split_strategy = self.smart_splitter.calculate_split_strategy(source_duration)
+
+                    # RESPEKTUJ user settings! Przekaż target_total_duration
+                    user_target = self.config.selection.target_total_duration
+                    split_strategy = self.smart_splitter.calculate_split_strategy(
+                        source_duration,
+                        user_target_total=user_target
+                    )
                     self.smart_splitter.print_split_summary(split_strategy, [])
-                    
-                    # Dostosuj parametry selection do strategii
-                    original_target = self.config.selection.target_total_duration
-                    self.config.selection.target_total_duration = split_strategy['total_target_duration']
-                    print(f"📊 Dostosowano target duration: {original_target}s → {split_strategy['total_target_duration']}s")
+
+                    if split_strategy.get('used_user_target'):
+                        print(f"✓ Używam ustawień użytkownika: {user_target/60:.1f} min total → {split_strategy['num_parts']} części × {split_strategy['target_duration_per_part']/60:.1f} min")
+                    else:
+                        print(f"📊 Auto-obliczony target: {split_strategy['total_target_duration']/60:.1f} min total")
                 
                 # === ETAP 2: VAD (Voice Activity Detection) ===
                 self._check_cancelled()
@@ -293,7 +299,18 @@ class PipelineProcessor:
                         split_strategy['num_parts'],
                         split_strategy['target_duration_per_part']
                     )
-                    
+
+                    # Walidacja balansu części
+                    balance_check = self.smart_splitter.validate_part_balance(
+                        parts,
+                        max_duration_variance=self.config.splitter.max_duration_variance
+                    )
+
+                    if not balance_check['is_balanced']:
+                        print(balance_check['warning'])
+                    else:
+                        print(f"   ✓ Części są dobrze zbalansowane (różnica: {balance_check['variance']/60:.1f} min)")
+
                     # Generuj metadata dla każdej części
                     base_date = datetime.now() + timedelta(days=self.config.splitter.first_premiere_days_offset)
                     parts_metadata = self.smart_splitter.generate_part_metadata(
