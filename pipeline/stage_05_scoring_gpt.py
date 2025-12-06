@@ -358,7 +358,34 @@ Tablica ma {len(batch)} elementów - po jednym score dla każdego [N]."""
             }
 
             scored.append(seg)
-        
+
+        # === CHAT ANALYSIS STATS (jeśli enabled) ===
+        if self.chat_analyzer:
+            chat_scores = [s['subscores']['chat'] for s in scored if s['subscores']['chat'] > 0]
+            if chat_scores:
+                print(f"\n   📊 Chat Analysis Stats:")
+                print(f"      Segments z chat activity: {len(chat_scores)}/{len(scored)}")
+                print(f"      Średni chat score: {np.mean(chat_scores):.3f}")
+                print(f"      Max chat score: {max(chat_scores):.3f}")
+
+                # Top 5 chat spikes
+                chat_sorted = sorted(scored, key=lambda x: x['subscores']['chat'], reverse=True)[:5]
+                print(f"\n   🔥 Top 5 Chat Spike Moments:")
+                for i, seg in enumerate(chat_sorted, 1):
+                    t0, t1 = seg['t0'], seg['t1']
+                    chat_s = seg['subscores']['chat']
+                    chat_d = seg.get('chat_data', {})
+                    spike = "🔥" if chat_d.get('spike_detected') else ""
+                    ratio = chat_d.get('spike_ratio', 0)
+                    msg_count = chat_d.get('msg_count', 0)
+                    print(f"      #{i} [{t0:.0f}s-{t1:.0f}s] chat={chat_s:.2f} {spike} ({ratio:.1f}x spike, {msg_count} msgs)")
+
+                    # Show top emotes
+                    top_emotes = chat_d.get('top_emotes', [])[:3]
+                    if top_emotes:
+                        emotes_str = ", ".join([f"{e}({c})" for e, c in top_emotes])
+                        print(f"          Emotes: {emotes_str}")
+
         return scored
     
     def _save_segments(self, segments: List[Dict], output_file: Path):
