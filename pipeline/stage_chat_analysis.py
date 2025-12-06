@@ -303,9 +303,13 @@ class ChatAnalyzer:
             velocity_score = 0.0
 
         # === 4. TOTAL CHAT SCORE ===
+        # UPDATED v2.0: Bardziej agresywna waga na activity (spike detection)
+        # - Activity: 50% → 70% (większość spike'ów to wzrost msgs/sec, nie emotes)
+        # - Emotes: 35% → 15% (tylko 1-3% wiadomości to emotes w spike'ach)
+        # - Velocity: 15% → 15% (momentum nadal ważny)
         total_score = (
-            0.50 * activity_score +    # Spike detection najważniejszy
-            0.35 * emote_score +       # Emocje widzów
+            0.70 * activity_score +    # Spike detection NAJWAŻNIEJSZY (było 0.50)
+            0.15 * emote_score +       # Emocje (było 0.35 - za dużo!)
             0.15 * velocity_score      # Momentum
         )
 
@@ -315,6 +319,14 @@ class ChatAnalyzer:
             key=lambda x: x[1],
             reverse=True
         )[:5]
+
+        # === CLIP TIMING SUGGESTION ===
+        # Jeśli wykryto spike, sugeruj przesunięcie klipu WSTECZ
+        # Żeby uchwycić moment PRZED reakcją czatu
+        suggested_clip_offset = 0.0
+        if spike_detected and total_score > 0.5:
+            # High chat spike = rozszerz klip 3-5s wstecz
+            suggested_clip_offset = -3.0 if total_score < 0.65 else -4.0
 
         return {
             'chat_activity': float(activity_score),
@@ -330,7 +342,8 @@ class ChatAnalyzer:
             'top_emotes': [(e, c) for e, c in top_emotes],
             'lag_compensated': True,
             'analysis_window': (analysis_t0, analysis_t1),
-            'original_window': (t0, t1)
+            'original_window': (t0, t1),
+            'suggested_clip_offset': suggested_clip_offset  # NEW! Negative = shift backward
         }
 
     def _empty_score(self) -> Dict[str, Any]:
@@ -339,6 +352,7 @@ class ChatAnalyzer:
             'chat_activity': 0.0,
             'emote_score': 0.0,
             'velocity_score': 0.0,
+            'suggested_clip_offset': 0.0,
             'total_score': 0.0,
             'spike_detected': False,
             'spike_ratio': 0.0,

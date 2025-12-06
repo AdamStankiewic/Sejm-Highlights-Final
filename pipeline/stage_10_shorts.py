@@ -490,9 +490,17 @@ class ShortsStage:
         Szablon SIMPLE - prosty crop + scale do 9:16
         Backward compatibility - dla materiałów z Sejmu
         """
-        # Escape path for ffmpeg - convert backslashes and escape special chars
-        # Note: '\\:' in Python string literal produces '\:' (backslash + colon) for ffmpeg
-        escaped_path = ass_file.replace('\\', '/').replace(' ', '\\ ').replace(':', '\\:').replace('[', '\\[').replace(']', '\\]')
+        # Escape path for ffmpeg (SIMPLIFIED v2.0)
+        # Windows FFmpeg accepts forward slashes, reduce escaping complexity
+        # Only escape characters that break filter_complex parsing
+        escaped_path = (
+            ass_file
+            .replace('\\', '/')           # Windows backslash → forward slash
+            .replace(':', '\\:')          # Colon needs escape (drive letters)
+            .replace('[', '\\[')          # Brackets are filter syntax
+            .replace(']', '\\]')
+            # NO space escape - causes double-escaping issues
+        )
         filter_complex = (
             f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
             f"crop={width}:{height}[v];"
@@ -525,9 +533,17 @@ class ShortsStage:
         # Gameplay: scale do szerokości, crop do wysokości (max 15% crop z boków)
         gameplay_target_w = int(width * 1.15)  # Allow 15% crop
 
-        # Escape path for ffmpeg - convert backslashes and escape special chars
-        # Note: '\\:' in Python string literal produces '\:' (backslash + colon) for ffmpeg
-        escaped_path = ass_file.replace('\\', '/').replace(' ', '\\ ').replace(':', '\\:').replace('[', '\\[').replace(']', '\\]')
+        # Escape path for ffmpeg (SIMPLIFIED v2.0)
+        # Windows FFmpeg accepts forward slashes, reduce escaping complexity
+        # Only escape characters that break filter_complex parsing
+        escaped_path = (
+            ass_file
+            .replace('\\', '/')           # Windows backslash → forward slash
+            .replace(':', '\\:')          # Colon needs escape (drive letters)
+            .replace('[', '\\[')          # Brackets are filter syntax
+            .replace(']', '\\]')
+            # NO space escape - causes double-escaping issues
+        )
 
         filter_complex = (
             # [0] = Original video
@@ -584,9 +600,17 @@ class ShortsStage:
 
         corner_radius = self.config.shorts.pip_corner_radius  # 20px
 
-        # Escape path for ffmpeg - convert backslashes and escape special chars
-        # Note: '\\:' in Python string literal produces '\:' (backslash + colon) for ffmpeg
-        escaped_path = ass_file.replace('\\', '/').replace(' ', '\\ ').replace(':', '\\:').replace('[', '\\[').replace(']', '\\]')
+        # Escape path for ffmpeg (SIMPLIFIED v2.0)
+        # Windows FFmpeg accepts forward slashes, reduce escaping complexity
+        # Only escape characters that break filter_complex parsing
+        escaped_path = (
+            ass_file
+            .replace('\\', '/')           # Windows backslash → forward slash
+            .replace(':', '\\:')          # Colon needs escape (drive letters)
+            .replace('[', '\\[')          # Brackets are filter syntax
+            .replace(']', '\\]')
+            # NO space escape - causes double-escaping issues
+        )
 
         filter_complex = (
             # [0] = Original video
@@ -642,9 +666,17 @@ class ShortsStage:
         scaled_w = int(width * (1 + crop_ratio) * zoom_factor)
         scaled_h = int(height * zoom_factor)
 
-        # Escape path for ffmpeg - convert backslashes and escape special chars
-        # Note: '\\:' in Python string literal produces '\:' (backslash + colon) for ffmpeg
-        escaped_path = ass_file.replace('\\', '/').replace(' ', '\\ ').replace(':', '\\:').replace('[', '\\[').replace(']', '\\]')
+        # Escape path for ffmpeg (SIMPLIFIED v2.0)
+        # Windows FFmpeg accepts forward slashes, reduce escaping complexity
+        # Only escape characters that break filter_complex parsing
+        escaped_path = (
+            ass_file
+            .replace('\\', '/')           # Windows backslash → forward slash
+            .replace(':', '\\:')          # Colon needs escape (drive letters)
+            .replace('[', '\\[')          # Brackets are filter syntax
+            .replace(']', '\\]')
+            # NO space escape - causes double-escaping issues
+        )
 
         filter_complex = (
             # Zoom + crop
