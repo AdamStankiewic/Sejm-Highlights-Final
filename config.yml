@@ -103,16 +103,16 @@ selection:
   
   # Number of clips
   min_clips: 5  # Zmniejszone z 8
-  max_clips: 25
+  max_clips: 30  # Zwiększone z 25 dla stream mode
   
   # Temporal constraints
-  min_time_gap: 20.0  # Zmniejszone z 30
+  min_time_gap: 12.0  # 12s gap (stream mode - momenty są bliżej siebie)
   smart_merge_gap: 5.0  # Gap for merging
   smart_merge_min_score: 0.5  # Zmniejszone z 0.6
   
   # Coverage optimization
   position_bins: 5  # Broadcast phases
-  max_clips_per_bin: 5  # Zwiększone z 4
+  max_clips_per_bin: 8  # Zwiększone z 5 (5 bins × 8 = max 40 clips)
   
   # Trimming
   enable_trimming: true

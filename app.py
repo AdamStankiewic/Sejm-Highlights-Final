@@ -952,13 +952,13 @@ class SejmHighlightsApp(QMainWindow):
         self.log(f"Tryb zmieniony na: {mode_name}", "INFO")
 
         if is_stream:
-            # STREAM MODE - Shorter, more dynamic
-            self.target_duration.setValue(20)  # 20 min
-            self.num_clips.setValue(15)
-            self.min_clip_duration.setValue(20)  # 20s minimum for streams
-            self.max_clip_duration.setValue(90)
+            # STREAM MODE - More highlights, capture viral moments
+            self.target_duration.setValue(35)  # 35 min (increased from 20 for better coverage)
+            self.num_clips.setValue(25)  # 25 clips (increased from 15)
+            self.min_clip_duration.setValue(15)  # 15s minimum (shorter for viral moments)
+            self.max_clip_duration.setValue(90)  # 90s max
             self.shorts_enabled.setChecked(True)  # Enable Shorts by default for streams
-            self.shorts_count.setValue(10)
+            self.shorts_count.setValue(20)  # 20 shorts (increased from 10)
             # Show chat.json option for streams
             self.chat_json_group.setVisible(True)
         else:
