@@ -430,9 +430,10 @@ class ShortsStage:
             filter_complex = self._build_simple_template(width, height, str(ass_file))
 
         # STEP 3: Renderuj video z FFmpeg
+        # NOTE: No -hwaccel cuda because complex filters (alphamerge, overlay, geq) are CPU-only
+        # Still use NVENC (h264_nvenc) for GPU encoding performance
         cmd = [
             'ffmpeg',
-            '-hwaccel', 'cuda',  # GPU hardware decoding
             '-ss', str(t0),
             '-to', str(t1),
             '-i', str(input_file),
