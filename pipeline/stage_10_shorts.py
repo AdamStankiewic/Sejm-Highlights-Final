@@ -17,6 +17,7 @@ import tempfile
 import numpy as np
 
 from .config import Config
+from shorts import ShortsGenerator, Segment
 
 
 class ShortsStage:
@@ -329,6 +330,25 @@ class ShortsStage:
         # Create subdirs
         shorts_dir = session_dir / "shorts"
         shorts_dir.mkdir(exist_ok=True)
+
+        # Nowy modularny generator (Gaming/Universal/IRL)
+        modern_templates = {"gaming", "universal", "irl"}
+        if template in modern_templates:
+            generator = ShortsGenerator(output_dir=shorts_dir, face_regions=self.config.shorts.face_regions)
+            segs = [
+                Segment(start=clip.get('t0', 0), end=clip.get('t1', 0), score=clip.get('score', 0))
+                for clip in shorts_clips
+            ]
+            paths = generator.generate(
+                input_path,
+                segs,
+                template=template,
+                max_shorts=self.config.shorts.max_shorts_count,
+                speedup=self.config.shorts.speedup_factor,
+                add_subtitles=self.config.shorts.add_subtitles,
+                subtitle_lang=self.config.shorts.subtitle_lang,
+            )
+            return {"shorts": [str(p) for p in paths], "shorts_dir": str(shorts_dir), "count": len(paths)}
 
         # Auto-detect template if requested
         detected_webcam = None
