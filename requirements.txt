@@ -13,6 +13,10 @@ python-dotenv>=1.0.0
 pillow>=10.0.0
 opencv-python>=4.8.0
 
+# === Copyright / audio ===
+requests>=2.31.0
+demucs>=4.0.0
+
 # === YouTube Upload ===
 google-auth-oauthlib>=1.0.0
 google-auth-httplib2>=0.1.0

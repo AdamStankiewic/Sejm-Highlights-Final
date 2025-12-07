@@ -8,6 +8,7 @@ Automatyczne generowanie najlepszych momentów z transmisji Sejmu
 """
 
 import sys
+import os
 import json
 from typing import TYPE_CHECKING, Optional, Tuple
 from video_downloader import VideoDownloader
@@ -170,7 +171,8 @@ class SejmHighlightsApp(QMainWindow):
     def init_ui(self):
         """Inicjalizacja interfejsu użytkownika"""
         self.setWindowTitle("Sejm Highlights AI - Automated Video Compiler v2.0")
-        self.setGeometry(100, 100, 1400, 950)  # Zwiększona wysokość
+        self.setGeometry(100, 100, 1600, 900)
+        self.setMinimumSize(1280, 800)
         
         # Główny widget i layout
         central_widget = QWidget()
@@ -538,104 +540,147 @@ class SejmHighlightsApp(QMainWindow):
         
         # Target duration
         dur_layout = QHBoxLayout()
-        dur_layout.addWidget(QLabel("🎯 Docelowa długość filmu (sekundy):"))
-        self.target_duration = QSpinBox()
-        self.target_duration.setRange(600, 2400)  # 10-40 min
-        self.target_duration.setValue(900)  # 15 min default
-        self.target_duration.setSuffix(" s")
+        dur_layout.addWidget(QLabel("🎯 Docelowa długość filmu (minuty):"))
+        self.target_duration = QDoubleSpinBox()
+        self.target_duration.setRange(10.0, 60.0)  # 10-60 min
+        self.target_duration.setSingleStep(1.0)
+        self.target_duration.setValue(max(10.0, min(60.0, self.config.selection.target_total_duration / 60)))
+        self.target_duration.setSuffix(" min")
         dur_layout.addWidget(self.target_duration)
         dur_layout.addStretch()
         layout.addLayout(dur_layout)
-        
+
         # Number of clips
         clips_layout = QHBoxLayout()
         clips_layout.addWidget(QLabel("📊 Liczba klipów:"))
         self.num_clips = QSpinBox()
-        self.num_clips.setRange(5, 20)
-        self.num_clips.setValue(12)
+        self.num_clips.setRange(5, 50)
+        self.num_clips.setValue(min(50, max(5, self.config.selection.max_clips)))
         clips_layout.addWidget(self.num_clips)
         clips_layout.addStretch()
         layout.addLayout(clips_layout)
-        
+
         # Min/Max clip duration
         min_clip_layout = QHBoxLayout()
-        min_clip_layout.addWidget(QLabel("⏱️ Min. długość klipu (s):"))
-        self.min_clip_duration = QSpinBox()
-        self.min_clip_duration.setRange(60, 180)
-        self.min_clip_duration.setValue(90)
+        min_clip_layout.addWidget(QLabel("⏱️ Min. długość klipu (minuty):"))
+        self.min_clip_duration = QDoubleSpinBox()
+        self.min_clip_duration.setDecimals(2)
+        self.min_clip_duration.setRange(0.33, 5.0)  # 20s - 5 min
+        self.min_clip_duration.setSingleStep(0.05)
+        self.min_clip_duration.setValue(max(0.33, min(5.0, self.config.selection.min_clip_duration / 60)))
+        self.min_clip_duration.setSuffix(" min")
+        self.min_clip_duration.valueChanged.connect(lambda _: setattr(self, "_min_clip_customized", True))
         min_clip_layout.addWidget(self.min_clip_duration)
         min_clip_layout.addStretch()
         layout.addLayout(min_clip_layout)
-        
+
         max_clip_layout = QHBoxLayout()
-        max_clip_layout.addWidget(QLabel("⏱️ Max. długość klipu (s):"))
-        self.max_clip_duration = QSpinBox()
-        self.max_clip_duration.setRange(90, 300)
-        self.max_clip_duration.setValue(180)
+        max_clip_layout.addWidget(QLabel("⏱️ Max. długość klipu (minuty):"))
+        self.max_clip_duration = QDoubleSpinBox()
+        self.max_clip_duration.setDecimals(2)
+        self.max_clip_duration.setRange(0.5, 10.0)
+        self.max_clip_duration.setSingleStep(0.1)
+        self.max_clip_duration.setValue(max(0.5, min(10.0, self.config.selection.max_clip_duration / 60)))
+        self.max_clip_duration.setSuffix(" min")
         max_clip_layout.addWidget(self.max_clip_duration)
         max_clip_layout.addStretch()
         layout.addLayout(max_clip_layout)
-        
+
+        # Dynamic scoring threshold
+        threshold_layout = QHBoxLayout()
+        threshold_layout.addWidget(QLabel("🎚️ Próg score (0.10-0.80):"))
+        self.score_threshold_slider = QSlider(Qt.Orientation.Horizontal)
+        self.score_threshold_slider.setRange(10, 80)
+        default_threshold = int(getattr(self.config.selection, "min_score_threshold", 0.3) * 100)
+        self.score_threshold_slider.setValue(max(10, min(80, default_threshold)))
+        self.score_threshold_slider.setSingleStep(5)
+        threshold_layout.addWidget(self.score_threshold_slider)
+        self.score_threshold_label = QLabel(f"{self.score_threshold_slider.value()/100:.2f}")
+        self.score_threshold_slider.valueChanged.connect(
+            lambda v: self.score_threshold_label.setText(f"{v/100:.2f}")
+        )
+        threshold_layout.addWidget(self.score_threshold_label)
+        layout.addLayout(threshold_layout)
+
         # Transitions & Hardsub
         self.add_transitions = QCheckBox("✨ Dodaj przejścia między klipami")
         self.add_transitions.setChecked(False)  # Domyślnie wyłączone - fontconfig issue
         layout.addWidget(self.add_transitions)
-        
+
         self.add_hardsub = QCheckBox("📝 Dodaj napisy (hardsub)")
         self.add_hardsub.setChecked(False)
         layout.addWidget(self.add_hardsub)
-        
-        # === YouTube Shorts Settings ===
-        layout.addSpacing(20)
-        shorts_header = QLabel("📱 YouTube Shorts")
-        shorts_header.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-        layout.addWidget(shorts_header)
-        
-        self.shorts_enabled = QCheckBox("Generuj YouTube Shorts z najlepszych momentów")
-        self.shorts_enabled.setChecked(False)
-        self.shorts_enabled.setToolTip(
-            "Automatycznie wybiera krótkie (15-60s) momenty i konwertuje do formatu 9:16 pionowego.\n"
-            "Shorts używają tej samej analizy GPT co długi film - bez dodatkowych kosztów!"
-        )
-        layout.addWidget(self.shorts_enabled)
-        
-        shorts_count_layout = QHBoxLayout()
-        shorts_count_layout.addWidget(QLabel("   📊 Liczba Shorts do wygenerowania:"))
-        self.shorts_count = QSpinBox()
-        self.shorts_count.setRange(5, 20)
-        self.shorts_count.setValue(10)
-        self.shorts_count.setSuffix(" Shorts")
-        self.shorts_count.setEnabled(False)  # Disabled by default
-        shorts_count_layout.addWidget(self.shorts_count)
-        shorts_count_layout.addStretch()
-        layout.addLayout(shorts_count_layout)
-        
-        # Connect checkbox to enable/disable spinner
-        self.shorts_enabled.toggled.connect(self.shorts_count.setEnabled)
-        
-        shorts_info = QLabel(
-            "   ℹ️ Shorts: 15-60s, format 9:16, duże napisy, automatyczne tytuły z emoji"
-        )
-        shorts_info.setStyleSheet("color: gray; font-size: 10px;")
-        layout.addWidget(shorts_info)
 
-        # === NOWE: Template Settings Button ===
-        layout.addSpacing(10)
+        layout.addStretch()
+        return tab
+
+    def create_shorts_tab(self) -> QWidget:
+        """Dedykowany tab dla shortsów (szablony, AI fallback, prędkość)."""
+
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        self.shorts_generate_cb = QCheckBox(self._t("generate_shorts"))
+        self.shorts_generate_cb.setChecked(bool(getattr(self.config.shorts, "enabled", True)))
+        layout.addWidget(self.shorts_generate_cb)
+
+        template_layout = QHBoxLayout()
+        template_layout.addWidget(QLabel(self._t("shorts_template")))
+        self.shorts_template_combo = QComboBox()
+        self.shorts_template_combo.addItems(["Gaming Facecam", "Universal"])
+        current_template = getattr(self.config.shorts, "template", "gaming")
+        self.shorts_template_combo.setCurrentIndex(0 if current_template == "gaming" else 1)
+        template_layout.addWidget(self.shorts_template_combo)
+        template_layout.addStretch()
+        layout.addLayout(template_layout)
+
+        count_layout = QHBoxLayout()
+        count_layout.addWidget(QLabel("📊 Liczba shortsów do wygenerowania:"))
+        self.shorts_count_slider = QSlider(Qt.Orientation.Horizontal)
+        self.shorts_count_slider.setRange(1, 50)
+        self.shorts_count_slider.setValue(int(getattr(self.config.shorts, "count", 10) or 10))
+        self.shorts_count_slider.setSingleStep(1)
+        count_layout.addWidget(self.shorts_count_slider)
+        self.shorts_count_label = QLabel(str(self.shorts_count_slider.value()))
+        self.shorts_count_slider.valueChanged.connect(lambda v: self.shorts_count_label.setText(str(v)))
+        count_layout.addWidget(self.shorts_count_label)
+        layout.addLayout(count_layout)
+
+        speed_layout = QHBoxLayout()
+        speed_layout.addWidget(QLabel("⚡ Przyspieszenie shortsa (x):"))
+        self.shorts_speed_slider = QSlider(Qt.Orientation.Horizontal)
+        self.shorts_speed_slider.setMinimum(100)
+        self.shorts_speed_slider.setMaximum(150)
+        self.shorts_speed_slider.setSingleStep(5)
+        self.shorts_speed_slider.setValue(int(float(getattr(self.config.shorts, "speedup", 1.0)) * 100))
+        speed_layout.addWidget(self.shorts_speed_slider)
+        self.shorts_speed_label = QLabel(str(self.shorts_speed_slider.value() / 100))
+        self.shorts_speed_slider.valueChanged.connect(lambda v: self.shorts_speed_label.setText(f"{v/100:.2f}"))
+        speed_layout.addWidget(self.shorts_speed_label)
+        layout.addLayout(speed_layout)
+
+        self.shorts_add_subs_cb = QCheckBox(self._t("add_subtitles"))
+        self.shorts_add_subs_cb.setChecked(bool(getattr(self.config.shorts, "subtitles", False)))
+        layout.addWidget(self.shorts_add_subs_cb)
+
+        subs_lang_layout = QHBoxLayout()
+        subs_lang_layout.addWidget(QLabel("🌐 Język napisów:"))
+        self.shorts_subs_lang = QComboBox()
+        self.shorts_subs_lang.addItems(["PL", "EN"])
+        current_lang = getattr(self.config.shorts, "subtitle_lang", "pl").lower()
+        self.shorts_subs_lang.setCurrentIndex(0 if current_lang == "pl" else 1)
+        subs_lang_layout.addWidget(self.shorts_subs_lang)
+        subs_lang_layout.addStretch()
+        layout.addLayout(subs_lang_layout)
+
+        self.shorts_remove_music_cb = QCheckBox(self._t("remove_music"))
+        self.shorts_remove_music_cb.setChecked(bool(getattr(self.config.copyright, "enabled", False)))
+        layout.addWidget(self.shorts_remove_music_cb)
+
         template_btn_layout = QHBoxLayout()
-        template_btn_layout.addWidget(QLabel("   🎨"))
-        self.shorts_template_btn = QPushButton("⚙️ Ustawienia szablonów (dla streamów)")
+        template_btn_layout.addWidget(QLabel("🎨"))
+        self.shorts_template_btn = QPushButton("Ustawienia szablonu / facecam")
         self.shorts_template_btn.clicked.connect(self.open_shorts_template_dialog)
-        self.shorts_template_btn.setStyleSheet("""
-            QPushButton {
-                background: #2196F3;
-                color: white;
-                font-weight: bold;
-                padding: 8px 16px;
-            }
-            QPushButton:hover {
-                background: #1976D2;
-            }
-        """)
         template_btn_layout.addWidget(self.shorts_template_btn)
         template_btn_layout.addStretch()
         layout.addLayout(template_btn_layout)
@@ -963,7 +1008,7 @@ class SejmHighlightsApp(QMainWindow):
         """)
         layout.addWidget(self.start_btn, stretch=3)
         
-        self.cancel_btn = QPushButton("⏹️ Cancel")
+        self.cancel_btn = QPushButton("⏹️ Abort Processing")
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.setMinimumHeight(50)
         self.cancel_btn.clicked.connect(self.cancel_processing)
@@ -1253,7 +1298,10 @@ class SejmHighlightsApp(QMainWindow):
         
         # Log config values
         self.log(f"Config - Whisper model: {self.config.asr.model}", "INFO")
-        self.log(f"Config - Target duration: {self.config.selection.target_total_duration}s", "INFO")
+        self.log(
+            f"Config - Target duration: {self.config.selection.target_total_duration/60:.1f} min",
+            "INFO",
+        )
         self.log(f"Config - Smart Splitter: {self.config.splitter.enabled}", "INFO")
         
         # Disable controls
@@ -1274,6 +1322,13 @@ class SejmHighlightsApp(QMainWindow):
         if not input_file or input_file == "Nie wybrano pliku":
             QMessageBox.warning(self, "Błąd", "Proszę wybrać plik wejściowy lub pobrać video z URL!")
             return
+
+        if self.config.mode.lower() == "stream":
+            if self.config.chat_json_path and not self.config.chat_json_path.exists():
+                self.log(f"Nie znaleziono chat.json pod: {self.config.chat_json_path}", "WARNING")
+            elif not self.config.chat_json_path:
+                self.log("Tryb Stream bez chat.json → chat_burst_score będzie 0.0", "WARNING")
+
         self.processing_thread = ProcessingThread(input_file, self.config)
         
         # Connect signals
@@ -1442,15 +1497,16 @@ class SejmHighlightsApp(QMainWindow):
     def update_config_from_gui(self):
         """Aktualizuj obiekt Config wartościami z GUI"""
         # Selection settings
-        self.config.selection.target_total_duration = float(self.target_duration.value())
+        self.config.selection.target_total_duration = float(self.target_duration.value()) * 60.0
         self.config.selection.max_clips = int(self.num_clips.value())
-        self.config.selection.min_clip_duration = float(self.min_clip_duration.value())
-        self.config.selection.max_clip_duration = float(self.max_clip_duration.value())
-        
+        self.config.selection.min_clip_duration = float(self.min_clip_duration.value()) * 60.0
+        self.config.selection.max_clip_duration = float(self.max_clip_duration.value()) * 60.0
+        self.config.selection.min_score_threshold = float(self.score_threshold_slider.value()) / 100.0
+
         # Export settings
         self.config.export.add_transitions = bool(self.add_transitions.isChecked())
         self.config.export.generate_hardsub = bool(self.add_hardsub.isChecked())
-        
+
         # Shorts settings
         if hasattr(self.config, 'shorts'):
             enabled = bool(self.shorts_generate_cb.isChecked()) if hasattr(self, 'shorts_generate_cb') else False
@@ -1567,20 +1623,23 @@ class SejmHighlightsApp(QMainWindow):
     def log(self, message: str, level: str = "INFO"):
         """Dodaj wiadomość do loga"""
         timestamp = datetime.now().strftime("%H:%M:%S")
-        
+
         color_map = {
             "INFO": "#2196F3",
             "SUCCESS": "#4CAF50",
             "WARNING": "#FF9800",
             "ERROR": "#F44336"
         }
-        
+
         color = color_map.get(level, "#000000")
-        
+
         html = f'<span style="color: gray;">[{timestamp}]</span> <span style="color: {color}; font-weight: bold;">[{level}]</span> {message}'
-        
+
         self.log_text.append(html)
         self.log_text.moveCursor(QTextCursor.MoveOperation.End)
+
+        # Persist to file logger as well
+        logging.getLogger("app").log(getattr(logging, level, logging.INFO), message)
     
     def open_output_folder(self):
         """Otwórz folder z wynikami"""
@@ -1647,7 +1706,7 @@ class ShortsTemplateDialog(QDialog):
     def __init__(self, parent, config: Config):
         super().__init__(parent)
         self.config = config
-        self.selected_template = config.shorts.default_template
+        self.selected_template = getattr(config.shorts, 'template', 'gaming')
 
         self.setWindowTitle("🎨 Shorts Template Settings - Profesjonalne layouty dla streamów")
         self.setMinimumWidth(700)
@@ -1858,9 +1917,11 @@ class ShortsTemplateDialog(QDialog):
 
     def apply_to_config(self, config: Config):
         """Zastosuj ustawienia do obiektu Config"""
-        config.shorts.default_template = self.get_selected_template()
-        config.shorts.face_detection = self.face_detection_cb.isChecked()
-        config.shorts.webcam_detection_confidence = self.confidence_slider.value() / 100.0
+        config.shorts.template = self.get_selected_template()
+        if hasattr(config.shorts, 'face_detection'):
+            config.shorts.face_detection = self.face_detection_cb.isChecked()
+        if hasattr(config.shorts, 'webcam_detection_confidence'):
+            config.shorts.webcam_detection_confidence = self.confidence_slider.value() / 100.0
 
 
 def main():

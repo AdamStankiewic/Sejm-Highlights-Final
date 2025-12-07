@@ -99,6 +99,10 @@ class ScoringConfig:
     
     # Position diversity bonus
     position_diversity_bonus: float = 0.1
+
+    # Dynamic thresholds
+    dynamic_threshold_percentile: int = 80
+    min_score_slider: float = 0.25
     
     def __post_init__(self):
         if self.interest_labels is None:
@@ -123,10 +127,13 @@ class SelectionConfig:
     min_clip_duration: float = 90.0
     max_clip_duration: float = 180.0
     target_total_duration: float = 900.0  # 15 min
-    
+
     # Number of clips
     min_clips: int = 8
     max_clips: int = 15
+
+    # Dynamic scoring threshold (GUI slider 0.1-0.8)
+    min_score_threshold: float = 0.25
     
     # Temporal constraints
     min_time_gap: float = 30.0  # Między klipami
@@ -540,6 +547,9 @@ class Config:
         
         if self.selection.target_total_duration < self.selection.min_clip_duration * self.selection.min_clips:
             raise ValueError("target_total_duration zbyt mały dla min_clips")
+
+        if not 0.0 <= self.selection.min_score_threshold <= 1.0:
+            raise ValueError("min_score_threshold musi być w przedziale 0-1")
         
         # Check Whisper model
         valid_models = ["large-v3", "large-v2", "medium", "small", "base", "tiny"]
