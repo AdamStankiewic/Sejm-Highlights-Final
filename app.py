@@ -26,19 +26,7 @@ from PyQt6.QtGui import QFont, QTextCursor, QPixmap
 # Import pipeline modules
 from pipeline.processor import PipelineProcessor
 from pipeline.config import CompositeWeights, Config
-
-# moviepy może być nieobecne w świeżym środowisku – pokazujemy jasny komunikat
-try:
-    from shorts.generator import ShortsGenerator, Segment
-except ModuleNotFoundError as exc:  # pragma: no cover - defensywny import na starcie GUI
-    if exc.name == "moviepy":
-        print(
-            "[Sejm Highlights] Brak biblioteki 'moviepy'. "
-            "Uruchom: pip install -r requirements.txt (w aktywnym venv)."
-        )
-    ShortsGenerator = None  # type: ignore
-    Segment = None  # type: ignore
-
+from shorts.generator import ShortsGenerator, Segment
 from uploader.manager import UploadManager, UploadJob
 
 
