@@ -435,7 +435,7 @@ class PipelineProcessor:
                         segments=scoring_result['segments'],
                         output_dir=self.config.output_dir,
                         session_dir=self.session_dir,
-                        template=getattr(self.config.shorts, 'template', 'gaming')
+                        template=getattr(self.config.shorts, 'template', getattr(self.config.shorts, 'default_template', 'gaming'))  # Przekaż wybrany szablon
                     )
                     
                     shorts_results = shorts_result.get('shorts', [])
