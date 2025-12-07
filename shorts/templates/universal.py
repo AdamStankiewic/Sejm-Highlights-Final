@@ -26,6 +26,7 @@ class UniversalTemplate(TemplateBase):
         add_subtitles: bool = False,
         subtitles: Iterable[Tuple[str, float, float]] | None = None,
         subtitle_lang: str = "pl",
+        copyright_processor=None,
     ) -> Path:
         logger.info("[UniversalTemplate] Rendering segment %.2f-%.2f", start, end)
         output_path = ensure_output_path(Path(output_path))
@@ -35,6 +36,8 @@ class UniversalTemplate(TemplateBase):
             clip = add_subtitles(clip, subtitles)
         if speedup > 1.0:
             clip = apply_speedup(clip, speedup)
+        if copyright_processor:
+            clip = copyright_processor.clean_clip_audio(clip, video_path, start, end, output_path.stem)
         clip.write_videofile(
             str(output_path),
             codec="libx264",

@@ -8,6 +8,8 @@ from pathlib import Path
 from dataclasses import dataclass, asdict, field
 from typing import Optional, Dict, Any
 
+from shorts.config import ShortsConfig
+
 
 @dataclass
 class AudioConfig:
@@ -248,21 +250,14 @@ class YouTubeConfig:
             self.credentials_path = Path("client_secret.json")
 
 @dataclass
-class ShortsConfig:
-    """Shorts generation settings (simplified after refactor)."""
-
-    enabled: bool = True
-    template: str = "gaming"
-    face_regions: list[str] = field(
-        default_factory=lambda: ["bottom_right", "bottom_left", "top_right", "top_left"]
-    )
-    speedup_factor: float = 1.0
-    add_subtitles: bool = False
-    subtitle_lang: str = "pl"
-
-    max_shorts_count: int = 6
-    width: int = 1080
-    height: int = 1920
+class CopyrightConfig:
+    enabled: bool = False
+    provider: str = "demucs"  # audd | demucs
+    audd_api_key: str = ""
+    keep_sfx: bool = True
+    enable_protection: bool = True
+    music_detection_threshold: float = 0.7
+    royalty_free_folder: str = "assets/royalty_free"
 
 
 @dataclass
@@ -290,6 +285,7 @@ class Config:
     youtube: YouTubeConfig = None
     shorts: ShortsConfig = None
     uploader: UploaderConfig = None
+    copyright: CopyrightConfig = None
 
     # Mode & inputs
     mode: str = "sejm"
@@ -338,6 +334,15 @@ class Config:
             self.shorts = ShortsConfig()
         if self.uploader is None:
             self.uploader = UploaderConfig()
+        if self.copyright is None:
+            self.copyright = CopyrightConfig()
+        else:
+            try:
+                # Normalize royalty free folder path
+                if isinstance(self.copyright.royalty_free_folder, str):
+                    self.copyright.royalty_free_folder = Path(self.copyright.royalty_free_folder)
+            except Exception:
+                self.copyright.royalty_free_folder = Path("assets/royalty_free")
         if self.custom_weights is None:
             self.custom_weights = CompositeWeights(
                 chat_burst_weight=self.scoring_weights.stream_mode.chat_burst_weight,
@@ -357,6 +362,21 @@ class Config:
             self.asr.language = self.language
         else:
             self.language = self.asr.language
+
+        # Sync dynamic scoring thresholds
+        if getattr(self.scoring, 'min_score_slider', None) is not None:
+            try:
+                slider_val = float(self.scoring.min_score_slider)
+                if slider_val > 0:
+                    self.selection.min_score_threshold = slider_val
+            except Exception:
+                pass
+
+        try:
+            pct = int(getattr(self.scoring, 'dynamic_threshold_percentile', 80))
+            self.scoring.dynamic_threshold_percentile = max(1, min(99, pct))
+        except Exception:
+            self.scoring.dynamic_threshold_percentile = 80
         
         # Create directories
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -385,6 +405,7 @@ class Config:
         splitter = SmartSplitterConfig(**data.get('splitter', {}))
         shorts = ShortsConfig(**data.get('shorts', {}))
         uploader = UploaderConfig(**data.get('uploader', {}))
+        copyright_cfg = CopyrightConfig(**data.get('copyright', {}))
         
         # General settings
         general = data.get('general', {})
@@ -402,6 +423,7 @@ class Config:
             splitter=splitter,
             shorts=shorts,
             uploader=uploader,
+            copyright=copyright_cfg,
             **general
         )
     
@@ -430,6 +452,7 @@ class Config:
             'youtube': asdict(self.youtube),
             'shorts': asdict(self.shorts),
             'uploader': asdict(self.uploader),
+            'copyright': asdict(self.copyright),
             'general': {
                 'output_dir': str(self.output_dir),
                 'temp_dir': str(self.temp_dir),
@@ -464,6 +487,7 @@ class Config:
             'youtube': asdict(self.youtube),
             'shorts': asdict(self.shorts),
             'uploader': asdict(self.uploader),
+            'copyright': asdict(self.copyright),
             'output_dir': str(self.output_dir),
             'temp_dir': str(self.temp_dir),
             'keep_intermediate': self.keep_intermediate,
@@ -486,6 +510,29 @@ class Config:
             return self.scoring_weights.stream_mode
 
         return self.scoring_weights.sejm_mode
+
+    def get_effective_weights(self, chat_present: bool) -> CompositeWeights:
+        """Adjust weights for Stream mode when chat bursts are unavailable."""
+
+        base = self.get_active_weights()
+        if self.mode.lower() != "stream":
+            return base
+
+        if chat_present:
+            return CompositeWeights(
+                chat_burst_weight=0.65,
+                acoustic_weight=0.15,
+                semantic_weight=0.15,
+                prompt_boost_weight=0.05,
+            )
+
+        # Brak chat.json → dostosuj wagi zgodnie z wymaganiami użytkownika
+        return CompositeWeights(
+            chat_burst_weight=0.0,
+            acoustic_weight=0.45,
+            semantic_weight=0.50,
+            prompt_boost_weight=0.05,
+        )
     
     def update_from_gui(self, gui_values: Dict[str, Any]):
         """Update config z wartości GUI"""

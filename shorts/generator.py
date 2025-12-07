@@ -43,16 +43,17 @@ class ShortsGenerator:
         video_path: Path,
         segments: Sequence[Segment],
         template: str = "gaming",
-        max_shorts: int = 6,
+        count: int = 6,
         speedup: float = 1.0,
         add_subtitles: bool = False,
         subtitle_lang: str = "pl",
+        copyright_processor=None,
     ) -> List[Path]:
         if not segments:
             logger.warning("No segments supplied for shorts generation")
             return []
         sorted_segments = sorted(segments, key=lambda s: s.score, reverse=True)
-        selected = [s for s in sorted_segments if s.duration <= 60][: max_shorts or 6]
+        selected = [s for s in sorted_segments if s.duration <= 60][: count or 6]
         results: List[Path] = []
         template_impl = self._template_for_name(template)
         for idx, segment in enumerate(selected):
@@ -67,7 +68,12 @@ class ShortsGenerator:
                     add_subtitles=add_subtitles,
                     subtitles=segment.subtitles,
                     subtitle_lang=subtitle_lang,
+                    copyright_processor=copyright_processor,
                 )
+                if copyright_processor:
+                    fixed_path, status = copyright_processor.scan_and_fix(str(rendered))
+                    logger.info("Copyright scan status for %s: %s", rendered, status)
+                    rendered = Path(fixed_path)
                 results.append(rendered)
             except Exception as exc:  # pragma: no cover - defensive
                 logger.error("Short generation failed for segment %s: %s", segment, exc)
@@ -82,6 +88,10 @@ class ShortsGenerator:
                         subtitles=segment.subtitles,
                         subtitle_lang=subtitle_lang,
                     )
+                    if copyright_processor:
+                        fixed_path, status = copyright_processor.scan_and_fix(str(fallback))
+                        logger.info("Copyright scan status for %s: %s", fallback, status)
+                        fallback = Path(fixed_path)
                     results.append(fallback)
                 except Exception as inner_exc:
                     logger.error("Fallback also failed: %s", inner_exc)
