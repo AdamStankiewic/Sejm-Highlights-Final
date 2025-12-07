@@ -50,9 +50,9 @@ def generate_shorts_example() -> None:
         VIDEO_FILE,
         shorts_candidates,
         template=config.shorts.template,
-        count=config.shorts.count,
-        speedup=config.shorts.speedup,
-        add_subtitles=config.shorts.subtitles,
+        max_shorts=config.shorts.max_shorts_count,
+        speedup=config.shorts.speedup_factor,
+        add_subtitles=config.shorts.add_subtitles,
         subtitle_lang=config.shorts.subtitle_lang,
     )
     print(f"📱 Wygenerowano {len(result)} shortsów → {result}")
