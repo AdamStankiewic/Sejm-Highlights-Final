@@ -9,6 +9,7 @@ Automatyczne generowanie najlepszych momentów z transmisji Sejmu
 
 import sys
 import json
+from typing import TYPE_CHECKING, Optional, Tuple
 from video_downloader import VideoDownloader
 from pathlib import Path
 from datetime import datetime
