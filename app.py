@@ -27,32 +27,8 @@ from PyQt6.QtGui import QFont, QTextCursor, QPixmap
 # Import pipeline modules
 from pipeline.processor import PipelineProcessor
 from pipeline.config import CompositeWeights, Config
-
-if TYPE_CHECKING:  # import dla type checkera, bez twardej zależności przy runtime
-    from shorts.generator import ShortsGenerator, Segment
-
+from shorts.generator import ShortsGenerator, Segment
 from uploader.manager import UploadManager, UploadJob
-
-
-def _load_shorts_modules() -> Tuple[Optional["ShortsGenerator"], Optional["Segment"], Optional[str]]:
-    """Lazy import modułów shorts, aby GUI nie crashował bez moviepy.
-
-    Returns: (ShortsGenerator class, Segment class, error message if failed)
-    """
-
-    try:
-        from shorts.generator import ShortsGenerator, Segment
-        return ShortsGenerator, Segment, None
-    except ModuleNotFoundError as exc:
-        missing = exc.name or ""
-        if missing.startswith("moviepy") or missing == "moviepy":
-            return None, None, (
-                "Brak biblioteki 'moviepy'. Uruchom: pip install -r requirements.txt "
-                "(w aktywnym venv)."
-            )
-        return None, None, f"Brakujący moduł: {missing}"
-    except Exception as exc:  # pragma: no cover - defensywny fallback
-        return None, None, f"Nie udało się załadować modułu shorts: {exc}"
 
 
 class ProcessingThread(QThread):
@@ -169,7 +145,6 @@ class SejmHighlightsApp(QMainWindow):
         self.download_thread = None
         self.downloaded_file_path = None
         self.upload_manager = UploadManager()
-        self.shorts_generator_cls, self.segment_cls, self.shorts_import_error = _load_shorts_modules()
         self.translations = {
             "pl": {
                 "generate_shorts": "Generuj shortsy z najlepszych segmentów",
@@ -184,9 +159,6 @@ class SejmHighlightsApp(QMainWindow):
                 "add_subtitles": "Add subtitles",
             },
         }
-
-        if self.shorts_import_error:
-            print(f"[Sejm Highlights] {self.shorts_import_error}")
 
         self.init_ui()
         self.setup_styles()
@@ -1337,26 +1309,14 @@ class SejmHighlightsApp(QMainWindow):
         self.current_results = results
 
         if getattr(self.config.shorts, 'enabled', False):
-            generator_cls, segment_cls = self.shorts_generator_cls, self.segment_cls
-
-            if generator_cls is None or segment_cls is None:
-                msg = self.shorts_import_error or "Moduł shorts jest niedostępny."
-                self.log(msg, "ERROR")
-                QMessageBox.warning(
-                    self,
-                    "Shorts not available",
-                    f"Nie można uruchomić generatora shortsów. {msg}"
-                )
-                return
-
             try:
-                generator = generator_cls(
+                generator = ShortsGenerator(
                     output_dir=Path(self.config.output_dir) / "shorts",
                     face_regions=self.config.shorts.face_regions,
                 )
                 raw_segments = results.get('segments', [])
                 segments = [
-                    segment_cls(
+                    Segment(
                         start=float(seg.get('start', 0)),
                         end=float(seg.get('end', 0)),
                         score=float(seg.get('score', 0)),
