@@ -212,11 +212,8 @@ youtube:
 # === YouTube Shorts ===
 shorts:
   enabled: true
-  default_template: "gaming"
   template: "gaming"
   face_regions: ["bottom_right", "bottom_left", "top_right", "top_left"]
-  face_detection: true
-  webcam_detection_confidence: 0.6
   speedup_factor: 1.0
   add_subtitles: false
   subtitle_lang: "pl"

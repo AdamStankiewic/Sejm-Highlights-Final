@@ -245,13 +245,10 @@ class ShortsConfig:
     """Shorts generation settings (simplified after refactor)."""
 
     enabled: bool = True
-    default_template: str = "gaming"
     template: str = "gaming"
     face_regions: list[str] = field(
         default_factory=lambda: ["bottom_right", "bottom_left", "top_right", "top_left"]
     )
-    face_detection: bool = True
-    webcam_detection_confidence: float = 0.6
     speedup_factor: float = 1.0
     add_subtitles: bool = False
     subtitle_lang: str = "pl"
@@ -259,25 +256,6 @@ class ShortsConfig:
     max_shorts_count: int = 6
     width: int = 1080
     height: int = 1920
-
-    def __post_init__(self):
-        # Utrzymaj kompatybilność: jeśli podano tylko template, użyj go jako default
-        # Maintain compatibility: keep default_template in sync with template
-        if not self.template:
-            self.template = "gaming"
-        self.default_template = self.template or self.default_template or "gaming"
-
-        # Normalizuj listę regionów
-        self.face_regions = list(self.face_regions)
-
-        # Clamp confidence to sane range [0.1, 0.99]
-        try:
-            if self.webcam_detection_confidence is None:
-                self.webcam_detection_confidence = 0.6
-            self.webcam_detection_confidence = float(self.webcam_detection_confidence)
-            self.webcam_detection_confidence = max(0.1, min(0.99, self.webcam_detection_confidence))
-        except (TypeError, ValueError):
-            self.webcam_detection_confidence = 0.6
 
 
 @dataclass
