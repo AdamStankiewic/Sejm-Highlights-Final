@@ -271,8 +271,9 @@ class PipelineProcessor:
                 stage_start = time.time()
                 self._report_progress("Stage 6/7", 77, "Selekcja najlepszych klipów...")
                 
-                # Jeśli jest split_strategy, użyj wyższego threshold
-                min_score = split_strategy['min_score_threshold'] if split_strategy else 0.0  # Bez filtrowania gdy brak strategii
+                # Jeśli jest split_strategy lub slider threshold, użyj najwyższego progu
+                gui_threshold = getattr(self.config.selection, 'min_score_threshold', 0.0)
+                min_score = max(split_strategy['min_score_threshold'] if split_strategy else 0.0, gui_threshold)
                 
                 selection_result = self.stages['selection'].process(
                     segments=scoring_result['segments'],
@@ -280,9 +281,19 @@ class PipelineProcessor:
                     output_dir=self.session_dir,
                     min_score=min_score
                 )
-                
+
                 self.timing_stats['selection'] = self._format_duration(time.time() - stage_start)
                 self._report_progress("Stage 6/7", 85, f"✅ Wybrano {len(selection_result['clips'])} klipów")
+
+                if not selection_result['clips']:
+                    warning_msg = "Brak klipów – obniż próg lub podłącz chat.json."
+                    print(f"⚠️ {warning_msg}")
+                    return {
+                        'clips': [],
+                        'shorts_clips': selection_result.get('shorts_clips', []),
+                        'message': warning_msg,
+                        'export_results': [],
+                    }
                 
                 # === Po stage 6 (Selection): Podział na części jeśli potrzebny ===
                 parts_metadata = None
@@ -417,14 +428,14 @@ class PipelineProcessor:
                     
                     from .stage_10_shorts import ShortsStage
                     shorts_stage = ShortsStage(self.config)
-                    
+
                     shorts_result = shorts_stage.process(
                         input_file=input_file,
                         shorts_clips=selection_result['shorts_clips'],
                         segments=scoring_result['segments'],
                         output_dir=self.config.output_dir,
                         session_dir=self.session_dir,
-                        template=self.config.shorts.default_template  # Przekaż wybrany szablon
+                        template=getattr(self.config.shorts, 'template', 'gaming')
                     )
                     
                     shorts_results = shorts_result.get('shorts', [])

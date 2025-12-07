@@ -40,11 +40,11 @@ class SelectionStage:
                 - total_duration: Suma czasu klipów
         """
         print(f"🎯 Selekcja klipów z {len(segments)} segmentów...")
-        
-        # STEP 0: Filter by minimum score if specified
-        if min_score > 0:
-            segments = [seg for seg in segments if seg.get('final_score', 0) >= min_score]
-            print(f"   Po filtrze score (>= {min_score}): {len(segments)} segmentów")
+
+        # STEP 0: Filter by minimum score if specified (with fallback to top 20%)
+        score_threshold = max(min_score, getattr(self.config.selection, 'min_score_threshold', 0.0) or 0.0)
+        segments = self._filter_by_score_with_fallback(segments, score_threshold)
+        print(f"   Po filtrze score (>= {score_threshold:.2f} lub top20): {len(segments)} segmentów")
         
         # STEP 1: Filter by minimum duration
         candidates = self._filter_by_duration(segments)
@@ -110,6 +110,31 @@ class SelectionStage:
         """Filter segmenty po minimalnej długości"""
         min_dur = self.config.selection.min_clip_duration
         return [seg for seg in segments if seg['duration'] >= min_dur]
+
+    def _filter_by_score_with_fallback(self, segments: List[Dict], min_score: float) -> List[Dict]:
+        """Filter by score, fallback to top 20% percentile when empty."""
+
+        if min_score <= 0:
+            return segments
+
+        filtered = [seg for seg in segments if seg.get('final_score', 0) >= min_score]
+        if filtered:
+            return filtered
+
+        scores = [seg.get('final_score', 0) for seg in segments]
+        if not scores:
+            return []
+
+        percentile = getattr(self.config.scoring, 'dynamic_threshold_percentile', 80)
+        dynamic_threshold = float(np.percentile(scores, percentile))
+        fallback = [seg for seg in segments if seg.get('final_score', 0) >= dynamic_threshold]
+        if not fallback and segments:
+            fallback = [max(segments, key=lambda s: s.get('final_score', 0))]
+
+        print(
+            f"   ⚠️ Brak klipów dla progu {min_score:.2f} → fallback top {percentile}% (>= {dynamic_threshold:.2f})"
+        )
+        return fallback
     
     def _greedy_selection_with_nms(self, candidates: List[Dict]) -> List[Dict]:
         """
@@ -397,12 +422,24 @@ class SelectionStage:
                 seg for seg in shorts_candidates
                 if seg.get('final_score', 0) >= min_score
             ]
+
+            if not shorts_candidates and segments:
+                percentile = getattr(self.config.scoring, 'dynamic_threshold_percentile', 80)
+                dynamic_threshold = float(np.percentile([s.get('final_score', 0) for s in segments], percentile))
+                shorts_candidates = [
+                    seg for seg in segments
+                    if self.config.shorts.min_duration <= seg['duration'] <= self.config.shorts.max_duration
+                    and seg.get('final_score', 0) >= dynamic_threshold
+                ]
+                print(
+                    f"   ⚠️ Shorts fallback: brak kandydatów dla progu {min_score:.2f} → top {percentile}% (>= {dynamic_threshold:.2f})"
+                )
         
         # Sort by score (descending)
         shorts_candidates.sort(key=lambda x: x.get('final_score', 0), reverse=True)
         
         # Take top N
-        max_shorts = self.config.shorts.max_shorts_count
+        max_shorts = getattr(self.config.shorts, 'count', 10)
         selected_shorts = shorts_candidates[:max_shorts]
         
         # Sort chronologically
