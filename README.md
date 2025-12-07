@@ -215,6 +215,8 @@ python app.py
    - Kliknij **"▶️ Start Processing"**
    - Czekaj (~25-60 min)
    - Po zakończeniu kliknij **"📁 Open Output Folder"** lub **"▶️ Play Video"**
+   - W trybie **Stream** podaj `chat.json`; po poprawnym wczytaniu status zmieni się na zielony komunikat „Chat bursts aktywne (chat.json załadowany)”, a scoring użyje wagi chat_burst=0.65.
+   - Zakładka **Shorts** korzysta z konfiguracji `ShortsConfig` (`shorts/config.py`) z domyślnym zakresem długości `min_duration=8s` / `max_duration=58s`; ustaw liczbę shortsów, szablon i napisy według potrzeb.
 
 ### Konfiguracja przez GUI
 
