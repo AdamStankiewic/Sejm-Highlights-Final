@@ -417,14 +417,14 @@ class PipelineProcessor:
                     
                     from .stage_10_shorts import ShortsStage
                     shorts_stage = ShortsStage(self.config)
-                    
+
                     shorts_result = shorts_stage.process(
                         input_file=input_file,
                         shorts_clips=selection_result['shorts_clips'],
                         segments=scoring_result['segments'],
                         output_dir=self.config.output_dir,
                         session_dir=self.session_dir,
-                        template=self.config.shorts.default_template  # Przekaż wybrany szablon
+                        template=getattr(self.config.shorts, 'template', getattr(self.config.shorts, 'default_template', 'gaming'))  # Przekaż wybrany szablon
                     )
                     
                     shorts_results = shorts_result.get('shorts', [])
