@@ -141,6 +141,7 @@ class SejmHighlightsApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.config = Config.load_default()
+        self.logger = logging.getLogger("app")
         self.processing_thread = None
         self.current_results = None
         self.download_thread = None
