@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import abc
 from pathlib import Path
-from typing import Iterable, Tuple, Optional
+from typing import Iterable, Tuple
 
 
 class TemplateBase(abc.ABC):
@@ -25,6 +25,5 @@ class TemplateBase(abc.ABC):
         add_subtitles: bool = False,
         subtitles: Iterable[Tuple[str, float, float]] | None = None,
         subtitle_lang: str = "pl",
-        copyright_processor: Optional[object] = None,
     ) -> Path:
         raise NotImplementedError

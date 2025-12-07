@@ -343,10 +343,10 @@ class ShortsStage:
                 input_path,
                 segs,
                 template=template,
-                count=getattr(self.config.shorts, 'num_shorts', getattr(self.config.shorts, 'count', len(segs))),
-                speedup=getattr(self.config.shorts, 'speedup_factor', getattr(self.config.shorts, 'speedup', 1.0)),
-                add_subtitles=getattr(self.config.shorts, 'add_subtitles', getattr(self.config.shorts, 'subtitles', False)),
-                subtitle_lang=getattr(self.config.shorts, 'subtitle_lang', 'pl'),
+                max_shorts=self.config.shorts.max_shorts_count,
+                speedup=self.config.shorts.speedup_factor,
+                add_subtitles=self.config.shorts.add_subtitles,
+                subtitle_lang=self.config.shorts.subtitle_lang,
             )
             return {"shorts": [str(p) for p in paths], "shorts_dir": str(shorts_dir), "count": len(paths)}
 

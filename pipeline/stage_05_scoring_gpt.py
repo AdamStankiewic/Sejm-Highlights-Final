@@ -49,18 +49,10 @@ class ScoringStage:
         """Załaduj dane czatu jeśli dostępne."""
 
         chat_path = getattr(self.config, "chat_json_path", None)
-        if chat_path and Path(chat_path).exists():
-            print(f"💬 Ładuję chat.json: {chat_path}")
+        if chat_path:
             self.chat_data = parse_chat_json(str(chat_path))
-            logger.info("Chat.json wykryty → włączono chat burst scoring (waga 0.65)")
         else:
-            if chat_path:
-                print(f"⚠️ Podano chat.json, ale plik nie istnieje: {chat_path}")
             self.chat_data = {}
-            if self.config.mode.lower() == "stream":
-                logger.info(
-                    "Brak chat.json → dostosowano wagi (acoustic=0.45, semantic=0.50, prompt=0.05)"
-                )
     
     def _load_gpt(self):
         """Załaduj GPT API"""
@@ -323,7 +315,7 @@ Tablica ma {len(batch)} elementów - po jednym score dla każdego [N]."""
         ai_scores = {seg['id']: seg for seg in ai_evaluated}
         
         scored = []
-        weights = self.config.get_effective_weights(bool(self.chat_data))
+        weights = self.config.get_active_weights()
 
         for seg in all_segments:
             seg_id = seg['id']

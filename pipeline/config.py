@@ -249,129 +249,20 @@ class YouTubeConfig:
 
 @dataclass
 class ShortsConfig:
-    """Ustawienia generowania shortsów z bezpiecznymi domyślnymi wartościami."""
+    """Shorts generation settings (simplified after refactor)."""
 
-    # Wymagane pola (zgodnie z wymaganiami użytkownika)
     enabled: bool = True
-    generate_shorts: bool = False
-    template: str = "gaming"  # lub "universal"
+    template: str = "gaming"
     face_regions: list[str] = field(
         default_factory=lambda: ["bottom_right", "bottom_left", "top_right", "top_left"]
     )
     speedup_factor: float = 1.0
     add_subtitles: bool = False
     subtitle_lang: str = "pl"
-    min_duration: int = 8
-    max_duration: int = 58
-    num_shorts: int = 5
-    face_resize_width: int = 250
-    gameplay_scale: float = 0.88
-    universal_scale: float = 0.90
 
-    # Pola kompatybilności / szersze ustawienia szablonów (zachowujemy, by uniknąć crashy)
-    count: int = 10
-    speedup: float = 1.0
-    subtitles: bool = False
+    max_shorts_count: int = 6
     width: int = 1080
     height: int = 1920
-    pre_roll: float = 0.0
-    post_roll: float = 0.0
-    face_detection: bool = True
-    webcam_detection_confidence: float = 0.6
-    title_height: int = 220
-    webcam_height_ratio: float = 0.33
-    pip_size_ratio: float = 0.25
-    pip_corner_radius: int = 20
-    irl_zoom_factor: float = 1.2
-    irl_crop_ratio: float = 0.12
-    upload_to_youtube: bool = False
-    add_hashtags: bool = True
-    shorts_category_id: str = "22"
-
-    def __post_init__(self):
-        # Normalizacje nazw i aliasy dla wstecznej kompatybilności
-        if not self.template:
-            self.template = "gaming"
-
-        self.face_regions = list(self.face_regions)
-
-        # Mapowanie aliasów: speedup -> speedup_factor, subtitles -> add_subtitles, count -> num_shorts
-        try:
-            # Jeśli YAML podał "speedup", zsynchronizuj z speedup_factor
-            if "speedup" in self.__dict__:
-                self.speedup_factor = float(self.speedup)
-        except Exception:
-            self.speedup_factor = 1.0
-
-        try:
-            if "speedup_factor" in self.__dict__:
-                self.speedup = float(self.speedup_factor)
-        except Exception:
-            self.speedup = 1.0
-
-        try:
-            if "subtitles" in self.__dict__:
-                self.add_subtitles = bool(self.subtitles)
-        except Exception:
-            self.add_subtitles = False
-
-        try:
-            if "add_subtitles" in self.__dict__:
-                self.subtitles = bool(self.add_subtitles)
-        except Exception:
-            self.subtitles = False
-
-        try:
-            # Num shorts (alias count)
-            provided_num = self.__dict__.get("num_shorts", None)
-            provided_count = self.__dict__.get("count", None)
-            if provided_num is not None:
-                self.num_shorts = int(provided_num)
-            elif provided_count is not None:
-                self.num_shorts = int(provided_count)
-            # Clamp
-            self.num_shorts = max(1, min(50, self.num_shorts))
-            self.count = self.num_shorts
-        except Exception:
-            self.num_shorts = 5
-            self.count = 5
-
-        # Bezpieczne limity długości
-        try:
-            self.min_duration = max(5, int(self.min_duration))
-            if self.min_duration < 8:
-                self.min_duration = 8
-            self.max_duration = max(self.min_duration + 1, int(self.max_duration))
-        except Exception:
-            self.min_duration = 8
-            self.max_duration = 58
-
-        # Skale i rozmiary z klamrowaniem
-        try:
-            self.gameplay_scale = float(self.gameplay_scale)
-        except Exception:
-            self.gameplay_scale = 0.88
-
-        try:
-            self.universal_scale = float(self.universal_scale)
-        except Exception:
-            self.universal_scale = 0.90
-
-        try:
-            self.face_resize_width = max(50, int(self.face_resize_width))
-        except Exception:
-            self.face_resize_width = 250
-
-
-@dataclass
-class CopyrightConfig:
-    enabled: bool = False
-    provider: str = "demucs"  # audd | demucs
-    audd_api_key: str = ""
-    keep_sfx: bool = True
-    enable_protection: bool = True
-    music_detection_threshold: float = 0.7
-    royalty_free_folder: str = "assets/royalty_free"
 
 
 @dataclass
@@ -399,7 +290,6 @@ class Config:
     youtube: YouTubeConfig = None
     shorts: ShortsConfig = None
     uploader: UploaderConfig = None
-    copyright: CopyrightConfig = None
 
     # Mode & inputs
     mode: str = "sejm"
@@ -448,15 +338,6 @@ class Config:
             self.shorts = ShortsConfig()
         if self.uploader is None:
             self.uploader = UploaderConfig()
-        if self.copyright is None:
-            self.copyright = CopyrightConfig()
-        else:
-            try:
-                # Normalize royalty free folder path
-                if isinstance(self.copyright.royalty_free_folder, str):
-                    self.copyright.royalty_free_folder = Path(self.copyright.royalty_free_folder)
-            except Exception:
-                self.copyright.royalty_free_folder = Path("assets/royalty_free")
         if self.custom_weights is None:
             self.custom_weights = CompositeWeights(
                 chat_burst_weight=self.scoring_weights.stream_mode.chat_burst_weight,
@@ -476,21 +357,6 @@ class Config:
             self.asr.language = self.language
         else:
             self.language = self.asr.language
-
-        # Sync dynamic scoring thresholds
-        if getattr(self.scoring, 'min_score_slider', None) is not None:
-            try:
-                slider_val = float(self.scoring.min_score_slider)
-                if slider_val > 0:
-                    self.selection.min_score_threshold = slider_val
-            except Exception:
-                pass
-
-        try:
-            pct = int(getattr(self.scoring, 'dynamic_threshold_percentile', 80))
-            self.scoring.dynamic_threshold_percentile = max(1, min(99, pct))
-        except Exception:
-            self.scoring.dynamic_threshold_percentile = 80
         
         # Create directories
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -519,7 +385,6 @@ class Config:
         splitter = SmartSplitterConfig(**data.get('splitter', {}))
         shorts = ShortsConfig(**data.get('shorts', {}))
         uploader = UploaderConfig(**data.get('uploader', {}))
-        copyright_cfg = CopyrightConfig(**data.get('copyright', {}))
         
         # General settings
         general = data.get('general', {})
@@ -537,7 +402,6 @@ class Config:
             splitter=splitter,
             shorts=shorts,
             uploader=uploader,
-            copyright=copyright_cfg,
             **general
         )
     
@@ -566,7 +430,6 @@ class Config:
             'youtube': asdict(self.youtube),
             'shorts': asdict(self.shorts),
             'uploader': asdict(self.uploader),
-            'copyright': asdict(self.copyright),
             'general': {
                 'output_dir': str(self.output_dir),
                 'temp_dir': str(self.temp_dir),
@@ -601,7 +464,6 @@ class Config:
             'youtube': asdict(self.youtube),
             'shorts': asdict(self.shorts),
             'uploader': asdict(self.uploader),
-            'copyright': asdict(self.copyright),
             'output_dir': str(self.output_dir),
             'temp_dir': str(self.temp_dir),
             'keep_intermediate': self.keep_intermediate,
@@ -624,29 +486,6 @@ class Config:
             return self.scoring_weights.stream_mode
 
         return self.scoring_weights.sejm_mode
-
-    def get_effective_weights(self, chat_present: bool) -> CompositeWeights:
-        """Adjust weights for Stream mode when chat bursts are unavailable."""
-
-        base = self.get_active_weights()
-        if self.mode.lower() != "stream":
-            return base
-
-        if chat_present:
-            return CompositeWeights(
-                chat_burst_weight=0.65,
-                acoustic_weight=0.15,
-                semantic_weight=0.15,
-                prompt_boost_weight=0.05,
-            )
-
-        # Brak chat.json → dostosuj wagi zgodnie z wymaganiami użytkownika
-        return CompositeWeights(
-            chat_burst_weight=0.0,
-            acoustic_weight=0.45,
-            semantic_weight=0.50,
-            prompt_boost_weight=0.05,
-        )
     
     def update_from_gui(self, gui_values: Dict[str, Any]):
         """Update config z wartości GUI"""

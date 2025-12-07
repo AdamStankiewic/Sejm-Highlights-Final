@@ -24,17 +24,14 @@ class UploadJob:
     schedule: Optional[str] = None
     status: str = "Waiting"
     result_ids: Dict[str, str] = field(default_factory=dict)
-    copyright_status: str = "pending"
-    original_path: Path | None = None
 
 
 class UploadManager:
-    def __init__(self, protector=None):
+    def __init__(self):
         self.queue: Queue[UploadJob] = Queue()
         self.worker: threading.Thread | None = None
         self._stop_event = threading.Event()
         self.callbacks: List[Callable[[UploadJob], None]] = []
-        self.protector = protector
 
     def add_callback(self, cb: Callable[[UploadJob], None]):
         self.callbacks.append(cb)
@@ -73,14 +70,6 @@ class UploadManager:
             self.queue.task_done()
 
     def _process_job(self, job: UploadJob):
-        if job.original_path is None:
-            job.original_path = job.file_path
-        if self.protector:
-            fixed_path, status = self.protector.scan_and_fix(job.file_path.as_posix())
-            job.copyright_status = status
-            if status == "failed":
-                raise RuntimeError("Copyright scan failed; upload skipped")
-            job.file_path = Path(fixed_path)
         if job.platforms.get("youtube_long") or job.platforms.get("youtube_shorts"):
             job.result_ids["youtube"] = upload_video(job.file_path, job.title, job.description, job.schedule)
         if job.platforms.get("facebook") or job.platforms.get("instagram"):

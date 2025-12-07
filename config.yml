@@ -94,10 +94,6 @@ scoring:
   # Position diversity bonus
   position_diversity_bonus: 0.1
 
-  # Dynamic thresholding
-  dynamic_threshold_percentile: 80   # top 20%
-  min_score_slider: 0.25
-
 # === Composite Scoring Weights (Stream vs Sejm) ===
 scoring_weights:
   stream_mode:
@@ -219,27 +215,11 @@ youtube:
 # === YouTube Shorts ===
 shorts:
   enabled: true
-  generate_shorts: false
-  template: "gaming"        # gaming | universal
+  template: "gaming"
   face_regions: ["bottom_right", "bottom_left", "top_right", "top_left"]
-  speedup_factor: 1.0       # 1.0 - 1.5
+  speedup_factor: 1.0
   add_subtitles: false
-  subtitle_lang: "pl"       # pl | en
-  min_duration: 8           # sekundy
-  max_duration: 58          # sekundy
-  num_shorts: 5
-  face_resize_width: 250
-  gameplay_scale: 0.88
-  universal_scale: 0.90
-
-copyright:
-  enabled: false
-  provider: "demucs"   # "audd" lub "demucs"
-  audd_api_key: ""
-  keep_sfx: true
-  enable_protection: true
-  music_detection_threshold: 0.7
-  royalty_free_folder: "assets/royalty_free"
+  subtitle_lang: "pl"
 
 uploader:
   youtube_credentials: "credentials_youtube.json"

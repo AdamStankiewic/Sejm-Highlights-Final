@@ -38,7 +38,6 @@ class GamingTemplate(TemplateBase):
         add_subtitles: bool = False,
         subtitles: Iterable[Tuple[str, float, float]] | None = None,
         subtitle_lang: str = "pl",
-        copyright_processor=None,
     ) -> Path:
         logger.info("[GamingTemplate] Rendering segment %.2f-%.2f", start, end)
         output_path = ensure_output_path(Path(output_path))
@@ -54,7 +53,6 @@ class GamingTemplate(TemplateBase):
                 add_subtitles,
                 subtitles,
                 subtitle_lang,
-                copyright_processor,
             )
         clip = VideoFileClip(str(video_path)).subclip(start, end)
         clip = center_crop_9_16(clip, scale=0.88)
@@ -62,8 +60,6 @@ class GamingTemplate(TemplateBase):
             clip = add_subtitles(clip, subtitles)
         if speedup > 1.0:
             clip = apply_speedup(clip, speedup)
-        if copyright_processor:
-            clip = copyright_processor.clean_clip_audio(clip, video_path, start, end, output_path.stem)
         face_img, (x, y, w, h) = face_snapshot
         face_clip = ImageClip(face_img).set_duration(clip.duration)
         face_clip = face_clip.resize(height=250)
