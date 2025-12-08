@@ -127,7 +127,7 @@ class SelectionConfig:
     """Clip selection settings"""
     # Duration constraints
     min_clip_duration: float = 10.0
-    max_clip_duration: float = 180.0
+    max_clip_duration: float = 120.0
     target_total_duration: float = 900.0  # 15 min
 
     # Number of clips
@@ -135,7 +135,7 @@ class SelectionConfig:
     max_clips: int = 40
 
     # Dynamic scoring threshold (GUI slider 0.1-0.8)
-    min_score_threshold: float = 0.25
+    min_score_threshold: float = 0.38
     
     # Temporal constraints
     min_time_gap: float = 10.0  # Między klipami

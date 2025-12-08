@@ -115,7 +115,7 @@ scoring_weights:
 selection:
   # Duration constraints
   min_clip_duration: 10.0       # krótsze domyślnie dla Stream
-  max_clip_duration: 180.0     # bez zmian (3 min max)
+  max_clip_duration: 120.0     # 2 min max
   target_total_duration: 2400.0  # było 1320.0 (40 min zamiast 22)
 
   # Number of clips
@@ -123,7 +123,7 @@ selection:
   max_clips: 40
 
   # Score threshold (dynamic slider in GUI, fallback top20)
-  min_score_threshold: 0.25
+  min_score_threshold: 0.38
   
   # Temporal constraints
   min_time_gap: 10.0  # Zmniejszone z 30

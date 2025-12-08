@@ -42,13 +42,38 @@ class SelectionStage:
         print(f"🎯 Selekcja klipów z {len(segments)} segmentów...")
 
         # STEP 0: Filter by minimum score if specified (with fallback to top 20%)
-        score_threshold = max(min_score, getattr(self.config.selection, 'min_score_threshold', 0.0) or 0.0)
-        segments = self._filter_by_score_with_fallback(segments, score_threshold)
-        print(f"   Po filtrze score (>= {score_threshold:.2f} lub top20): {len(segments)} segmentów")
-        
-        # STEP 1: Filter by minimum duration
-        candidates = self._filter_by_duration(segments)
-        print(f"   Po filtrze duration: {len(candidates)} kandydatów")
+        base_threshold = max(
+            0.42,
+            min_score,
+            getattr(self.config.selection, 'min_score_threshold', 0.0) or 0.0,
+        )
+        segments = self._filter_by_score_with_fallback(segments, base_threshold)
+        print(f"   Po filtrze score (>= {base_threshold:.2f} lub top20): {len(segments)} segmentów")
+
+        # STEP 1: Filter by duration bounds (>=8s, <= configured max)
+        min_dur = max(8, int(self.config.selection.min_clip_duration))
+        max_dur = int(self.config.selection.max_clip_duration)
+        candidates = [
+            seg for seg in segments if min_dur <= seg['duration'] <= max_dur
+        ]
+        print(f"   Po filtrze duration [{min_dur}s-{max_dur}s]: {len(candidates)} kandydatów")
+
+        # Dynamic lowering if coverage is too low
+        total_candidate_duration = sum(seg.get('duration', 0) for seg in candidates)
+        if len(candidates) < 15 and total_candidate_duration < self.config.selection.target_total_duration * 0.5:
+            relaxed_threshold = 0.35
+            if relaxed_threshold < base_threshold:
+                relaxed_segments = self._filter_by_score_with_fallback(segments, relaxed_threshold)
+                relaxed_candidates = [
+                    seg for seg in relaxed_segments if min_dur <= seg['duration'] <= max_dur
+                ]
+                if len(relaxed_candidates) > len(candidates):
+                    print(
+                        f"   ⚠️ Za mało materiału ({len(candidates)} klipów, {total_candidate_duration/60:.1f} min) → obniżam próg do {relaxed_threshold:.2f}"
+                    )
+                    segments = relaxed_segments
+                    candidates = relaxed_candidates
+                    base_threshold = relaxed_threshold
         
         # STEP 2: Greedy selection + NMS
         selected = self._greedy_selection_with_nms(candidates)

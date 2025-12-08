@@ -604,6 +604,8 @@ class ThumbnailStage:
             # Save
             thumbnail_filename = "thumbnail.jpg"
             thumbnail_path = output_dir / thumbnail_filename
+            if thumbnail_path.exists():
+                thumbnail_path.unlink()
             thumbnail.save(thumbnail_path, 'JPEG', quality=95, optimize=True)
             
             print(f"💾 Miniaturka zapisana: {thumbnail_path}")
