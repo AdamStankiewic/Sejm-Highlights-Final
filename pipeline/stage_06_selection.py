@@ -40,11 +40,11 @@ class SelectionStage:
                 - total_duration: Suma czasu klipów
         """
         print(f"🎯 Selekcja klipów z {len(segments)} segmentów...")
-        
-        # STEP 0: Filter by minimum score if specified
-        if min_score > 0:
-            segments = [seg for seg in segments if seg.get('final_score', 0) >= min_score]
-            print(f"   Po filtrze score (>= {min_score}): {len(segments)} segmentów")
+
+        # STEP 0: Filter by minimum score if specified (with fallback to top 20%)
+        score_threshold = max(min_score, getattr(self.config.selection, 'min_score_threshold', 0.0) or 0.0)
+        segments = self._filter_by_score_with_fallback(segments, score_threshold)
+        print(f"   Po filtrze score (>= {score_threshold:.2f} lub top20): {len(segments)} segmentów")
         
         # STEP 1: Filter by minimum duration
         candidates = self._filter_by_duration(segments)
@@ -65,6 +65,8 @@ class SelectionStage:
         # STEP 5: Duration adjustment (trim if needed)
         final_clips = self._adjust_duration(balanced)
         print(f"   Final: {len(final_clips)} klipów")
+
+        final_clips = self._top_up_if_needed(final_clips, segments)
         
         # Calculate stats
         total_clip_duration = sum(clip['duration'] for clip in final_clips)
@@ -110,6 +112,31 @@ class SelectionStage:
         """Filter segmenty po minimalnej długości"""
         min_dur = self.config.selection.min_clip_duration
         return [seg for seg in segments if seg['duration'] >= min_dur]
+
+    def _filter_by_score_with_fallback(self, segments: List[Dict], min_score: float) -> List[Dict]:
+        """Filter by score, fallback to top 20% percentile when empty."""
+
+        if min_score <= 0:
+            return segments
+
+        filtered = [seg for seg in segments if seg.get('final_score', 0) >= min_score]
+        if filtered:
+            return filtered
+
+        scores = [seg.get('final_score', 0) for seg in segments]
+        if not scores:
+            return []
+
+        percentile = getattr(self.config.scoring, 'dynamic_threshold_percentile', 80)
+        dynamic_threshold = float(np.percentile(scores, percentile))
+        fallback = [seg for seg in segments if seg.get('final_score', 0) >= dynamic_threshold]
+        if not fallback and segments:
+            fallback = [max(segments, key=lambda s: s.get('final_score', 0))]
+
+        print(
+            f"   ⚠️ Brak klipów dla progu {min_score:.2f} → fallback top {percentile}% (>= {dynamic_threshold:.2f})"
+        )
+        return fallback
     
     def _greedy_selection_with_nms(self, candidates: List[Dict]) -> List[Dict]:
         """
@@ -236,6 +263,43 @@ class SelectionStage:
             merged.append(current)
             i += 1
         
+        # Fallback merge if coverage is too low
+        total_duration = sum(c['duration'] for c in merged)
+        target = self.config.selection.target_total_duration
+        if merged and total_duration < target * 0.7:
+            merged = self._force_merge_for_coverage(merged)
+        return merged
+
+    def _force_merge_for_coverage(self, clips: List[Dict]) -> List[Dict]:
+        """Dodatkowe łączenie sąsiadów gdy łączny czas <70% targetu."""
+        if len(clips) < 2:
+            return clips
+
+        merged: List[Dict] = []
+        idx = 0
+        while idx < len(clips):
+            current = clips[idx]
+            if idx + 1 < len(clips):
+                nxt = clips[idx + 1]
+                gap = nxt['t0'] - current['t1']
+                combined_duration = current['duration'] + gap + nxt['duration']
+                if gap <= self.config.selection.smart_merge_gap and combined_duration <= self.config.selection.max_clip_duration * 1.1:
+                    merged_clip = {
+                        'id': f"{current['id']}+{nxt['id']}",
+                        't0': current['t0'],
+                        't1': nxt['t1'],
+                        'duration': combined_duration,
+                        'final_score': (current['final_score'] + nxt['final_score']) / 2,
+                        'merged_from': [current.get('id'), nxt.get('id')],
+                        'transcript': current.get('transcript', '') + ' ' + nxt.get('transcript', ''),
+                        'features': current.get('features', {}),
+                        'subscores': current.get('subscores', {})
+                    }
+                    merged.append(merged_clip)
+                    idx += 2
+                    continue
+            merged.append(current)
+            idx += 1
         return merged
     
     def _optimize_temporal_coverage(
@@ -346,8 +410,31 @@ class SelectionStage:
         
         # SAFETY: Remove clips with invalid duration
         valid_clips = [c for c in clips if c.get('duration', 0) > 10]
-        
+
         return valid_clips
+
+    def _top_up_if_needed(self, clips: List[Dict], all_segments: List[Dict]) -> List[Dict]:
+        """Jeśli łączny czas jest poniżej targetu, dobierz dodatkowe klipy (max 15)."""
+        target = self.config.selection.target_total_duration
+        total = sum(c.get('duration', 0) for c in clips)
+        if total >= target or len(clips) >= 15:
+            return clips
+
+        remaining = [
+            seg for seg in all_segments
+            if seg not in clips and seg.get('duration', 0) >= self.config.selection.min_clip_duration
+        ]
+        remaining.sort(key=lambda x: x.get('final_score', 0), reverse=True)
+
+        for seg in remaining:
+            if len(clips) >= 15 or total >= target:
+                break
+            if self._has_overlap(seg, clips, self.config.selection.min_time_gap):
+                continue
+            clips.append(seg)
+            total += seg.get('duration', 0)
+
+        return clips
     
     def _generate_title(self, clip: Dict) -> str:
         """Generuj tytuł klipu z AI categories lub keywords"""
@@ -397,12 +484,24 @@ class SelectionStage:
                 seg for seg in shorts_candidates
                 if seg.get('final_score', 0) >= min_score
             ]
+
+            if not shorts_candidates and segments:
+                percentile = getattr(self.config.scoring, 'dynamic_threshold_percentile', 80)
+                dynamic_threshold = float(np.percentile([s.get('final_score', 0) for s in segments], percentile))
+                shorts_candidates = [
+                    seg for seg in segments
+                    if self.config.shorts.min_duration <= seg['duration'] <= self.config.shorts.max_duration
+                    and seg.get('final_score', 0) >= dynamic_threshold
+                ]
+                print(
+                    f"   ⚠️ Shorts fallback: brak kandydatów dla progu {min_score:.2f} → top {percentile}% (>= {dynamic_threshold:.2f})"
+                )
         
         # Sort by score (descending)
         shorts_candidates.sort(key=lambda x: x.get('final_score', 0), reverse=True)
         
         # Take top N
-        max_shorts = self.config.shorts.max_shorts_count
+        max_shorts = getattr(self.config.shorts, 'count', 10)
         selected_shorts = shorts_candidates[:max_shorts]
         
         # Sort chronologically
