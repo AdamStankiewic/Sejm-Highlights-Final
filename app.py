@@ -611,8 +611,8 @@ class SejmHighlightsApp(QMainWindow):
             return
 
         if self.radio_mode_stream.isChecked() and not self._min_clip_customized:
-            self.min_clip_duration.setValue(10)
-            self.log("Tryb Stream → min. długość klipu ustawiona na 10s", "INFO")
+            self.min_clip_duration.setValue(8)
+            self.log("Tryb Stream → min. długość klipu ustawiona na 8s", "INFO")
         elif self.radio_mode_sejm.isChecked() and not self._min_clip_customized:
             # Przywróć bardziej konserwatywne minimum dla Sejmu
             self.min_clip_duration.setValue(max(self.min_clip_duration.value(), 20))
@@ -712,9 +712,9 @@ class SejmHighlightsApp(QMainWindow):
         min_clip_layout.addWidget(QLabel("⏱️ Min. długość klipu (sekundy):"))
         self.min_clip_duration = QDoubleSpinBox()
         self.min_clip_duration.setDecimals(0)
-        self.min_clip_duration.setRange(10, 180)
+        self.min_clip_duration.setRange(8, 180)
         self.min_clip_duration.setSingleStep(5)
-        self.min_clip_duration.setValue(max(10, min(180, self.config.selection.min_clip_duration)))
+        self.min_clip_duration.setValue(max(8, min(180, self.config.selection.min_clip_duration)))
         self.min_clip_duration.setSuffix(" s")
         self.min_clip_duration.valueChanged.connect(lambda _: setattr(self, "_min_clip_customized", True))
         min_clip_layout.addWidget(self.min_clip_duration)

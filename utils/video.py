@@ -11,6 +11,7 @@ from typing import Iterable, Tuple
 from moviepy.editor import CompositeVideoClip, TextClip, VideoFileClip
 from moviepy.video.fx import resize
 from moviepy.video.fx.crop import crop
+from moviepy.video.fx.all import speedx as vfx_speedx
 from moviepy.audio.fx import all as afx
 
 logger = logging.getLogger(__name__)
@@ -37,13 +38,36 @@ def apply_speedup(clip: VideoFileClip, factor: float) -> VideoFileClip:
     """Przyspiesz klip wideo, zachowując możliwie naturalny głos."""
     if factor <= 1.0:
         return clip
-    sped = clip.fx(lambda c: c.speedx(factor))
-    if clip.audio:
+    try:
+        sped = clip.fx(vfx_speedx, factor)
+    except Exception as exc:  # pragma: no cover - kompatybilność ze starszym MoviePy
+        logger.warning("Video speedup fallback (bez speedx): %s", exc)
+        sped = clip
+
+    audio = sped.audio or clip.audio
+    if audio:
+        sped_audio = None
+        # Najpierw spróbuj time_stretch (lepsza jakość), potem speedx, w ostateczności brak zmiany audio
+        for fx in (getattr(afx, "time_stretch", None), getattr(afx, "speedx", None)):
+            if fx is None:
+                continue
+            try:
+                sped_audio = audio.fx(fx, factor)
+                break
+            except Exception as exc:  # pragma: no cover
+                logger.warning("Audio speedup fallback failed (%s): %s", fx.__name__, exc)
+                continue
+
+        if sped_audio is None:
+            logger.warning("Audio speedup unavailable – keeping original audio")
+            sped_audio = audio
+
         try:
-            sped_audio = clip.audio.fx(afx.time_stretch, factor)
-        except Exception:
-            sped_audio = clip.audio.fx(lambda a: a.speedx(factor))
-        sped = sped.set_audio(sped_audio)
+            sped = sped.set_audio(sped_audio)
+        except Exception as exc:  # pragma: no cover
+            logger.error("Setting sped-up audio failed, keeping original: %s", exc)
+            sped = sped.set_audio(audio)
+
     return sped
 
 

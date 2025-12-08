@@ -3,6 +3,7 @@ Stage 8: AI Thumbnail Generation
 Generuje clickbaitową miniaturkę z napisami do YouTube
 """
 
+import os
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
@@ -519,7 +520,13 @@ class ThumbnailStage:
             if old_path.exists():
                 if new_path.exists():
                     new_path.unlink()
-                old_path.rename(new_path)
+                try:
+                    os.replace(old_path, new_path)
+                except OSError:
+                    # Windows potrafi blokować rename gdy plik istnieje – usuń i spróbuj ponownie
+                    if new_path.exists():
+                        new_path.unlink()
+                    os.replace(old_path, new_path)
                 result['thumbnail_path'] = str(new_path)
                 print(f"   ✅ Miniaturka części {part_number}: {new_path.name}")
         

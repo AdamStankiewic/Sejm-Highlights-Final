@@ -41,6 +41,8 @@ class SelectionStage:
         """
         print(f"🎯 Selekcja klipów z {len(segments)} segmentów...")
 
+        all_segments = list(segments)
+
         # STEP 0: Filter by minimum score if specified (with fallback to top 20%)
         base_threshold = max(
             0.35,
@@ -59,21 +61,20 @@ class SelectionStage:
         print(f"   Po filtrze duration [{min_dur}s-{max_dur}s]: {len(candidates)} kandydatów")
 
         # Dynamic lowering if coverage is too low
-        if len(candidates) < 20:
-            relaxed_threshold = max(0.30, base_threshold - 0.05)
-            if relaxed_threshold < base_threshold:
-                relaxed_segments = self._filter_by_score_with_fallback(segments, relaxed_threshold)
-                relaxed_candidates = [
-                    seg for seg in relaxed_segments if min_dur <= seg['duration'] <= max_dur
-                ]
-                if len(relaxed_candidates) > len(candidates):
-                    print(
-                        f"   ⚠️ Za mało materiału ({len(candidates)} klipów) → obniżam próg do {relaxed_threshold:.2f}"
-                    )
-                    segments = relaxed_segments
-                    candidates = relaxed_candidates
-                    base_threshold = relaxed_threshold
-        
+        if len(candidates) < 30:
+            relaxed_threshold = max(0.30, base_threshold - 0.10)
+            relaxed_segments = self._filter_by_score_with_fallback(all_segments, relaxed_threshold)
+            relaxed_candidates = [
+                seg for seg in relaxed_segments if min_dur <= seg['duration'] <= max_dur
+            ]
+            if len(relaxed_candidates) > len(candidates):
+                print(
+                    f"   ⚠️ Za mało materiału ({len(candidates)} klipów) → obniżam próg do {relaxed_threshold:.2f}"
+                )
+                segments = relaxed_segments
+                candidates = relaxed_candidates
+                base_threshold = relaxed_threshold
+
         # STEP 2: Greedy selection + NMS
         selected = self._greedy_selection_with_nms(candidates)
         print(f"   Po greedy selection: {len(selected)} klipów")
@@ -90,7 +91,7 @@ class SelectionStage:
         final_clips = self._adjust_duration(balanced)
         print(f"   Final: {len(final_clips)} klipów")
 
-        final_clips = self._top_up_if_needed(final_clips, segments)
+        final_clips = self._top_up_if_needed(final_clips, segments, all_segments, min_dur)
 
         # Calculate stats
         total_clip_duration = sum(clip['duration'] for clip in final_clips)
@@ -441,16 +442,29 @@ class SelectionStage:
 
         return valid_clips
 
-    def _top_up_if_needed(self, clips: List[Dict], all_segments: List[Dict]) -> List[Dict]:
+    def _top_up_if_needed(
+        self,
+        clips: List[Dict],
+        scored_segments: List[Dict],
+        all_segments: List[Dict],
+        min_duration: int,
+    ) -> List[Dict]:
         """Jeśli łączny czas jest poniżej targetu, dobierz dodatkowe klipy (max 40)."""
+
         target = self.config.selection.target_total_duration
         total = sum(c.get('duration', 0) for c in clips)
+
         if (total >= target or len(clips) >= 40) and total >= target * 0.5:
             return clips
 
+        # Prefer segmenty już przefiltrowane po score, ale jeśli coverage <50% targetu, bierz pełen zbiór
+        pool = scored_segments if total >= target * 0.5 else all_segments
+        relaxed_min = max(5, int(min_duration * 0.8))
+
         remaining = [
-            seg for seg in all_segments
-            if seg not in clips and seg.get('duration', 0) >= self.config.selection.min_clip_duration
+            seg
+            for seg in pool
+            if seg not in clips and seg.get('duration', 0) >= relaxed_min
         ]
         remaining.sort(key=lambda x: x.get('final_score', 0), reverse=True)
 
