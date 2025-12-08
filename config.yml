@@ -94,20 +94,40 @@ scoring:
   # Position diversity bonus
   position_diversity_bonus: 0.1
 
+  # Dynamic thresholding
+  dynamic_threshold_percentile: 80   # top 20%
+  min_score_slider: 0.25
+
+# === Composite Scoring Weights (Stream vs Sejm) ===
+scoring_weights:
+  stream_mode:
+    chat_burst_weight: 0.65
+    acoustic_weight: 0.15
+    semantic_weight: 0.15
+    prompt_boost_weight: 0.05
+  sejm_mode:
+    chat_burst_weight: 0.05
+    acoustic_weight: 0.35
+    semantic_weight: 0.55
+    prompt_boost_weight: 0.05
+
 # === Clip Selection ===
 selection:
   # Duration constraints
-  min_clip_duration: 45.0      # było 60.0 (krótsze OK)
-  max_clip_duration: 180.0     # bez zmian (3 min max)
+  min_clip_duration: 10.0       # krótsze domyślnie dla Stream
+  max_clip_duration: 120.0     # 2 min max
   target_total_duration: 2400.0  # było 1320.0 (40 min zamiast 22)
-  
+
   # Number of clips
   min_clips: 5  # Zmniejszone z 8
-  max_clips: 25
+  max_clips: 40
+
+  # Score threshold (dynamic slider in GUI, fallback top20)
+  min_score_threshold: 0.38
   
   # Temporal constraints
-  min_time_gap: 20.0  # Zmniejszone z 30
-  smart_merge_gap: 5.0  # Gap for merging
+  min_time_gap: 10.0  # Zmniejszone z 30
+  smart_merge_gap: 10.0  # Gap for merging
   smart_merge_min_score: 0.5  # Zmniejszone z 0.6
   
   # Coverage optimization
@@ -198,33 +218,35 @@ youtube:
 # Pozostałe sekcje (audio, vad, asr, etc.) użyją domyślnych wartości
 # === YouTube Shorts ===
 shorts:
-  # Enable/disable Shorts generation
-  enabled: true  # Domyślnie wyłączone
-  
-  # Selection criteria
-  min_duration: 15.0  # Min 15s dla Shorts
-  max_duration: 60.0  # Max 60s (YouTube Shorts limit)
-  max_shorts_count: 10  # Max liczba Shorts do wygenerowania
-  
-  # Video format (9:16 vertical)
-  width: 1080
-  height: 1920
-  
-  # Timing
-  pre_roll: 0.5  # Sekund przed klipem
-  post_roll: 0.5  # Sekund po klipie
-  
-  # Subtitles (UWAGA: wyłączone przez problemy z fontconfig na Windows)
-  # Pliki SRT są generowane osobno i można je:
-  # - Dodać w YouTube Studio po uploadzie
-  # - Użyć z zewnętrznym narzędziem do napisów
-  subtitle_fontsize: 48  # Duże napisy dla mobile (gdy włączone)
-  subtitle_position: "center"  # center, top, bottom
-  
-  # Upload settings
-  upload_to_youtube: false  # Auto-upload Shorts
-  shorts_category_id: "25"  # News & Politics
-  add_hashtags: true  # Dodaj #Shorts automatycznie
+  enabled: true
+  generate_shorts: false
+  template: "gaming"        # gaming | universal
+  face_regions: ["bottom_right", "bottom_left", "top_right", "top_left"]
+  speedup_factor: 1.0       # 1.0 - 1.5
+  add_subtitles: false
+  subtitle_lang: "pl"       # pl | en
+  min_duration: 8           # sekundy
+  max_duration: 58          # sekundy
+  num_shorts: 5
+  face_resize_width: 250
+  gameplay_scale: 0.88
+  universal_scale: 0.90
+  face_detection: false
+
+copyright:
+  enabled: false
+  provider: "demucs"   # "audd" lub "demucs"
+  audd_api_key: ""
+  keep_sfx: true
+  enable_protection: true
+  music_detection_threshold: 0.7
+  royalty_free_folder: "assets/royalty_free"
+
+uploader:
+  youtube_credentials: "credentials_youtube.json"
+  meta_app_id: ""
+  meta_app_secret: ""
+  tiktok_access_token: ""
 
 # === CHANGELOG v1.2 FINAL ===
 # 
