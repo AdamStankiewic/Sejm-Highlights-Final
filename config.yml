@@ -114,7 +114,7 @@ scoring_weights:
 # === Clip Selection ===
 selection:
   # Duration constraints
-  min_clip_duration: 20.0      # krótsze domyślnie dla Stream
+  min_clip_duration: 5.0       # krótsze domyślnie dla Stream
   max_clip_duration: 180.0     # bez zmian (3 min max)
   target_total_duration: 2400.0  # było 1320.0 (40 min zamiast 22)
 

@@ -126,7 +126,7 @@ class ScoringConfig:
 class SelectionConfig:
     """Clip selection settings"""
     # Duration constraints
-    min_clip_duration: float = 90.0
+    min_clip_duration: float = 5.0
     max_clip_duration: float = 180.0
     target_total_duration: float = 900.0  # 15 min
 

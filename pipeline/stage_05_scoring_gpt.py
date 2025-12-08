@@ -53,8 +53,14 @@ class ScoringStage:
         if chat_path and Path(chat_path).exists():
             print(f"💬 Ładuję chat.json: {chat_path}")
             self.chat_data = parse_chat_json(str(chat_path))
-            self.chat_present = True
-            logger.info("Chat.json wykryty → włączono chat burst scoring (waga 0.65)")
+            if self.chat_data:
+                self.chat_present = True
+                logger.info("Chat.json wykryty → włączono chat burst scoring (waga 0.65)")
+            else:
+                self.chat_present = False
+                logger.warning(
+                    "Chat.json pusty lub bez timestampów → dostosowano wagi (acoustic=0.45, semantic=0.50)"
+                )
         else:
             if chat_path:
                 print(f"⚠️ Podano chat.json, ale plik nie istnieje: {chat_path}")
@@ -130,6 +136,28 @@ class ScoringStage:
         avg_score = np.mean([s['final_score'] for s in scored_segments])
         print(f"   Średni score: {avg_score:.3f}")
         print(f"   Top score: {scored_segments[0]['final_score']:.3f}")
+
+        if avg_score < 0.2 and self.config.selection.min_score_threshold > 0.05:
+            self.config.selection.min_score_threshold = 0.05
+            logger.info("Średni score <0.2 → obniżam minimalny próg selekcji do 0.05")
+
+        if self.config.mode.lower() == "stream" and not self.chat_present and self.config.chat_json_path:
+            try:
+                import matplotlib.pyplot as plt
+
+                scores = [s['final_score'] for s in scored_segments]
+                fig, ax = plt.subplots(figsize=(6, 4))
+                ax.hist(scores, bins=20, color="#4caf50", alpha=0.8)
+                ax.set_title("Histogram score (chat.json pusty)")
+                ax.set_xlabel("Score")
+                ax.set_ylabel("Liczba segmentów")
+                debug_path = output_dir / "debug_scores.png"
+                fig.tight_layout()
+                fig.savefig(debug_path)
+                plt.close(fig)
+                logger.info("Zapisano debug_scores.png dla pustego chat.json: %s", debug_path)
+            except Exception as exc:  # pragma: no cover - debug only
+                logger.warning("Nie udało się wygenerować histogramu score: %s", exc)
         
         print("✅ Stage 5 zakończony")
         
@@ -251,6 +279,14 @@ class ScoringStage:
                 transcript = seg.get('transcript', '')[:400]  # Max 400 chars
                 transcripts_text += f"\n[{i}] {transcript}\n"
             
+            user_prompt = self.config.prompt_text.strip()
+            prompt_suffix = ""
+            if user_prompt:
+                prompt_suffix = (
+                    f"\nPreferuj fragmenty pasujące do opisu: '{user_prompt}'. "
+                    "Score 0-1 jak funny/engaging względem promptu."
+                )
+
             prompt = f"""Oceń te fragmenty debaty sejmowej pod kątem INTERESANTOŚCI dla widza YouTube (0.0-1.0):
 
 {transcripts_text}
@@ -267,6 +303,7 @@ Kryteria NISKIEGO score (0.0-0.3):
 - Monotonne odczytywanie list, liczb
 - Podziękowania, grzeczności
 - Nudne, techniczne szczegóły
+{prompt_suffix}
 
 Odpowiedz TYLKO w formacie JSON:
 {{"scores": [0.8, 0.3, 0.9, ...]}}

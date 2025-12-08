@@ -65,6 +65,8 @@ class SelectionStage:
         # STEP 5: Duration adjustment (trim if needed)
         final_clips = self._adjust_duration(balanced)
         print(f"   Final: {len(final_clips)} klipów")
+
+        final_clips = self._top_up_if_needed(final_clips, segments)
         
         # Calculate stats
         total_clip_duration = sum(clip['duration'] for clip in final_clips)
@@ -261,6 +263,43 @@ class SelectionStage:
             merged.append(current)
             i += 1
         
+        # Fallback merge if coverage is too low
+        total_duration = sum(c['duration'] for c in merged)
+        target = self.config.selection.target_total_duration
+        if merged and total_duration < target * 0.7:
+            merged = self._force_merge_for_coverage(merged)
+        return merged
+
+    def _force_merge_for_coverage(self, clips: List[Dict]) -> List[Dict]:
+        """Dodatkowe łączenie sąsiadów gdy łączny czas <70% targetu."""
+        if len(clips) < 2:
+            return clips
+
+        merged: List[Dict] = []
+        idx = 0
+        while idx < len(clips):
+            current = clips[idx]
+            if idx + 1 < len(clips):
+                nxt = clips[idx + 1]
+                gap = nxt['t0'] - current['t1']
+                combined_duration = current['duration'] + gap + nxt['duration']
+                if gap <= self.config.selection.smart_merge_gap and combined_duration <= self.config.selection.max_clip_duration * 1.1:
+                    merged_clip = {
+                        'id': f"{current['id']}+{nxt['id']}",
+                        't0': current['t0'],
+                        't1': nxt['t1'],
+                        'duration': combined_duration,
+                        'final_score': (current['final_score'] + nxt['final_score']) / 2,
+                        'merged_from': [current.get('id'), nxt.get('id')],
+                        'transcript': current.get('transcript', '') + ' ' + nxt.get('transcript', ''),
+                        'features': current.get('features', {}),
+                        'subscores': current.get('subscores', {})
+                    }
+                    merged.append(merged_clip)
+                    idx += 2
+                    continue
+            merged.append(current)
+            idx += 1
         return merged
     
     def _optimize_temporal_coverage(
@@ -371,8 +410,31 @@ class SelectionStage:
         
         # SAFETY: Remove clips with invalid duration
         valid_clips = [c for c in clips if c.get('duration', 0) > 10]
-        
+
         return valid_clips
+
+    def _top_up_if_needed(self, clips: List[Dict], all_segments: List[Dict]) -> List[Dict]:
+        """Jeśli łączny czas jest poniżej targetu, dobierz dodatkowe klipy (max 15)."""
+        target = self.config.selection.target_total_duration
+        total = sum(c.get('duration', 0) for c in clips)
+        if total >= target or len(clips) >= 15:
+            return clips
+
+        remaining = [
+            seg for seg in all_segments
+            if seg not in clips and seg.get('duration', 0) >= self.config.selection.min_clip_duration
+        ]
+        remaining.sort(key=lambda x: x.get('final_score', 0), reverse=True)
+
+        for seg in remaining:
+            if len(clips) >= 15 or total >= target:
+                break
+            if self._has_overlap(seg, clips, self.config.selection.min_time_gap):
+                continue
+            clips.append(seg)
+            total += seg.get('duration', 0)
+
+        return clips
     
     def _generate_title(self, clip: Dict) -> str:
         """Generuj tytuł klipu z AI categories lub keywords"""

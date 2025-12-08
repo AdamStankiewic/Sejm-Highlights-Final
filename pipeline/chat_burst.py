@@ -77,7 +77,12 @@ def parse_chat_json(path: str) -> Dict[int, int]:
             continue
         counts[ts] = counts.get(ts, 0) + 1
 
-    logger.info("Parsed %d chat seconds from %s", len(counts), chat_path.name)
+    parsed_seconds = len(counts)
+    if parsed_seconds == 0:
+        logger.warning("Chat.json pusty lub zły format – chat_burst=0.0, readjust wagi")
+    else:
+        logger.info("Parsed %d chat seconds from %s", parsed_seconds, chat_path.name)
+
     return counts
 
 

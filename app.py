@@ -29,6 +29,7 @@ from PyQt6.QtGui import QFont, QTextCursor, QPixmap
 # Import pipeline modules
 from pipeline.processor import PipelineProcessor
 from pipeline.config import CompositeWeights, Config
+from pipeline.chat_burst import parse_chat_json
 from utils.copyright_protection import CopyrightProtector, CopyrightSettings
 
 if TYPE_CHECKING:  # import dla type checkera, bez twardej zależności przy runtime
@@ -552,8 +553,13 @@ class SejmHighlightsApp(QMainWindow):
             return
 
         if chat_path and Path(chat_path).exists():
-            self.chat_status_label.setText("✅ Chat bursts aktywne (chat.json załadowany)")
-            self.chat_status_label.setStyleSheet("color: #2e7d32; font-weight: bold; padding-left: 4px;")
+            parsed = parse_chat_json(chat_path)
+            if parsed:
+                self.chat_status_label.setText("✅ Chat bursts aktywne (chat.json załadowany)")
+                self.chat_status_label.setStyleSheet("color: #2e7d32; font-weight: bold; padding-left: 4px;")
+            else:
+                self.chat_status_label.setText("⚠️ Chat pusty – fallback wagi")
+                self.chat_status_label.setStyleSheet("color: #f2a600; font-weight: bold; padding-left: 4px;")
         elif chat_path:
             self.chat_status_label.setText("❌ Nie znaleziono chat.json – burst score = 0.0")
             self.chat_status_label.setStyleSheet("color: #c62828; font-weight: bold; padding-left: 4px;")
