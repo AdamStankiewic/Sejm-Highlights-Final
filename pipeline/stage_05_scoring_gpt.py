@@ -24,11 +24,8 @@ except ImportError:
     from openai import OpenAI
 
 from .config import Config
-from .chat_burst import (
-    calculate_chat_burst_score,
-    calculate_final_score,
-    parse_chat_json,
-)
+from .chat_burst import calculate_chat_burst_score, calculate_final_score, parse_chat_json
+from utils.chat_parser import load_chat_robust
 
 # Load environment variables
 load_dotenv()
@@ -52,14 +49,23 @@ class ScoringStage:
         chat_path = getattr(self.config, "chat_json_path", None)
         if chat_path and Path(chat_path).exists():
             print(f"💬 Ładuję chat.json: {chat_path}")
-            self.chat_data = parse_chat_json(str(chat_path))
-            if self.chat_data:
+            self.chat_data = load_chat_robust(str(chat_path))
+            total_msgs = sum(self.chat_data.values())
+            if total_msgs > 50:
                 self.chat_present = True
-                logger.info("Chat.json wykryty → włączono chat burst scoring (waga 0.65)")
+                logger.info(
+                    "Chat załadowany prawidłowo – %d wiadomości, włączono chat burst scoring",
+                    total_msgs,
+                )
+            elif total_msgs > 0:
+                self.chat_present = False
+                logger.warning(
+                    "Chat bardzo cichy (<50 msg) – używamy fallback wag (acoustic=0.45, semantic=0.50)"
+                )
             else:
                 self.chat_present = False
                 logger.warning(
-                    "Chat.json pusty lub bez timestampów → dostosowano wagi (acoustic=0.45, semantic=0.50)"
+                    "Nie rozpoznano formatu chat.json – używamy fallback wag (acoustic=0.45, semantic=0.50)"
                 )
         else:
             if chat_path:

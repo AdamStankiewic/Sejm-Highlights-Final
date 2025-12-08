@@ -30,6 +30,7 @@ from PyQt6.QtGui import QFont, QTextCursor, QPixmap
 from pipeline.processor import PipelineProcessor
 from pipeline.config import CompositeWeights, Config
 from pipeline.chat_burst import parse_chat_json
+from utils.chat_parser import load_chat_robust
 from utils.copyright_protection import CopyrightProtector, CopyrightSettings
 
 if TYPE_CHECKING:  # import dla type checkera, bez twardej zależności przy runtime
@@ -425,8 +426,11 @@ class SejmHighlightsApp(QMainWindow):
         self.chat_path_edit.textChanged.connect(self._refresh_chat_status)
         self.chat_browse_btn = QPushButton("📂")
         self.chat_browse_btn.clicked.connect(self.browse_chat_file)
+        self.chat_test_btn = QPushButton("🔍 Testuj format chat.json")
+        self.chat_test_btn.clicked.connect(self.test_chat_file)
         chat_layout.addWidget(self.chat_path_edit)
         chat_layout.addWidget(self.chat_browse_btn)
+        chat_layout.addWidget(self.chat_test_btn)
         chat_group.setLayout(chat_layout)
         layout.addWidget(chat_group)
 
@@ -553,13 +557,26 @@ class SejmHighlightsApp(QMainWindow):
             return
 
         if chat_path and Path(chat_path).exists():
-            parsed = parse_chat_json(chat_path)
-            if parsed:
+            parsed = load_chat_robust(chat_path)
+            total_msgs = sum(parsed.values())
+            if total_msgs > 50:
                 self.chat_status_label.setText("✅ Chat bursts aktywne (chat.json załadowany)")
                 self.chat_status_label.setStyleSheet("color: #2e7d32; font-weight: bold; padding-left: 4px;")
-            else:
-                self.chat_status_label.setText("⚠️ Chat pusty – fallback wagi")
+                self.log(
+                    f"Chat załadowany prawidłowo – {total_msgs} wiadomości, włączono chat burst scoring",
+                    "INFO",
+                )
+            elif total_msgs > 0:
+                self.chat_status_label.setText("⚠️ Chat bardzo cichy (<50 msg) – fallback wagi")
                 self.chat_status_label.setStyleSheet("color: #f2a600; font-weight: bold; padding-left: 4px;")
+                self.log("Chat bardzo cichy (<50 msg) – używamy fallback wag", "WARNING")
+            else:
+                self.chat_status_label.setText("⚠️ Nie rozpoznano formatu chat.json – fallback wagi")
+                self.chat_status_label.setStyleSheet("color: #f2a600; font-weight: bold; padding-left: 4px;")
+                self.log(
+                    "Nie rozpoznano formatu chat.json – spróbuj przekonwertować (np. chat-downloader → JSON)",
+                    "WARNING",
+                )
         elif chat_path:
             self.chat_status_label.setText("❌ Nie znaleziono chat.json – burst score = 0.0")
             self.chat_status_label.setStyleSheet("color: #c62828; font-weight: bold; padding-left: 4px;")
@@ -612,6 +629,26 @@ class SejmHighlightsApp(QMainWindow):
         if file_path:
             self.chat_path_edit.setText(file_path)
             self._refresh_chat_status()
+
+    def test_chat_file(self):
+        """Przetestuj parsowanie chat.json i pokaż wynik w popupie."""
+
+        chat_path = self.chat_path_edit.text().strip()
+        if not chat_path:
+            QMessageBox.information(self, "Chat", "Najpierw wskaż plik chat.json.")
+            return
+        data = load_chat_robust(chat_path)
+        total_msgs = sum(data.values())
+        if total_msgs > 0:
+            msg = f"Znaleziono {total_msgs} wiadomości w {len(data)} sekundach."
+            QMessageBox.information(self, "Chat", msg)
+        else:
+            QMessageBox.warning(
+                self,
+                "Chat",
+                "Nie rozpoznano formatu chat.json – rozważ konwersję innym narzędziem.",
+            )
+        self._refresh_chat_status()
     
     def create_config_tabs(self) -> QTabWidget:
         """Zakładki z konfiguracją"""

@@ -7,83 +7,24 @@ oraz obliczania burstów aktywności czatu w oknach sekundowych.
 
 from __future__ import annotations
 
-import json
 import logging
-from pathlib import Path
-from typing import Dict, Iterable
+from typing import Dict
 
+from utils.chat_parser import load_chat_robust
 from .config import CompositeWeights
 
 logger = logging.getLogger(__name__)
 
 
 def parse_chat_json(path: str) -> Dict[int, int]:
-    """Wczytaj plik chat.json i zwróć mapę {sekunda: liczba_wiadomości}.
+    """Wrapper kompatybilności – korzysta z utils.load_chat_robust."""
 
-    The function is defensive and supports multiple common export formats
-    from Twitch/YouTube chat archivers. Missing or malformed files return
-    an empty dictionary so the pipeline can gracefully fall back to 0.0 chat
-    influence.
-    """
-
-    chat_path = Path(path)
-    if not chat_path.exists():
-        logger.warning("Chat file not found: %s", chat_path)
-        return {}
-
-    try:
-        with open(chat_path, "r", encoding="utf-8") as f:
-            raw = json.load(f)
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.error("Failed to read chat file %s: %s", chat_path, exc)
-        return {}
-
-    messages: Iterable = []
-    if isinstance(raw, list):
-        messages = raw
-    elif isinstance(raw, dict):
-        if isinstance(raw.get("messages"), list):
-            messages = raw.get("messages", [])
-        elif isinstance(raw.get("comments"), list):
-            messages = raw.get("comments", [])
-        elif isinstance(raw.get("data"), list):
-            messages = raw.get("data", [])
-        elif isinstance(raw.get("chat"), list):
-            messages = raw.get("chat", [])
-
-    counts: Dict[int, int] = {}
-
-    def _extract_ts(msg: dict) -> int | None:
-        """Try multiple keys and normalize to integer seconds."""
-
-        for key in ("timestamp", "time", "offset", "offsetSeconds", "timestamp_ms"):
-            if key in msg:
-                ts_val = msg[key]
-                try:
-                    ts_float = float(ts_val)
-                except (TypeError, ValueError):
-                    continue
-
-                if ts_float > 1e12:  # probably milliseconds
-                    ts_float /= 1000.0
-                return max(0, int(ts_float))
-        return None
-
-    for msg in messages:
-        if not isinstance(msg, dict):
-            continue
-        ts = _extract_ts(msg)
-        if ts is None:
-            continue
-        counts[ts] = counts.get(ts, 0) + 1
-
-    parsed_seconds = len(counts)
-    if parsed_seconds == 0:
+    counts = load_chat_robust(path)
+    if not counts:
         logger.warning("Chat.json pusty lub zły format – chat_burst=0.0, readjust wagi")
     else:
-        logger.info("Parsed %d chat seconds from %s", parsed_seconds, chat_path.name)
-
-    return counts
+        logger.info("Parsed %d chat seconds from %s", len(counts), path)
+    return {int(k): int(v) for k, v in counts.items()}
 
 
 def calculate_chat_burst_score(
