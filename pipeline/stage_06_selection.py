@@ -61,13 +61,13 @@ class SelectionStage:
         # STEP 4: Temporal coverage optimization (DYNAMICZNE dla długich materiałów!)
         balanced = self._optimize_temporal_coverage(merged, total_duration)
         print(f"   Po balance coverage: {len(balanced)} klipów")
-        
+
         # STEP 5: Duration adjustment (trim if needed)
         final_clips = self._adjust_duration(balanced)
         print(f"   Final: {len(final_clips)} klipów")
 
         final_clips = self._top_up_if_needed(final_clips, segments)
-        
+
         # Calculate stats
         total_clip_duration = sum(clip['duration'] for clip in final_clips)
         
@@ -79,6 +79,10 @@ class SelectionStage:
             clip['clip_id'] = f"clip_{i+1:03d}"
             clip['title'] = self._generate_title(clip)
         
+        # Debug plot if not enough clips
+        if len(final_clips) < 10:
+            self._save_debug_plot(final_clips or segments, segments, output_dir)
+
         # Save
         output_file = output_dir / "selected_clips.json"
         self._save_clips(final_clips, output_file)
@@ -414,10 +418,10 @@ class SelectionStage:
         return valid_clips
 
     def _top_up_if_needed(self, clips: List[Dict], all_segments: List[Dict]) -> List[Dict]:
-        """Jeśli łączny czas jest poniżej targetu, dobierz dodatkowe klipy (max 15)."""
+        """Jeśli łączny czas jest poniżej targetu, dobierz dodatkowe klipy (max 40)."""
         target = self.config.selection.target_total_duration
         total = sum(c.get('duration', 0) for c in clips)
-        if total >= target or len(clips) >= 15:
+        if (total >= target or len(clips) >= 40) and total >= target * 0.5:
             return clips
 
         remaining = [
@@ -427,7 +431,7 @@ class SelectionStage:
         remaining.sort(key=lambda x: x.get('final_score', 0), reverse=True)
 
         for seg in remaining:
-            if len(clips) >= 15 or total >= target:
+            if len(clips) >= 40 or total >= target:
                 break
             if self._has_overlap(seg, clips, self.config.selection.min_time_gap):
                 continue
@@ -435,6 +439,41 @@ class SelectionStage:
             total += seg.get('duration', 0)
 
         return clips
+
+    def _save_debug_plot(
+        self,
+        clips: List[Dict],
+        all_segments: List[Dict],
+        output_dir: Path,
+    ) -> None:
+        """Zapisz debugowy wykres score/burst, gdy klipów jest mało."""
+
+        try:
+            import matplotlib.pyplot as plt
+
+            scores = [c.get("final_score", 0) for c in all_segments]
+            burst_scores = [
+                (c.get("subscores", {}) or {}).get("chat_burst_score", 0.0)
+                for c in all_segments
+            ]
+
+            fig, ax1 = plt.subplots(figsize=(6, 4))
+            ax1.hist(scores, bins=20, color="#3f51b5", alpha=0.7)
+            ax1.set_xlabel("final_score")
+            ax1.set_ylabel("Liczba segmentów")
+            ax1.set_title("Debug score/burst (klipy <10)")
+
+            ax2 = ax1.twinx()
+            ax2.plot(sorted(burst_scores), color="#ff9800", linewidth=1.2)
+            ax2.set_ylabel("chat_burst_score (posortowane)")
+
+            fig.tight_layout()
+            debug_path = output_dir / "debug_selection.png"
+            fig.savefig(debug_path)
+            plt.close(fig)
+            print(f"   💾 Debug plot zapisany: {debug_path}")
+        except Exception as exc:  # pragma: no cover
+            print(f"   ⚠️ Nie udało się zapisać debug plot: {exc}")
     
     def _generate_title(self, clip: Dict) -> str:
         """Generuj tytuł klipu z AI categories lub keywords"""

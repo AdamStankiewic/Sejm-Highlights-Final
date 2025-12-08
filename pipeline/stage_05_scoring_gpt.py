@@ -143,9 +143,9 @@ class ScoringStage:
         print(f"   Średni score: {avg_score:.3f}")
         print(f"   Top score: {scored_segments[0]['final_score']:.3f}")
 
-        if avg_score < 0.2 and self.config.selection.min_score_threshold > 0.05:
-            self.config.selection.min_score_threshold = 0.05
-            logger.info("Średni score <0.2 → obniżam minimalny próg selekcji do 0.05")
+        if avg_score < 0.4 and self.config.selection.min_score_threshold > 0.3:
+            self.config.selection.min_score_threshold = 0.3
+            logger.info("Średni score <0.4 → obniżam minimalny próg selekcji do 0.30")
 
         if self.config.mode.lower() == "stream" and not self.chat_present and self.config.chat_json_path:
             try:
@@ -290,8 +290,9 @@ class ScoringStage:
             if user_prompt:
                 prompt_suffix = (
                     f"\nPreferuj fragmenty pasujące do opisu: '{user_prompt}'. "
-                    "Score 0-1 jak funny/engaging względem promptu."
+                    "Score 0-1 jak funny/engaging względem promptu i dodaj boost, jeśli segment brzmi jak funny moment."
                 )
+            burst_hint = "\nJeśli segment ma wysoki chat burst (duży wzrost wiadomości na czacie), podnieś score o 0.1-0.2."
 
             prompt = f"""Oceń te fragmenty debaty sejmowej pod kątem INTERESANTOŚCI dla widza YouTube (0.0-1.0):
 
@@ -309,7 +310,7 @@ Kryteria NISKIEGO score (0.0-0.3):
 - Monotonne odczytywanie list, liczb
 - Podziękowania, grzeczności
 - Nudne, techniczne szczegóły
-{prompt_suffix}
+{prompt_suffix}{burst_hint}
 
 Odpowiedz TYLKO w formacie JSON:
 {{"scores": [0.8, 0.3, 0.9, ...]}}

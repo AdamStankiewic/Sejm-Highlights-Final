@@ -28,6 +28,7 @@ class ShortsConfig:
     gameplay_scale: float = 0.88
     universal_scale: float = 0.90
     face_resize_width: int = 250
+    face_detection: bool = False
 
     # Aliasy kompatybilności (nie inicjalizowane w konstruktorze)
     count: int = field(init=False, default=5)
@@ -50,6 +51,11 @@ class ShortsConfig:
                 self.add_subtitles = bool(getattr(self, "subtitles"))
             except Exception:
                 self.add_subtitles = False
+
+        try:
+            self.face_detection = bool(self.face_detection)
+        except Exception:
+            self.face_detection = False
 
         # Num shorts (alias count)
         provided_count = getattr(self, "count", None)

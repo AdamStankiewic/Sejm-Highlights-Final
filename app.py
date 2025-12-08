@@ -571,10 +571,10 @@ class SejmHighlightsApp(QMainWindow):
                 self.chat_status_label.setStyleSheet("color: #f2a600; font-weight: bold; padding-left: 4px;")
                 self.log("Chat bardzo cichy (<50 msg) – używamy fallback wag", "WARNING")
             else:
-                self.chat_status_label.setText("⚠️ Nie rozpoznano formatu chat.json – fallback wagi")
+                self.chat_status_label.setText("⚠️ Chat pusty – fallback wagi")
                 self.chat_status_label.setStyleSheet("color: #f2a600; font-weight: bold; padding-left: 4px;")
                 self.log(
-                    "Nie rozpoznano formatu chat.json – spróbuj przekonwertować (np. chat-downloader → JSON)",
+                    "Chat.json pusty lub nieobsługiwany – spróbuj przekonwertować (chat-downloader JSON)",
                     "WARNING",
                 )
         elif chat_path:
@@ -611,11 +611,11 @@ class SejmHighlightsApp(QMainWindow):
             return
 
         if self.radio_mode_stream.isChecked() and not self._min_clip_customized:
-            self.min_clip_duration.setValue(0.33)  # 20 sekund
-            self.log("Tryb Stream → min. długość klipu ustawiona na 20s", "INFO")
+            self.min_clip_duration.setValue(10)
+            self.log("Tryb Stream → min. długość klipu ustawiona na 10s", "INFO")
         elif self.radio_mode_sejm.isChecked() and not self._min_clip_customized:
             # Przywróć bardziej konserwatywne minimum dla Sejmu
-            self.min_clip_duration.setValue(max(self.min_clip_duration.value(), 0.75))
+            self.min_clip_duration.setValue(max(self.min_clip_duration.value(), 20))
 
     def browse_chat_file(self):
         """Wybierz plik chat.json."""
@@ -701,34 +701,34 @@ class SejmHighlightsApp(QMainWindow):
         clips_layout = QHBoxLayout()
         clips_layout.addWidget(QLabel("📊 Liczba klipów:"))
         self.num_clips = QSpinBox()
-        self.num_clips.setRange(5, 50)
-        self.num_clips.setValue(min(50, max(5, self.config.selection.max_clips)))
+        self.num_clips.setRange(5, 40)
+        self.num_clips.setValue(min(40, max(5, self.config.selection.max_clips)))
         clips_layout.addWidget(self.num_clips)
         clips_layout.addStretch()
         layout.addLayout(clips_layout)
 
-        # Min/Max clip duration
+        # Min/Max clip duration (sekundy)
         min_clip_layout = QHBoxLayout()
-        min_clip_layout.addWidget(QLabel("⏱️ Min. długość klipu (minuty):"))
+        min_clip_layout.addWidget(QLabel("⏱️ Min. długość klipu (sekundy):"))
         self.min_clip_duration = QDoubleSpinBox()
-        self.min_clip_duration.setDecimals(2)
-        self.min_clip_duration.setRange(0.33, 5.0)  # 20s - 5 min
-        self.min_clip_duration.setSingleStep(0.05)
-        self.min_clip_duration.setValue(max(0.33, min(5.0, self.config.selection.min_clip_duration / 60)))
-        self.min_clip_duration.setSuffix(" min")
+        self.min_clip_duration.setDecimals(0)
+        self.min_clip_duration.setRange(10, 180)
+        self.min_clip_duration.setSingleStep(5)
+        self.min_clip_duration.setValue(max(10, min(180, self.config.selection.min_clip_duration)))
+        self.min_clip_duration.setSuffix(" s")
         self.min_clip_duration.valueChanged.connect(lambda _: setattr(self, "_min_clip_customized", True))
         min_clip_layout.addWidget(self.min_clip_duration)
         min_clip_layout.addStretch()
         layout.addLayout(min_clip_layout)
 
         max_clip_layout = QHBoxLayout()
-        max_clip_layout.addWidget(QLabel("⏱️ Max. długość klipu (minuty):"))
+        max_clip_layout.addWidget(QLabel("⏱️ Max. długość klipu (sekundy):"))
         self.max_clip_duration = QDoubleSpinBox()
-        self.max_clip_duration.setDecimals(2)
-        self.max_clip_duration.setRange(0.5, 10.0)
-        self.max_clip_duration.setSingleStep(0.1)
-        self.max_clip_duration.setValue(max(0.5, min(10.0, self.config.selection.max_clip_duration / 60)))
-        self.max_clip_duration.setSuffix(" min")
+        self.max_clip_duration.setDecimals(0)
+        self.max_clip_duration.setRange(30, 600)
+        self.max_clip_duration.setSingleStep(10)
+        self.max_clip_duration.setValue(max(30, min(600, self.config.selection.max_clip_duration)))
+        self.max_clip_duration.setSuffix(" s")
         max_clip_layout.addWidget(self.max_clip_duration)
         max_clip_layout.addStretch()
         layout.addLayout(max_clip_layout)
@@ -1680,8 +1680,8 @@ class SejmHighlightsApp(QMainWindow):
         # Selection settings
         self.config.selection.target_total_duration = float(self.target_duration.value()) * 60.0
         self.config.selection.max_clips = int(self.num_clips.value())
-        self.config.selection.min_clip_duration = float(self.min_clip_duration.value()) * 60.0
-        self.config.selection.max_clip_duration = float(self.max_clip_duration.value()) * 60.0
+        self.config.selection.min_clip_duration = float(self.min_clip_duration.value())
+        self.config.selection.max_clip_duration = float(self.max_clip_duration.value())
         self.config.selection.min_score_threshold = float(self.score_threshold_slider.value()) / 100.0
 
         # Export settings

@@ -126,20 +126,20 @@ class ScoringConfig:
 class SelectionConfig:
     """Clip selection settings"""
     # Duration constraints
-    min_clip_duration: float = 5.0
+    min_clip_duration: float = 10.0
     max_clip_duration: float = 180.0
     target_total_duration: float = 900.0  # 15 min
 
     # Number of clips
     min_clips: int = 8
-    max_clips: int = 15
+    max_clips: int = 40
 
     # Dynamic scoring threshold (GUI slider 0.1-0.8)
     min_score_threshold: float = 0.25
     
     # Temporal constraints
-    min_time_gap: float = 30.0  # Między klipami
-    smart_merge_gap: float = 5.0  # Gap dla merge'owania
+    min_time_gap: float = 10.0  # Między klipami
+    smart_merge_gap: float = 10.0  # Gap dla merge'owania
     smart_merge_min_score: float = 0.6
     
     # Coverage optimization

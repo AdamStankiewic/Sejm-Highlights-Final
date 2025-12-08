@@ -114,20 +114,20 @@ scoring_weights:
 # === Clip Selection ===
 selection:
   # Duration constraints
-  min_clip_duration: 5.0       # krótsze domyślnie dla Stream
+  min_clip_duration: 10.0       # krótsze domyślnie dla Stream
   max_clip_duration: 180.0     # bez zmian (3 min max)
   target_total_duration: 2400.0  # było 1320.0 (40 min zamiast 22)
 
   # Number of clips
   min_clips: 5  # Zmniejszone z 8
-  max_clips: 50
+  max_clips: 40
 
   # Score threshold (dynamic slider in GUI, fallback top20)
   min_score_threshold: 0.25
   
   # Temporal constraints
-  min_time_gap: 20.0  # Zmniejszone z 30
-  smart_merge_gap: 5.0  # Gap for merging
+  min_time_gap: 10.0  # Zmniejszone z 30
+  smart_merge_gap: 10.0  # Gap for merging
   smart_merge_min_score: 0.5  # Zmniejszone z 0.6
   
   # Coverage optimization
@@ -231,6 +231,7 @@ shorts:
   face_resize_width: 250
   gameplay_scale: 0.88
   universal_scale: 0.90
+  face_detection: false
 
 copyright:
   enabled: false
