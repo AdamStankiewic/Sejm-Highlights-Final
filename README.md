@@ -88,6 +88,72 @@ cd sejm-highlights-ai
 # Opcja B: Pobierz ZIP i wypakuj
 ```
 
+#### Jak zaktualizować istniejący folder do najnowszych zmian (branch `ai-experiments`)
+
+- **Jeśli folder nie ma `.git` (pobrany jako ZIP):**
+  ```powershell
+  cd "C:\Users\<user>\Desktop\Sejm higlights CODEX"  # Twój folder
+  git init
+  git remote add origin https://github.com/<org>/<repo>.git
+  git fetch
+  git checkout ai-experiments
+  git pull origin ai-experiments
+  ```
+
+- **Jeśli to już repo, ale nie ma zdalnego `origin`:**
+  ```powershell
+  cd "C:\Users\<user>\Desktop\Sejm higlights CODEX"
+  git remote add origin https://github.com/<org>/<repo>.git
+  git pull origin ai-experiments
+  ```
+
+- **Jeśli repo ma błędny URL `origin`:**
+  ```powershell
+  cd "C:\Users\<user>\Desktop\Sejm higlights CODEX"
+  git remote set-url origin https://github.com/<org>/<repo>.git
+  git pull origin ai-experiments
+  ```
+
+- **Chcesz świeży klon wprost na branch `ai-experiments`:**
+  ```powershell
+  cd "C:\Users\<user>\Desktop"
+  git clone --branch ai-experiments https://github.com/<org>/<repo>.git "Sejm higlights CODEX"
+  ```
+
+#### Szybka kontrola, czy masz aktualne zmiany
+- Upewnij się, że pracujesz w **tym samym folderze**, w którym leży `.git` (nie w kopii z ZIP obok). W PowerShell:
+  ```powershell
+  cd "C:\Users\<user>\Desktop\Sejm higlights CODEX"
+  git status -sb          # powinno pokazać '## ai-experiments' i brak zmian
+  git branch --show-current
+  git rev-parse --short HEAD
+  ```
+- Jeśli `git status` pokazuje lokalne modyfikacje, a nie widzisz nowych elementów GUI, zrób kopię zapasową plików i przywróć czyste repo:
+  ```powershell
+  git reset --hard
+  git clean -fd
+  git pull origin ai-experiments
+  ```
+- Po aktualizacji uruchom aplikację **z tego folderu**:
+  ```powershell
+  venv\Scripts\activate
+  python app.py
+  ```
+  W GUI powinna być zakładka Stream/Sejm, Shortsy oraz Upload Manager. Brak zmian oznacza, że aplikacja startuje z innej lokalizacji – sprawdź ścieżkę w pasku PowerShell.
+
+#### Automatyczny sprawdzacz repo (Windows/Linux)
+- Jeśli wciąż nie widzisz nowych elementów GUI mimo `git pull`, uruchom skrypt diagnostyczny:
+  ```bash
+  python utils/sync_branch.py --branch ai-experiments
+  ```
+  Wyświetli aktualny HEAD lokalny i zdalny oraz poinformuje o brakującym remote. Aby wymusić czyste repo (uwaga: usuwa lokalne zmiany), użyj:
+  ```bash
+  python utils/sync_branch.py --branch ai-experiments --force-reset
+  ```
+  Po zakończeniu skryptu uruchom ponownie GUI z tego samego folderu (`python app.py`).
+
+> Po `git pull` sprawdź w GUI, czy pojawiły się zakładki Stream/Sejm, Shortsy oraz Upload Manager. Jeśli nie, upewnij się, że pracujesz na branchu `ai-experiments` i że `git status` jest czysty.
+
 ### 5. Utwórz virtual environment
 
 ```bash
@@ -149,6 +215,8 @@ python app.py
    - Kliknij **"▶️ Start Processing"**
    - Czekaj (~25-60 min)
    - Po zakończeniu kliknij **"📁 Open Output Folder"** lub **"▶️ Play Video"**
+   - W trybie **Stream** podaj `chat.json`; po poprawnym wczytaniu status zmieni się na zielony komunikat „Chat bursts aktywne (chat.json załadowany)”, a scoring użyje wagi chat_burst=0.65.
+   - Zakładka **Shorts** korzysta z konfiguracji `ShortsConfig` (`shorts/config.py`) z domyślnym zakresem długości `min_duration=8s` / `max_duration=58s`; ustaw liczbę shortsów, szablon i napisy według potrzeb.
 
 ### Konfiguracja przez GUI
 

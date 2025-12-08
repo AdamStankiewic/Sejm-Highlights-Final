@@ -6,12 +6,14 @@ Stage 5: AI Semantic Scoring with GPT-4o-mini
 """
 
 import json
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Callable
-import numpy as np
-from scipy.special import expit as sigmoid
+import logging
 import os
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
+
+import numpy as np
 from dotenv import load_dotenv
+from scipy.special import expit as sigmoid
 
 try:
     from openai import OpenAI
@@ -22,9 +24,15 @@ except ImportError:
     from openai import OpenAI
 
 from .config import Config
+from .chat_burst import (
+    calculate_chat_burst_score,
+    calculate_final_score,
+    parse_chat_json,
+)
 
 # Load environment variables
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 
 class ScoringStage:
@@ -33,7 +41,35 @@ class ScoringStage:
     def __init__(self, config: Config):
         self.config = config
         self.openai_client = None
+        self.chat_data: Dict[int, int] = {}
+        self.chat_present: bool = False
         self._load_gpt()
+        self._load_chat_data()
+
+    def _load_chat_data(self):
+        """Załaduj dane czatu jeśli dostępne."""
+
+        chat_path = getattr(self.config, "chat_json_path", None)
+        if chat_path and Path(chat_path).exists():
+            print(f"💬 Ładuję chat.json: {chat_path}")
+            self.chat_data = parse_chat_json(str(chat_path))
+            if self.chat_data:
+                self.chat_present = True
+                logger.info("Chat.json wykryty → włączono chat burst scoring (waga 0.65)")
+            else:
+                self.chat_present = False
+                logger.warning(
+                    "Chat.json pusty lub bez timestampów → dostosowano wagi (acoustic=0.45, semantic=0.50)"
+                )
+        else:
+            if chat_path:
+                print(f"⚠️ Podano chat.json, ale plik nie istnieje: {chat_path}")
+            self.chat_data = {}
+            self.chat_present = False
+            if self.config.mode.lower() == "stream":
+                logger.info(
+                    "Brak chat.json → dostosowano wagi (acoustic=0.45, semantic=0.50, prompt=0.05)"
+                )
     
     def _load_gpt(self):
         """Załaduj GPT API"""
@@ -64,6 +100,9 @@ class ScoringStage:
             Dict zawierający segments z finalnym scoring
         """
         print(f"🧠 AI Semantic Scoring dla {len(segments)} segmentów...")
+
+        if self.config.mode.lower() == "stream" and not self.chat_data:
+            print("⚠️ Tryb STREAM bez pliku chat.json → chat_burst_score = 0.0")
         
         # STAGE 1: Pre-filtering (acoustic + keyword heuristics)
         print("📊 Stage 1: Pre-filtering...")
@@ -97,6 +136,28 @@ class ScoringStage:
         avg_score = np.mean([s['final_score'] for s in scored_segments])
         print(f"   Średni score: {avg_score:.3f}")
         print(f"   Top score: {scored_segments[0]['final_score']:.3f}")
+
+        if avg_score < 0.2 and self.config.selection.min_score_threshold > 0.05:
+            self.config.selection.min_score_threshold = 0.05
+            logger.info("Średni score <0.2 → obniżam minimalny próg selekcji do 0.05")
+
+        if self.config.mode.lower() == "stream" and not self.chat_present and self.config.chat_json_path:
+            try:
+                import matplotlib.pyplot as plt
+
+                scores = [s['final_score'] for s in scored_segments]
+                fig, ax = plt.subplots(figsize=(6, 4))
+                ax.hist(scores, bins=20, color="#4caf50", alpha=0.8)
+                ax.set_title("Histogram score (chat.json pusty)")
+                ax.set_xlabel("Score")
+                ax.set_ylabel("Liczba segmentów")
+                debug_path = output_dir / "debug_scores.png"
+                fig.tight_layout()
+                fig.savefig(debug_path)
+                plt.close(fig)
+                logger.info("Zapisano debug_scores.png dla pustego chat.json: %s", debug_path)
+            except Exception as exc:  # pragma: no cover - debug only
+                logger.warning("Nie udało się wygenerować histogramu score: %s", exc)
         
         print("✅ Stage 5 zakończony")
         
@@ -149,6 +210,43 @@ class ScoringStage:
                 candidate_ids.add(seg['id'])
         
         return candidates
+
+    def _compute_prompt_similarity(self, transcript: str) -> float:
+        """Podobieństwo transkryptu segmentu do prompta użytkownika (0.0-1.0)."""
+
+        if not self.config.prompt_text.strip() or not transcript.strip():
+            return 0.0
+        if not self.openai_client:
+            return 0.0
+
+        prompt = (
+            "Oceń podobieństwo treści segmentu do opisu/promptu użytkownika. "
+            "Zwróć tylko liczbę z zakresu 0.0-1.0 (0=brak związku, 1=pełne dopasowanie)."
+        )
+
+        try:
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                temperature=0,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": prompt,
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Prompt użytkownika: {self.config.prompt_text}\n"
+                            f"Transkrypt segmentu: {transcript[:800]}"
+                        ),
+                    },
+                ],
+            )
+            score_text = response.choices[0].message.content.strip()
+            return float(max(0.0, min(1.0, float(score_text))))
+        except Exception as exc:  # pragma: no cover - API fallback
+            logger.warning("Prompt similarity fallback (%.50s)", exc)
+            return 0.0
     
     def _semantic_analysis_gpt(
         self,
@@ -181,6 +279,14 @@ class ScoringStage:
                 transcript = seg.get('transcript', '')[:400]  # Max 400 chars
                 transcripts_text += f"\n[{i}] {transcript}\n"
             
+            user_prompt = self.config.prompt_text.strip()
+            prompt_suffix = ""
+            if user_prompt:
+                prompt_suffix = (
+                    f"\nPreferuj fragmenty pasujące do opisu: '{user_prompt}'. "
+                    "Score 0-1 jak funny/engaging względem promptu."
+                )
+
             prompt = f"""Oceń te fragmenty debaty sejmowej pod kątem INTERESANTOŚCI dla widza YouTube (0.0-1.0):
 
 {transcripts_text}
@@ -197,6 +303,7 @@ Kryteria NISKIEGO score (0.0-0.3):
 - Monotonne odczytywanie list, liczb
 - Podziękowania, grzeczności
 - Nudne, techniczne szczegóły
+{prompt_suffix}
 
 Odpowiedz TYLKO w formacie JSON:
 {{"scores": [0.8, 0.3, 0.9, ...]}}
@@ -254,51 +361,69 @@ Tablica ma {len(batch)} elementów - po jednym score dla każdego [N]."""
         
         # Create lookup for AI evaluated segments
         ai_scores = {seg['id']: seg for seg in ai_evaluated}
-        
+
         scored = []
-        
+        weights = self.config.get_effective_weights(self.chat_present)
+
         for seg in all_segments:
             seg_id = seg['id']
             features = seg.get('features', {})
-            
-            # Base scores
-            acoustic_score = seg.get('pre_score', 0) * 0.6
+
+            # Base scores (0-1 range)
+            acoustic_score = float(np.clip(seg.get('pre_score', 0) * 0.6, 0, 1))
             keyword_score = min(features.get('keyword_score', 0) / 10, 1.0)
             speaker_change = features.get('speaker_change_prob', 0.5)
-            
+            chat_burst_score = calculate_chat_burst_score(
+                segment_start=seg.get('t0', 0.0),
+                segment_end=seg.get('t1', seg.get('t0', 0.0)),
+                chat_data=self.chat_data,
+            )
+
             if seg_id in ai_scores:
-                # Full formula z GPT
+                # Full formula z GPT + prompt boost
                 semantic_score = ai_scores[seg_id].get('semantic_score', 0)
-                
-                final_score = (
-                    self.config.scoring.weight_acoustic * acoustic_score +
-                    self.config.scoring.weight_keyword * keyword_score +
-                    self.config.scoring.weight_semantic * semantic_score +
-                    self.config.scoring.weight_speaker_change * speaker_change
+                prompt_similarity_score = self._compute_prompt_similarity(seg.get('transcript', ''))
+
+                final_score = calculate_final_score(
+                    chat_burst_score=chat_burst_score,
+                    acoustic_score=acoustic_score,
+                    semantic_score=semantic_score,
+                    prompt_similarity_score=prompt_similarity_score,
+                    weights=weights,
                 )
-                
+
                 seg['semantic_score'] = semantic_score
-                
+                seg['prompt_similarity_score'] = prompt_similarity_score
+
             else:
                 # Only heuristics (penalty)
-                final_score = (acoustic_score + keyword_score) / 2 * 0.6
+                final_score = calculate_final_score(
+                    chat_burst_score=chat_burst_score,
+                    acoustic_score=(acoustic_score + keyword_score) / 2,
+                    semantic_score=0.0,
+                    prompt_similarity_score=0.0,
+                    weights=weights,
+                )
                 seg['semantic_score'] = 0.0
+                seg['prompt_similarity_score'] = 0.0
             
             # Position diversity bonus
             position = features.get('position_in_video', 0.5)
             position_bonus = 1.0 + self.config.scoring.position_diversity_bonus * (1 - abs(position - 0.5))
-            
+
             final_score *= position_bonus
-            
+
             # Clamp to [0, 1]
             final_score = float(np.clip(final_score, 0, 1))
-            
+
             seg['final_score'] = final_score
             seg['subscores'] = {
                 'acoustic': float(acoustic_score),
                 'keyword': float(keyword_score),
                 'semantic': seg['semantic_score'],
-                'speaker_change': float(speaker_change)
+                'speaker_change': float(speaker_change),
+                'chat_burst': float(chat_burst_score),
+                'prompt_similarity': float(seg.get('prompt_similarity_score', 0.0)),
             }
             
             scored.append(seg)
