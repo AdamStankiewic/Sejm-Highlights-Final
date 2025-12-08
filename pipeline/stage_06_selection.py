@@ -43,7 +43,7 @@ class SelectionStage:
 
         # STEP 0: Filter by minimum score if specified (with fallback to top 20%)
         base_threshold = max(
-            0.42,
+            0.35,
             min_score,
             getattr(self.config.selection, 'min_score_threshold', 0.0) or 0.0,
         )
@@ -59,9 +59,8 @@ class SelectionStage:
         print(f"   Po filtrze duration [{min_dur}s-{max_dur}s]: {len(candidates)} kandydatów")
 
         # Dynamic lowering if coverage is too low
-        total_candidate_duration = sum(seg.get('duration', 0) for seg in candidates)
-        if len(candidates) < 15 and total_candidate_duration < self.config.selection.target_total_duration * 0.5:
-            relaxed_threshold = 0.35
+        if len(candidates) < 20:
+            relaxed_threshold = max(0.30, base_threshold - 0.05)
             if relaxed_threshold < base_threshold:
                 relaxed_segments = self._filter_by_score_with_fallback(segments, relaxed_threshold)
                 relaxed_candidates = [
@@ -69,7 +68,7 @@ class SelectionStage:
                 ]
                 if len(relaxed_candidates) > len(candidates):
                     print(
-                        f"   ⚠️ Za mało materiału ({len(candidates)} klipów, {total_candidate_duration/60:.1f} min) → obniżam próg do {relaxed_threshold:.2f}"
+                        f"   ⚠️ Za mało materiału ({len(candidates)} klipów) → obniżam próg do {relaxed_threshold:.2f}"
                     )
                     segments = relaxed_segments
                     candidates = relaxed_candidates

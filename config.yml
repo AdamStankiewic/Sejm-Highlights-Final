@@ -114,7 +114,7 @@ scoring_weights:
 # === Clip Selection ===
 selection:
   # Duration constraints
-  min_clip_duration: 10.0       # krótsze domyślnie dla Stream
+  min_clip_duration: 8.0        # krótsze domyślnie dla Stream
   max_clip_duration: 120.0     # 2 min max
   target_total_duration: 2400.0  # było 1320.0 (40 min zamiast 22)
 
@@ -123,7 +123,7 @@ selection:
   max_clips: 40
 
   # Score threshold (dynamic slider in GUI, fallback top20)
-  min_score_threshold: 0.38
+  min_score_threshold: 0.35
   
   # Temporal constraints
   min_time_gap: 10.0  # Zmniejszone z 30
@@ -232,6 +232,12 @@ shorts:
   gameplay_scale: 0.88
   universal_scale: 0.90
   face_detection: false
+  upload_to_youtube: false
+  add_hashtags: false
+  shorts_category_id: 24
+  webcam_detection_confidence: 0.5
+  pre_roll: 0.0
+  post_roll: 0.0
 
 copyright:
   enabled: false

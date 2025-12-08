@@ -29,6 +29,20 @@ class ShortsConfig:
     universal_scale: float = 0.90
     face_resize_width: int = 250
     face_detection: bool = False
+    upload_to_youtube: bool = False
+    add_hashtags: bool = False
+    shorts_category_id: int = 24
+    webcam_detection_confidence: float = 0.5
+    pre_roll: float = 0.0
+    post_roll: float = 0.0
+    width: int = 1080
+    height: int = 1920
+    title_height: int = 220
+    webcam_height_ratio: float = 0.33
+    pip_size_ratio: float = 0.25
+    pip_corner_radius: int = 20
+    irl_zoom_factor: float = 1.2
+    irl_crop_ratio: float = 0.12
 
     # Aliasy kompatybilności (nie inicjalizowane w konstruktorze)
     count: int = field(init=False, default=5)
@@ -91,6 +105,34 @@ class ShortsConfig:
             self.universal_scale = float(self.universal_scale)
         except Exception:
             self.universal_scale = 0.90
+
+        # Podstawowe parametry renderu / bezpieczeństwo typów
+        for attr, default, cast in [
+            ("upload_to_youtube", False, bool),
+            ("add_hashtags", False, bool),
+            ("webcam_detection_confidence", 0.5, float),
+            ("pre_roll", 0.0, float),
+            ("post_roll", 0.0, float),
+            ("width", 1080, int),
+            ("height", 1920, int),
+            ("title_height", 220, int),
+            ("webcam_height_ratio", 0.33, float),
+            ("pip_size_ratio", 0.25, float),
+            ("pip_corner_radius", 20, int),
+            ("irl_zoom_factor", 1.2, float),
+            ("irl_crop_ratio", 0.12, float),
+            ("shorts_category_id", 24, int),
+        ]:
+            try:
+                value = getattr(self, attr)
+                setattr(self, attr, cast(value))
+            except Exception:
+                setattr(self, attr, default)
+
+        # Granice pewnych parametrów
+        self.webcam_detection_confidence = max(0.0, min(1.0, self.webcam_detection_confidence))
+        self.width = max(320, self.width)
+        self.height = max(320, self.height)
 
         # Regiony twarzy – fallback na domyślne, gdy lista pusta/None
         if not self.face_regions:
