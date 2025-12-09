@@ -42,18 +42,24 @@ class SelectionStage:
         print(f"🎯 Selekcja klipów z {len(segments)} segmentów...")
 
         all_segments = list(segments)
+        # Pre-merge bardzo krótkie bursty, aby nie odpaść na filtrze długości
+        all_segments = self._merge_short_bursts(all_segments)
 
         # STEP 0: Filter by minimum score if specified (with fallback to top 20%)
         base_threshold = max(
-            0.35,
             min_score,
-            getattr(self.config.selection, 'min_score_threshold', 0.0) or 0.0,
+            getattr(self.config.selection, 'min_score_threshold', 0.35) or 0.35,
         )
         segments = self._filter_by_score_with_fallback(segments, base_threshold)
         print(f"   Po filtrze score (>= {base_threshold:.2f} lub top20): {len(segments)} segmentów")
 
         # STEP 1: Filter by duration bounds (>=8s, <= configured max)
-        min_dur = max(8, int(self.config.selection.min_clip_duration))
+        min_dur = 8
+        if getattr(self.config, "mode", "stream") == "stream":
+            min_dur = 8
+        else:
+            min_dur = max(min_dur, int(self.config.selection.min_clip_duration))
+        min_dur = max(min_dur, 8)
         max_dur = int(self.config.selection.max_clip_duration)
         candidates = [
             seg for seg in segments if min_dur <= seg['duration'] <= max_dur
@@ -61,8 +67,8 @@ class SelectionStage:
         print(f"   Po filtrze duration [{min_dur}s-{max_dur}s]: {len(candidates)} kandydatów")
 
         # Dynamic lowering if coverage is too low
-        if len(candidates) < 30:
-            relaxed_threshold = max(0.30, base_threshold - 0.10)
+        if len(candidates) < 30 or sum(c['duration'] for c in candidates) < self.config.selection.target_total_duration * 0.5:
+            relaxed_threshold = max(0.25, base_threshold - 0.10)
             relaxed_segments = self._filter_by_score_with_fallback(all_segments, relaxed_threshold)
             relaxed_candidates = [
                 seg for seg in relaxed_segments if min_dur <= seg['duration'] <= max_dur
@@ -141,6 +147,64 @@ class SelectionStage:
         """Filter segmenty po minimalnej długości"""
         min_dur = self.config.selection.min_clip_duration
         return [seg for seg in segments if seg['duration'] >= min_dur]
+
+    def _merge_short_bursts(self, segments: List[Dict]) -> List[Dict]:
+        """
+        Połącz bardzo krótkie bursty (<8s) z sąsiadami, żeby nie odpaść na filtrze długości.
+        Prosty greedy w czasie, łączy gdy gap <= smart_merge_gap i średni score pozostaje wiarygodny.
+        """
+        if not segments:
+            return []
+
+        sorted_segments = sorted(segments, key=lambda s: s['t0'])
+        merged: List[Dict] = []
+        idx = 0
+        min_target = 8
+        gap_limit = getattr(self.config.selection, 'smart_merge_gap', 10.0)
+
+        while idx < len(sorted_segments):
+            current = sorted_segments[idx]
+            if current.get('duration', 0) >= min_target:
+                merged.append(current)
+                idx += 1
+                continue
+
+            # próbuj dołączyć kolejne segmenty aż osiągniesz min_target lub brak sąsiada
+            start = current['t0']
+            end = current['t1']
+            collected = [current]
+            j = idx + 1
+            while j < len(sorted_segments):
+                nxt = sorted_segments[j]
+                gap = nxt['t0'] - end
+                if gap > gap_limit:
+                    break
+                end = nxt['t1']
+                collected.append(nxt)
+                if end - start >= min_target:
+                    break
+                j += 1
+
+            new_duration = end - start
+            if new_duration >= min_target:
+                merged_clip = {
+                    'id': '+'.join(seg['id'] for seg in collected),
+                    't0': start,
+                    't1': end,
+                    'duration': new_duration,
+                    'final_score': float(np.mean([seg.get('final_score', 0) for seg in collected])),
+                    'merged_from': [seg['id'] for seg in collected],
+                    'transcript': ' '.join(seg.get('transcript', '') for seg in collected),
+                    'features': collected[0].get('features', {}),
+                    'subscores': collected[0].get('subscores', {}),
+                }
+                merged.append(merged_clip)
+                idx = j + 1
+            else:
+                merged.append(current)
+                idx += 1
+
+        return merged
 
     def _filter_by_score_with_fallback(self, segments: List[Dict], min_score: float) -> List[Dict]:
         """Filter by score, fallback to top 20% percentile when empty."""
@@ -459,7 +523,7 @@ class SelectionStage:
 
         # Prefer segmenty już przefiltrowane po score, ale jeśli coverage <50% targetu, bierz pełen zbiór
         pool = scored_segments if total >= target * 0.5 else all_segments
-        relaxed_min = max(5, int(min_duration * 0.8))
+        relaxed_min = max(4, int(min_duration * 0.6))
 
         remaining = [
             seg

@@ -1680,7 +1680,8 @@ class SejmHighlightsApp(QMainWindow):
         # Selection settings
         self.config.selection.target_total_duration = float(self.target_duration.value()) * 60.0
         self.config.selection.max_clips = int(self.num_clips.value())
-        self.config.selection.min_clip_duration = float(self.min_clip_duration.value())
+        # Wymuszamy minimalnie 8s, niezależnie od wcześniejszych ustawień
+        self.config.selection.min_clip_duration = max(8.0, float(self.min_clip_duration.value()))
         self.config.selection.max_clip_duration = float(self.max_clip_duration.value())
         self.config.selection.min_score_threshold = float(self.score_threshold_slider.value()) / 100.0
 

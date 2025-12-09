@@ -61,7 +61,10 @@ class GamingTemplate(TemplateBase):
         if add_subtitles and subtitles:
             clip = add_subtitles(clip, subtitles)
         if speedup > 1.0:
-            clip = apply_speedup(clip, speedup)
+            try:
+                clip = apply_speedup(clip, speedup)
+            except Exception as exc:  # pragma: no cover - defensywnie
+                logger.error("Speedup failed, keeping original speed: %s", exc)
         if copyright_processor:
             clip = copyright_processor.clean_clip_audio(clip, video_path, start, end, output_path.stem)
         face_img, (x, y, w, h) = face_snapshot

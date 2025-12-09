@@ -38,37 +38,38 @@ def apply_speedup(clip: VideoFileClip, factor: float) -> VideoFileClip:
     """Przyspiesz klip wideo, zachowując możliwie naturalny głos."""
     if factor <= 1.0:
         return clip
+
     try:
         sped = clip.fx(vfx_speedx, factor)
-    except Exception as exc:  # pragma: no cover - kompatybilność ze starszym MoviePy
-        logger.warning("Video speedup fallback (bez speedx): %s", exc)
-        sped = clip
+        audio = sped.audio or clip.audio
 
-    audio = sped.audio or clip.audio
-    if audio:
-        sped_audio = None
-        # Najpierw spróbuj time_stretch (lepsza jakość), potem speedx, w ostateczności brak zmiany audio
-        for fx in (getattr(afx, "time_stretch", None), getattr(afx, "speedx", None)):
-            if fx is None:
-                continue
+        if audio:
+            sped_audio = None
+            # Najpierw spróbuj time_stretch (lepsza jakość), potem speedx, w ostateczności brak zmiany audio
+            for fx in (getattr(afx, "time_stretch", None), getattr(afx, "speedx", None)):
+                if fx is None:
+                    continue
+                try:
+                    sped_audio = audio.fx(fx, factor)
+                    break
+                except Exception as exc:  # pragma: no cover
+                    logger.warning("Audio speedup fallback failed (%s): %s", fx.__name__, exc)
+                    continue
+
+            if sped_audio is None:
+                logger.warning("Audio speedup unavailable – keeping original audio")
+                sped_audio = audio
+
             try:
-                sped_audio = audio.fx(fx, factor)
-                break
+                sped = sped.set_audio(sped_audio)
             except Exception as exc:  # pragma: no cover
-                logger.warning("Audio speedup fallback failed (%s): %s", fx.__name__, exc)
-                continue
+                logger.error("Setting sped-up audio failed, keeping original: %s", exc)
+                sped = sped.set_audio(audio)
 
-        if sped_audio is None:
-            logger.warning("Audio speedup unavailable – keeping original audio")
-            sped_audio = audio
-
-        try:
-            sped = sped.set_audio(sped_audio)
-        except Exception as exc:  # pragma: no cover
-            logger.error("Setting sped-up audio failed, keeping original: %s", exc)
-            sped = sped.set_audio(audio)
-
-    return sped
+        return sped
+    except Exception as exc:  # pragma: no cover - starsza MoviePy bez speedx
+        logger.error("Speedup failed (keeping original clip): %s", exc)
+        return clip
 
 
 def add_subtitles(
