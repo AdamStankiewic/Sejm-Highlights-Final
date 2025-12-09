@@ -102,12 +102,10 @@ scoring_weights:
     chat_burst_weight: 0.65
     acoustic_weight: 0.15
     semantic_weight: 0.15
-    prompt_boost_weight: 0.05
   sejm_mode:
     chat_burst_weight: 0.05
     acoustic_weight: 0.35
     semantic_weight: 0.55
-    prompt_boost_weight: 0.05
 
 # === Clip Selection ===
 selection:

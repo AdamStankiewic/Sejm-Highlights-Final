@@ -157,7 +157,6 @@ class CompositeWeights:
     chat_burst_weight: float = 0.65
     acoustic_weight: float = 0.15
     semantic_weight: float = 0.15
-    prompt_boost_weight: float = 0.05
 
 
 @dataclass
@@ -170,7 +169,6 @@ class ModeWeights:
             chat_burst_weight=0.05,
             acoustic_weight=0.35,
             semantic_weight=0.55,
-            prompt_boost_weight=0.05,
         )
     )
 
@@ -346,7 +344,6 @@ class Config:
                 chat_burst_weight=self.scoring_weights.stream_mode.chat_burst_weight,
                 acoustic_weight=self.scoring_weights.stream_mode.acoustic_weight,
                 semantic_weight=self.scoring_weights.stream_mode.semantic_weight,
-                prompt_boost_weight=self.scoring_weights.stream_mode.prompt_boost_weight,
             )
         
         # Ensure paths are Path objects
@@ -517,9 +514,7 @@ class Config:
             return base
 
         # Brak chat.json → wyzeruj wagę czatu i proporcjonalnie przeskaluj pozostałe
-        remaining_sum = (
-            base.acoustic_weight + base.semantic_weight + base.prompt_boost_weight
-        )
+        remaining_sum = base.acoustic_weight + base.semantic_weight
 
         if remaining_sum > 0:
             scale = 1.0 / remaining_sum
@@ -527,16 +522,14 @@ class Config:
                 chat_burst_weight=0.0,
                 acoustic_weight=base.acoustic_weight * scale,
                 semantic_weight=base.semantic_weight * scale,
-                prompt_boost_weight=base.prompt_boost_weight * scale,
             )
 
         # Wszystkie wagi poza czatem są zerowe – rozłóż równomiernie, by zachować spójność
-        fallback_weight = 1.0 / 3.0
+        fallback_weight = 0.5
         return CompositeWeights(
             chat_burst_weight=0.0,
             acoustic_weight=fallback_weight,
             semantic_weight=fallback_weight,
-            prompt_boost_weight=fallback_weight,
         )
     
     def update_from_gui(self, gui_values: Dict[str, Any]):
