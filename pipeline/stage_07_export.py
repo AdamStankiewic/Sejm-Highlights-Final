@@ -122,6 +122,15 @@ class ExportStage:
         """
         part_suffix = f"_part{part_number}" if part_number else ""
         print(f"🎬 Video export{f' (część {part_number})' if part_number else ''}: {len(clips)} klipów...")
+
+        if not clips:
+            warning = "Brak klipów do eksportu – pomiń ffmpeg concat."
+            print(f"⚠️ {warning}")
+            return {
+                'output_file': None,
+                'clip_files': [],
+                'warnings': [warning],
+            }
         
         input_path = Path(input_file)
         
