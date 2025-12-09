@@ -8,7 +8,7 @@ from typing import Iterable, Tuple
 import cv2
 from moviepy.editor import ImageClip, VideoFileClip, CompositeVideoClip
 
-from utils.video import center_crop_9_16, apply_speedup, add_subtitles, ensure_output_path
+from utils.video import center_crop_9_16, apply_speedup, add_subtitles, ensure_output_path, load_subclip
 from .base import TemplateBase
 from .universal import UniversalTemplate
 
@@ -39,7 +39,7 @@ class GamingTemplate(TemplateBase):
         subtitles: Iterable[Tuple[str, float, float]] | None = None,
         subtitle_lang: str = "pl",
         copyright_processor=None,
-    ) -> Path:
+    ) -> Path | None:
         logger.info("[GamingTemplate] Rendering segment %.2f-%.2f", start, end)
         output_path = ensure_output_path(Path(output_path))
         face_snapshot = self._detect_face(video_path, start, end)
@@ -56,7 +56,10 @@ class GamingTemplate(TemplateBase):
                 subtitle_lang,
                 copyright_processor,
             )
-        clip = VideoFileClip(str(video_path)).subclip(start, end)
+        clip = load_subclip(video_path, start, end)
+        if clip is None:
+            logger.warning("[GamingTemplate] Invalid clip — skipping segment")
+            return None
         clip = center_crop_9_16(clip, scale=0.88)
         if add_subtitles and subtitles:
             clip = add_subtitles(clip, subtitles)
