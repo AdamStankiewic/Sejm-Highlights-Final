@@ -292,7 +292,6 @@ class ScoringStage:
                     f"\nPreferuj fragmenty pasujące do opisu: '{user_prompt}'. "
                     "Score 0-1 jak funny/engaging względem promptu i dodaj boost, jeśli segment brzmi jak funny moment."
                 )
-            burst_hint = "\nJeśli segment ma wysoki chat burst (duży wzrost wiadomości na czacie), podnieś score o 0.1-0.2."
 
             prompt = f"""Oceń te fragmenty debaty sejmowej pod kątem INTERESANTOŚCI dla widza YouTube (0.0-1.0):
 
@@ -310,7 +309,7 @@ Kryteria NISKIEGO score (0.0-0.3):
 - Monotonne odczytywanie list, liczb
 - Podziękowania, grzeczności
 - Nudne, techniczne szczegóły
-{prompt_suffix}{burst_hint}
+{prompt_suffix}
 
 Odpowiedz TYLKO w formacie JSON:
 {{"scores": [0.8, 0.3, 0.9, ...]}}

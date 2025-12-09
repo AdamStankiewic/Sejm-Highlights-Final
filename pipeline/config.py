@@ -95,9 +95,7 @@ class ScoringConfig:
     
     # Score weights (final composite)
     weight_acoustic: float = 0.25
-    weight_keyword: float = 0.15
     weight_semantic: float = 0.50
-    weight_speaker_change: float = 0.10
     
     # Position diversity bonus
     position_diversity_bonus: float = 0.1
@@ -512,26 +510,33 @@ class Config:
         return self.scoring_weights.sejm_mode
 
     def get_effective_weights(self, chat_present: bool) -> CompositeWeights:
-        """Adjust weights for Stream mode when chat bursts are unavailable."""
+        """Return weights derived from YAML (or overrides), adapting only to chat availability."""
 
         base = self.get_active_weights()
-        if self.mode.lower() != "stream":
+        if self.mode.lower() != "stream" or chat_present:
             return base
 
-        if chat_present:
+        # Brak chat.json → wyzeruj wagę czatu i proporcjonalnie przeskaluj pozostałe
+        remaining_sum = (
+            base.acoustic_weight + base.semantic_weight + base.prompt_boost_weight
+        )
+
+        if remaining_sum > 0:
+            scale = 1.0 / remaining_sum
             return CompositeWeights(
-                chat_burst_weight=0.65,
-                acoustic_weight=0.15,
-                semantic_weight=0.15,
-                prompt_boost_weight=0.05,
+                chat_burst_weight=0.0,
+                acoustic_weight=base.acoustic_weight * scale,
+                semantic_weight=base.semantic_weight * scale,
+                prompt_boost_weight=base.prompt_boost_weight * scale,
             )
 
-        # Brak chat.json → dostosuj wagi zgodnie z wymaganiami użytkownika
+        # Wszystkie wagi poza czatem są zerowe – rozłóż równomiernie, by zachować spójność
+        fallback_weight = 1.0 / 3.0
         return CompositeWeights(
             chat_burst_weight=0.0,
-            acoustic_weight=0.45,
-            semantic_weight=0.50,
-            prompt_boost_weight=0.05,
+            acoustic_weight=fallback_weight,
+            semantic_weight=fallback_weight,
+            prompt_boost_weight=fallback_weight,
         )
     
     def update_from_gui(self, gui_values: Dict[str, Any]):

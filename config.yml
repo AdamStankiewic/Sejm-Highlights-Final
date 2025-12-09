@@ -85,11 +85,9 @@ scoring:
     "odczytywanie regulaminu": -3.0
   
   # Score weights (final composite) - v1.2 FINAL
-  # ZMIENIONE: Zwiększona waga GPT semantic, zmniejszona acoustic/keyword
+  # ZMIENIONE: Zwiększona waga GPT semantic, zmniejszona acoustic
   weight_acoustic: 0.10      # było 0.25 ← ZMIENIONE
-  weight_keyword: 0.10       # było 0.15 ← ZMIENIONE
   weight_semantic: 0.70      # było 0.50 ← ZMIENIONE (GŁÓWNA POPRAWA!)
-  weight_speaker_change: 0.10
   
   # Position diversity bonus
   position_diversity_bonus: 0.1
@@ -262,7 +260,6 @@ uploader:
 # ROZWIĄZANIE:
 # - weight_semantic: 0.50 → 0.70 (GPT ma teraz 70% wpływu)
 # - weight_acoustic: 0.25 → 0.10 (zmniejszona waga acoustic)
-# - weight_keyword: 0.15 → 0.10 (zmniejszona waga keyword)
 # 
 # EFEKT dla 11h materiału:
 # - Średni score: 0.968 → 0.45 (sensowne różnicowanie!)
