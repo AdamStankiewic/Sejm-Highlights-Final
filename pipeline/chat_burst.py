@@ -81,10 +81,9 @@ def calculate_final_score(
     chat_burst_score: float,
     acoustic_score: float,
     semantic_score: float,
-    prompt_similarity_score: float,
     weights: CompositeWeights,
 ) -> float:
-    """Połącz cztery składowe w finalny score 0.0-1.0.
+    """Połącz trzy składowe w finalny score 0.0-1.0.
 
     All partial scores are expected to be in 0.0-1.0 range already.
     """
@@ -93,7 +92,6 @@ def calculate_final_score(
         chat_burst_score * weights.chat_burst_weight
         + acoustic_score * weights.acoustic_weight
         + semantic_score * weights.semantic_weight
-        + prompt_similarity_score * weights.prompt_boost_weight
     )
 
     return max(0.0, min(1.0, float(final_score)))

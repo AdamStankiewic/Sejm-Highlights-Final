@@ -34,42 +34,26 @@ def center_crop_9_16(clip: VideoFileClip, scale: float = 1.0) -> VideoFileClip:
     return crop(clip, x1=0, y1=y1, width=w, height=new_h)
 
 
-def apply_speedup(clip: VideoFileClip, factor: float) -> VideoFileClip:
+def apply_speedup(clip: VideoFileClip, factor: float | None) -> VideoFileClip:
     """Przyspiesz klip wideo, zachowując możliwie naturalny głos."""
-    if factor <= 1.0:
+
+    if factor is None or factor <= 1.0:
         return clip
 
+    original_clip = clip
     try:
         sped = clip.fx(vfx_speedx, factor)
-        audio = sped.audio or clip.audio
-
-        if audio:
-            sped_audio = None
-            # Najpierw spróbuj time_stretch (lepsza jakość), potem speedx, w ostateczności brak zmiany audio
-            for fx in (getattr(afx, "time_stretch", None), getattr(afx, "speedx", None)):
-                if fx is None:
-                    continue
-                try:
-                    sped_audio = audio.fx(fx, factor)
-                    break
-                except Exception as exc:  # pragma: no cover
-                    logger.warning("Audio speedup fallback failed (%s): %s", fx.__name__, exc)
-                    continue
-
-            if sped_audio is None:
-                logger.warning("Audio speedup unavailable – keeping original audio")
-                sped_audio = audio
-
+        if sped.audio:
             try:
-                sped = sped.set_audio(sped_audio)
-            except Exception as exc:  # pragma: no cover
-                logger.error("Setting sped-up audio failed, keeping original: %s", exc)
-                sped = sped.set_audio(audio)
-
+                new_audio = sped.audio.fx(afx.speedx, factor)
+                sped = sped.set_audio(new_audio)
+            except Exception:
+                logger.exception("Audio speedup failed — using original audio")
+                sped = sped.set_audio(original_clip.audio)
         return sped
-    except Exception as exc:  # pragma: no cover - starsza MoviePy bez speedx
-        logger.error("Speedup failed (keeping original clip): %s", exc)
-        return clip
+    except Exception:
+        logger.exception("Audio/video speedup failed — using original audio/video")
+        return original_clip
 
 
 def add_subtitles(
@@ -95,7 +79,7 @@ def add_subtitles(
             txt = txt.set_position(("center", "bottom")).set_start(start).set_end(end)
             text_clips.append(txt)
         except Exception as exc:  # pragma: no cover
-            logger.error("Failed to render subtitle '%s': %s", text, exc)
+            logger.exception("Failed to render subtitle '%s': %s", text, exc)
     if not text_clips:
         return clip
     return CompositeVideoClip([clip, *text_clips]).set_duration(clip.duration)
@@ -104,3 +88,28 @@ def add_subtitles(
 def ensure_output_path(path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def load_subclip(video_path: Path, start: float, end: float) -> VideoFileClip | None:
+    """Load a subclip with basic sanity checks, returning None if unusable."""
+
+    try:
+        clip = VideoFileClip(str(video_path)).subclip(start, end)
+    except Exception:
+        logger.exception("[Shorts] Failed to load subclip %s %.2f-%.2f", video_path, start, end)
+        return None
+
+    if clip.duration is None or clip.duration <= 0:
+        logger.warning(f"[Shorts] Skipping invalid clip: duration={clip.duration}, segment {start}-{end}")
+        clip.close()
+        return None
+
+    if clip.fps is None:
+        logger.warning(f"[Shorts] Skipping clip: fps=None for segment {start}-{end}")
+        clip.close()
+        return None
+
+    if clip.audio is None:
+        logger.warning(f"[Shorts] Clip {start}-{end} has no audio – speedup disabled")
+
+    return clip
