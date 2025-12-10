@@ -112,12 +112,10 @@ class GamingTemplate(TemplateBase):
                 final = self._build_layout_gameplay_only(gameplay_clip)
 
             final = ensure_fps(final.set_duration(segment_duration))
-            output_fps = getattr(final, "fps", 30)
-            logger.debug("Clip FPS before render: %s", output_fps)
+            logger.debug("Clip FPS before render: %s", final.fps)
 
             final.write_videofile(
                 str(output_path),
-                fps=output_fps,
                 codec="libx264",
                 audio_codec="aac",
                 threads=2,
