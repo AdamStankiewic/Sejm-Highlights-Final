@@ -129,6 +129,7 @@ class GamingTemplate(TemplateBase):
 
             final.write_videofile(
                 str(output_path),
+                fps=final.fps,
                 codec="libx264",
                 audio_codec="aac",
                 threads=2,
@@ -141,13 +142,14 @@ class GamingTemplate(TemplateBase):
         except Exception:
             logger.exception("[GamingTemplate] Hard failure – falling back to color clip")
             try:
-                fallback = ensure_fps(
-                    ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=segment_duration)
-                )
+                fallback = ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=segment_duration)
+                fallback = fallback.set_fps(30)
+                fallback = ensure_fps(fallback)
                 fallback.audio = CompositeAudioClip([])
                 fallback = fallback.set_duration(segment_duration)
                 fallback.write_videofile(
                     str(output_path),
+                    fps=fallback.fps,
                     codec="libx264",
                     audio_codec="aac",
                     threads=2,

@@ -20,8 +20,12 @@ logger = logging.getLogger(__name__)
 def ensure_fps(clip: VideoFileClip, fallback: int = 30) -> VideoFileClip:
     """Force a deterministic FPS on the clip, logging the result."""
 
-    clip = clip.set_fps(clip.fps or fallback)
-    logger.debug("Clip FPS after ensure_fps: %s", clip.fps)
+    current_fps = getattr(clip, "fps", None)
+    if not isinstance(current_fps, (int, float)) or current_fps <= 0:
+        clip = clip.set_fps(fallback)
+        current_fps = fallback
+
+    logger.debug("Clip FPS after ensure_fps: %s", current_fps)
     return clip
 
 
