@@ -58,7 +58,7 @@ class GamingTemplate(TemplateBase):
         subtitles: Iterable[Tuple[str, float, float]] | None = None,
         subtitle_lang: str = "pl",
         copyright_processor=None,
-    ) -> Path:
+    ) -> Path | None:
         logger.info("[GamingTemplate] Rendering segment %.2f-%.2f", start, end)
         output_path = ensure_output_path(Path(output_path))
         segment_duration = max(0.1, end - start)
