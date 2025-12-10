@@ -71,11 +71,12 @@ class UniversalTemplate(TemplateBase):
                     clip, video_path, start, end, output_path.stem
                 )
             clip = ensure_fps(clip)
-            output_fps = getattr(clip, "fps", 30)
-            logger.debug("Clip FPS before render: %s", output_fps)
+            safe_fps = float(getattr(clip, "fps", 0) or 30.0)
+            clip = clip.set_fps(safe_fps)
+            logger.debug("Clip FPS before render: %s", safe_fps)
             clip.write_videofile(
                 str(output_path),
-                fps=output_fps,
+                fps=safe_fps,
                 codec="libx264",
                 audio_codec="aac",
                 threads=2,

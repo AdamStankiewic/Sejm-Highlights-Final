@@ -114,9 +114,15 @@ class GamingTemplate(TemplateBase):
             final = ensure_fps(final.set_duration(segment_duration))
             logger.debug("Clip FPS before render: %s", final.fps)
 
+            # MoviePy/ffmpeg in this environment requires an explicit FPS value; relying solely
+            # on clip.fps with None can propagate a None into ffmpeg and crash rendering.
             final = ensure_fps(final)
+            safe_fps = float(getattr(final, "fps", 0) or 30.0)
+            final = final.set_fps(safe_fps)
+
             final.write_videofile(
                 str(output_path),
+                fps=safe_fps,
                 codec="libx264",
                 audio_codec="aac",
                 threads=2,
