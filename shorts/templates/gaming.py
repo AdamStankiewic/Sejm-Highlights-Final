@@ -114,6 +114,7 @@ class GamingTemplate(TemplateBase):
             final = ensure_fps(final.set_duration(segment_duration))
             logger.debug("Clip FPS before render: %s", final.fps)
 
+            final = ensure_fps(final)
             final.write_videofile(
                 str(output_path),
                 codec="libx264",
