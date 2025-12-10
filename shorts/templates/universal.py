@@ -14,6 +14,7 @@ from utils.video import (
     add_subtitles,
     ensure_fps,
     ensure_output_path,
+    get_safe_fps,
     load_subclip,
 )
 from .base import TemplateBase
@@ -71,7 +72,7 @@ class UniversalTemplate(TemplateBase):
                     clip, video_path, start, end, output_path.stem
                 )
             clip = ensure_fps(clip)
-            safe_fps = float(getattr(clip, "fps", 0) or 30.0)
+            safe_fps = get_safe_fps(clip, fallback=30)
             clip = clip.set_fps(safe_fps)
             logger.debug("Clip FPS before render: %s", safe_fps)
             clip.write_videofile(
@@ -93,9 +94,10 @@ class UniversalTemplate(TemplateBase):
                         size=(1080, 1920), color=(0, 0, 0), duration=segment_duration
                     )
                 )
+                fallback = fallback.set_fps(get_safe_fps(fallback, fallback=30))
                 fallback.write_videofile(
                     str(output_path),
-                    fps=fallback.fps,
+                    fps=get_safe_fps(fallback, fallback=30),
                     codec="libx264",
                     audio_codec="aac",
                     threads=2,

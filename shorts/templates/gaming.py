@@ -16,6 +16,7 @@ from utils.video import (
     center_crop_9_16,
     ensure_fps,
     ensure_output_path,
+    get_safe_fps,
     load_subclip,
 )
 from .base import TemplateBase
@@ -114,10 +115,9 @@ class GamingTemplate(TemplateBase):
             final = ensure_fps(final.set_duration(segment_duration))
             logger.debug("Clip FPS before render: %s", final.fps)
 
-            # MoviePy/ffmpeg in this environment requires an explicit FPS value; relying solely
-            # on clip.fps with None can propagate a None into ffmpeg and crash rendering.
+            # Force a concrete FPS on the clip to prevent MoviePy/ffmpeg from seeing None.
             final = ensure_fps(final)
-            safe_fps = float(getattr(final, "fps", 0) or 30.0)
+            safe_fps = get_safe_fps(final, fallback=30)
             final = final.set_fps(safe_fps)
 
             final.write_videofile(

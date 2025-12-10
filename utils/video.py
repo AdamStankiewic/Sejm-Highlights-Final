@@ -25,8 +25,25 @@ def ensure_fps(clip: VideoFileClip, fallback: int = 30) -> VideoFileClip:
         clip = clip.set_fps(fallback)
         current_fps = fallback
 
-    logger.debug("Clip FPS after ensure_fps: %s", current_fps)
+    # Some clip types may not propagate fps even after set_fps; enforce attribute directly.
+    if not isinstance(getattr(clip, "fps", None), (int, float)) or getattr(clip, "fps", 0) <= 0:
+        try:
+            clip.fps = current_fps
+        except Exception:
+            # If attribute assignment fails, we rely on set_fps result; logging for diagnostics.
+            logger.debug("Unable to assign fps attribute directly; relying on set_fps")
+
+    logger.debug("Clip FPS after ensure_fps: %s", getattr(clip, "fps", None))
     return clip
+
+
+def get_safe_fps(clip: VideoFileClip, fallback: int = 30) -> float:
+    """Return a concrete fps value for the clip, coercing to fallback if invalid."""
+
+    current_fps = getattr(clip, "fps", None)
+    if not isinstance(current_fps, (int, float)) or current_fps <= 0:
+        return float(fallback)
+    return float(current_fps)
 
 
 def center_crop_9_16(clip: VideoFileClip, scale: float = 1.0) -> VideoFileClip:
@@ -52,6 +69,8 @@ def center_crop_9_16(clip: VideoFileClip, scale: float = 1.0) -> VideoFileClip:
     logger.debug("Clip FPS after center_crop_9_16 height crop: %s", cropped.fps)
     return cropped
 
+    if clip is None:
+        return None
 
 def apply_speedup(clip: AudioClip | None, factor: float | None) -> AudioClip | None:
     """Przyspiesz klip audio w sposób defensywny."""
