@@ -41,9 +41,9 @@ class SelectionStage:
         """
         print(f"🎯 Selekcja klipów z {len(segments)} segmentów...")
 
-        all_segments = list(segments)
         # Pre-merge bardzo krótkie bursty, aby nie odpaść na filtrze długości
-        all_segments = self._merge_short_bursts(all_segments)
+        merged_segments = self._merge_short_bursts(list(segments))
+        segments = merged_segments
 
         # STEP 0: Filter by minimum score if specified (with fallback to top 20%)
         base_threshold = max(
@@ -69,7 +69,7 @@ class SelectionStage:
         # Dynamic lowering if coverage is too low
         if len(candidates) < 30 or sum(c['duration'] for c in candidates) < self.config.selection.target_total_duration * 0.5:
             relaxed_threshold = max(0.25, base_threshold - 0.10)
-            relaxed_segments = self._filter_by_score_with_fallback(all_segments, relaxed_threshold)
+            relaxed_segments = self._filter_by_score_with_fallback(merged_segments, relaxed_threshold)
             relaxed_candidates = [
                 seg for seg in relaxed_segments if min_dur <= seg['duration'] <= max_dur
             ]
@@ -97,7 +97,7 @@ class SelectionStage:
         final_clips = self._adjust_duration(balanced)
         print(f"   Final: {len(final_clips)} klipów")
 
-        final_clips = self._top_up_if_needed(final_clips, segments, all_segments, min_dur)
+        final_clips = self._top_up_if_needed(final_clips, segments, merged_segments, min_dur)
 
         # Calculate stats
         total_clip_duration = sum(clip['duration'] for clip in final_clips)
@@ -468,41 +468,49 @@ class SelectionStage:
         """
         if not clips:
             return []
-        
+
         target = self.config.selection.target_total_duration
         tolerance = self.config.selection.duration_tolerance
-        
+
         total = sum(clip.get('duration', 0) for clip in clips)
-        
+
         if total <= target * tolerance:
             return clips  # OK, within tolerance
-        
-        # Need to trim
+
+        overshoot = total - target
+        slight_overshoot_limit = target * 0.05
+        if overshoot <= slight_overshoot_limit:
+            # Minimalny overshoot - nie tnij agresywnie
+            return clips
+
         print(f"   ⚠️ Total {total:.1f}s przekracza target {target:.1f}s, trimming...")
-        
-        # Strategy: trim longest clips first
+
+        max_trim_fraction = 0.15
+        min_duration_guard = max(6, int(self.config.selection.min_clip_duration))
+
+        # Strategy: trim longest clips first, z limitem per klip
         clips_sorted = sorted(clips, key=lambda x: x.get('duration', 0), reverse=True)
-        
+
         for clip in clips_sorted:
-            if total <= target:
+            if overshoot <= 0:
                 break
-            
-            # Trim percentage from end
+
             current_duration = clip.get('duration', 0)
-            if current_duration <= 0:
+            if current_duration <= min_duration_guard:
                 continue
-            
-            trim_amount = min(
-                current_duration * self.config.selection.trim_percentage,
-                total - target
-            )
-            
+
+            allowed_trim = current_duration * max_trim_fraction
+            max_possible_trim = current_duration - min_duration_guard
+            trim_amount = min(allowed_trim, max_possible_trim, overshoot)
+
+            if trim_amount <= 0:
+                continue
+
             clip['t1'] = clip.get('t1', 0) - trim_amount
             clip['duration'] = clip.get('t1', 0) - clip.get('t0', 0)
-            total -= trim_amount
-        
-        # SAFETY: Remove clips with invalid duration
-        valid_clips = [c for c in clips if c.get('duration', 0) > 10]
+            overshoot -= trim_amount
+
+        valid_clips = [c for c in clips if c.get('duration', 0) >= min_duration_guard]
 
         return valid_clips
 
@@ -525,10 +533,11 @@ class SelectionStage:
         pool = scored_segments if total >= target * 0.5 else all_segments
         relaxed_min = max(4, int(min_duration * 0.6))
 
+        used_ids = {c.get('id') for c in clips}
         remaining = [
             seg
             for seg in pool
-            if seg not in clips and seg.get('duration', 0) >= relaxed_min
+            if seg.get('id') not in used_ids and seg.get('duration', 0) >= relaxed_min
         ]
         remaining.sort(key=lambda x: x.get('final_score', 0), reverse=True)
 
@@ -536,6 +545,8 @@ class SelectionStage:
             if len(clips) >= 40 or total >= target:
                 break
             if self._has_overlap(seg, clips, self.config.selection.min_time_gap):
+                continue
+            if total + seg.get('duration', 0) > target * 1.15:
                 continue
             clips.append(seg)
             total += seg.get('duration', 0)
