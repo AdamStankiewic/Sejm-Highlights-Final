@@ -69,6 +69,8 @@ def center_crop_9_16(clip: VideoFileClip, scale: float = 1.0) -> VideoFileClip:
     logger.debug("Clip FPS after center_crop_9_16 height crop: %s", cropped.fps)
     return cropped
 
+    if clip is None:
+        return None
 
 def apply_speedup(clip: AudioClip | None, factor: float | None) -> AudioClip | None:
     """Przyspiesz klip audio w sposób defensywny."""
@@ -79,6 +81,7 @@ def apply_speedup(clip: AudioClip | None, factor: float | None) -> AudioClip | N
     if factor is None or factor == 1.0:
         return clip
 
+    original_clip = clip
     try:
         if hasattr(afx, "audio_speedx"):
             return clip.fx(afx.audio_speedx, factor)
