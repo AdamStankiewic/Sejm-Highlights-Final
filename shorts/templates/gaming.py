@@ -16,7 +16,7 @@ from utils.video import (
     center_crop_9_16,
     ensure_fps,
     ensure_output_path,
-    get_safe_fps,
+    force_fps,
     load_subclip,
 )
 from .base import TemplateBase
@@ -112,17 +112,15 @@ class GamingTemplate(TemplateBase):
                 logger.warning("[GamingTemplate] No face detected, using gameplay-only layout")
                 final = self._build_layout_gameplay_only(gameplay_clip)
 
-            final = ensure_fps(final.set_duration(segment_duration))
-            logger.debug("Clip FPS before render: %s", final.fps)
+            final = final.set_duration(segment_duration)
+            if gameplay_clip.audio is not None:
+                final = final.set_audio(gameplay_clip.audio)
+            final = force_fps(final, 30)
+            logger.debug("Clip FPS before render (forced): %s", getattr(final, "fps", None))
 
-            # Force a concrete FPS on the clip to prevent MoviePy/ffmpeg from seeing None.
-            final = ensure_fps(final)
-            safe_fps = get_safe_fps(final, fallback=30)
-            final = final.set_fps(safe_fps)
-
+            # MoviePy in this environment can emit fps=None; force_fps sets the attribute before render.
             final.write_videofile(
                 str(output_path),
-                fps=safe_fps,
                 codec="libx264",
                 audio_codec="aac",
                 threads=2,
@@ -135,10 +133,27 @@ class GamingTemplate(TemplateBase):
         except Exception:
             logger.exception("[GamingTemplate] Hard failure during render")
             try:
+                duration = segment_duration
+                fallback_clip = ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=duration)
+                if clip and getattr(clip, "audio", None):
+                    fallback_clip = fallback_clip.set_audio(clip.audio)
+                fallback_clip = force_fps(fallback_clip, 30)
+                fallback_clip.write_videofile(
+                    str(output_path),
+                    codec="libx264",
+                    audio_codec="aac",
+                    threads=2,
+                    verbose=False,
+                    logger=None,
+                )
+                fallback_clip.close()
+            except Exception:
+                logger.exception("[GamingTemplate] Fallback clip rendering failed")
+            try:
                 clip.close()
             except Exception:
                 pass
-            return None
+            return output_path
 
     def _detect_facecam_region(
         self, video_path: Path, start: float, end: float, samples: int = 6

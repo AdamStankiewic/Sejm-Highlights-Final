@@ -37,6 +37,19 @@ def ensure_fps(clip: VideoFileClip, fallback: int = 30) -> VideoFileClip:
     return clip
 
 
+def force_fps(clip: VideoFileClip, fps: int | float = 30) -> VideoFileClip:
+    """Apply a non-removable FPS to the clip right before rendering."""
+
+    forced = fps if isinstance(fps, (int, float)) and fps > 0 else 30
+    locked = clip.set_fps(forced)
+    try:
+        locked.fps = forced
+    except Exception:
+        logger.debug("Unable to set fps attribute directly during force_fps")
+    logger.debug("Clip FPS after force_fps: %s", getattr(locked, "fps", None))
+    return locked
+
+
 def get_safe_fps(clip: VideoFileClip, fallback: int = 30) -> float:
     """Return a concrete fps value for the clip, coercing to fallback if invalid."""
 
@@ -69,8 +82,6 @@ def center_crop_9_16(clip: VideoFileClip, scale: float = 1.0) -> VideoFileClip:
     logger.debug("Clip FPS after center_crop_9_16 height crop: %s", cropped.fps)
     return cropped
 
-    if clip is None:
-        return None
 
 def apply_speedup(clip: AudioClip | None, factor: float | None) -> AudioClip | None:
     """Przyspiesz klip audio w sposób defensywny."""
