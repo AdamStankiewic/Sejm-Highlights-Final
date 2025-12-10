@@ -92,6 +92,7 @@ def apply_speedup(clip: AudioClip | None, factor: float | None) -> AudioClip | N
     if factor is None or factor == 1.0:
         return clip
 
+    original_clip = clip
     try:
         if hasattr(afx, "audio_speedx"):
             return clip.fx(afx.audio_speedx, factor)
