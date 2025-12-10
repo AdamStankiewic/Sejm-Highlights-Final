@@ -5,7 +5,8 @@ import logging
 from pathlib import Path
 from typing import Iterable, Tuple
 
-from moviepy.editor import ColorClip, CompositeAudioClip
+from moviepy.editor import ColorClip
+from moviepy.video.fx.all import speedx as vfx_speedx
 
 from utils.video import (
     apply_speedup,
@@ -48,7 +49,6 @@ class UniversalTemplate(TemplateBase):
                         size=(1080, 1920), color=(0, 0, 0), duration=segment_duration
                     )
                 )
-                clip.audio = CompositeAudioClip([])
             clip = center_crop_9_16(clip, scale=0.9)
             clip = clip.set_duration(segment_duration)
             logger.debug("Clip FPS after center crop: %s", clip.fps)
@@ -59,7 +59,9 @@ class UniversalTemplate(TemplateBase):
                 logger.debug("Clip FPS after subtitles: %s", clip.fps)
             if speedup > 1.0 and clip.audio is not None:
                 try:
-                    clip = apply_speedup(clip, speedup)
+                    clip = ensure_fps(clip.fx(vfx_speedx, speedup))
+                    if clip.audio:
+                        clip = clip.set_audio(apply_speedup(clip.audio, speedup))
                     clip = ensure_fps(clip)
                     logger.debug("Clip FPS after speedup: %s", clip.fps)
                 except Exception as exc:  # pragma: no cover - defensywnie
@@ -69,14 +71,11 @@ class UniversalTemplate(TemplateBase):
                     clip, video_path, start, end, output_path.stem
                 )
             clip = ensure_fps(clip)
-            if clip.audio is None:
-                clip.audio = CompositeAudioClip([])
-            if clip.fps is None:
-                logger.warning("Final clip had no fps – forcing 30fps")
-                clip = clip.set_fps(30)
-            logger.debug("Clip FPS before render: %s", clip.fps)
+            output_fps = getattr(clip, "fps", 30)
+            logger.debug("Clip FPS before render: %s", output_fps)
             clip.write_videofile(
                 str(output_path),
+                fps=output_fps,
                 codec="libx264",
                 audio_codec="aac",
                 threads=2,
@@ -93,9 +92,9 @@ class UniversalTemplate(TemplateBase):
                         size=(1080, 1920), color=(0, 0, 0), duration=segment_duration
                     )
                 )
-                fallback.audio = CompositeAudioClip([])
                 fallback.write_videofile(
                     str(output_path),
+                    fps=fallback.fps,
                     codec="libx264",
                     audio_codec="aac",
                     threads=2,

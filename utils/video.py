@@ -8,11 +8,11 @@ import logging
 from pathlib import Path
 from typing import Iterable, Tuple
 
-from moviepy.editor import CompositeAudioClip, CompositeVideoClip, TextClip, VideoFileClip
+from moviepy.audio.AudioClip import AudioClip
+from moviepy.audio.fx import all as afx
+from moviepy.editor import CompositeVideoClip, TextClip, VideoFileClip
 from moviepy.video.fx import resize
 from moviepy.video.fx.crop import crop
-from moviepy.video.fx.all import speedx as vfx_speedx
-from moviepy.audio.fx import all as afx
 
 logger = logging.getLogger(__name__)
 
@@ -53,33 +53,28 @@ def center_crop_9_16(clip: VideoFileClip, scale: float = 1.0) -> VideoFileClip:
     return cropped
 
 
-def apply_speedup(clip: VideoFileClip, factor: float | None) -> VideoFileClip:
-    """Przyspiesz klip wideo, zachowując możliwie naturalny głos."""
+def apply_speedup(clip: AudioClip | None, factor: float | None) -> AudioClip | None:
+    """Przyspiesz klip audio w sposób defensywny."""
 
-    clip = ensure_fps(clip)
-    if factor is None or factor <= 1.0:
-        logger.debug("Clip FPS after skipping speedup: %s", clip.fps)
+    if clip is None:
+        return None
+
+    if factor is None or factor == 1.0:
         return clip
 
     original_clip = clip
     try:
-        sped = ensure_fps(clip.fx(vfx_speedx, factor))
-        logger.debug("Clip FPS after video speedup: %s", sped.fps)
-        if sped.audio:
-            try:
-                new_audio = sped.audio.fx(afx.speedx, factor)
-                sped = sped.set_audio(new_audio)
-            except Exception:
-                logger.exception("Audio speedup failed — using original audio")
-                sped = sped.set_audio(original_clip.audio)
-        sped = ensure_fps(sped)
-        logger.debug("Clip FPS after apply_speedup: %s", sped.fps)
-        return sped
+        if hasattr(afx, "audio_speedx"):
+            return clip.fx(afx.audio_speedx, factor)
+        if hasattr(afx, "speedx"):
+            return clip.fx(afx.speedx, factor)
+        logger.warning(
+            "Audio speedup unavailable – no audio_speedx/speedx in moviepy.afx, using original audio"
+        )
+        return clip
     except Exception:
-        logger.exception("Audio/video speedup failed — using original audio/video")
-        original_clip = ensure_fps(original_clip)
-        logger.debug("Clip FPS after speedup failure fallback: %s", original_clip.fps)
-        return original_clip
+        logger.error("Audio speedup failed — using original audio", exc_info=True)
+        return clip
 
 
 def add_subtitles(
@@ -137,7 +132,6 @@ def load_subclip(video_path: Path, start: float, end: float) -> VideoFileClip | 
 
     if clip.audio is None:
         logger.warning(f"[Shorts] Clip {start}-{end} has no audio – speedup disabled")
-        clip.audio = CompositeAudioClip([])
 
     logger.debug("Clip FPS after load_subclip validation: %s", clip.fps)
 

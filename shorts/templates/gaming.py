@@ -7,14 +7,8 @@ from pathlib import Path
 from typing import Iterable, Tuple
 
 import cv2
-from moviepy.editor import (
-    ColorClip,
-    CompositeAudioClip,
-    CompositeVideoClip,
-    ImageClip,
-    VideoClip,
-    VideoFileClip,
-)
+from moviepy.editor import ColorClip, CompositeVideoClip, VideoClip, VideoFileClip
+from moviepy.video.fx.all import speedx as vfx_speedx
 
 from utils.video import (
     add_subtitles,
@@ -75,11 +69,8 @@ class GamingTemplate(TemplateBase):
             clip = ensure_fps(
                 ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=segment_duration)
             )
-            clip.audio = CompositeAudioClip([])
 
         clip = ensure_fps(clip.set_duration(segment_duration))
-        if clip.audio is None:
-            clip.audio = CompositeAudioClip([])
         logger.debug("Clip FPS after load and duration set: %s", clip.fps)
 
         subtitles_data = list(subtitles or [])
@@ -90,12 +81,15 @@ class GamingTemplate(TemplateBase):
         try:
             gameplay_clip = center_crop_9_16(clip)
             logger.debug("Clip FPS after gameplay crop: %s", gameplay_clip.fps)
-            if speedup and speedup > 1.0 and clip.audio:
-                gameplay_clip = apply_speedup(gameplay_clip, speedup)
-                gameplay_clip = ensure_fps(gameplay_clip)
-                logger.debug("Clip FPS after speedup: %s", gameplay_clip.fps)
-            elif speedup and speedup > 1.0:
-                logger.warning("[GamingTemplate] Audio missing — skipping speedup")
+            if speedup and speedup > 1.0:
+                try:
+                    gameplay_clip = ensure_fps(gameplay_clip.fx(vfx_speedx, speedup))
+                    logger.debug("Clip FPS after video speedup: %s", gameplay_clip.fps)
+                    if gameplay_clip.audio:
+                        new_audio = apply_speedup(gameplay_clip.audio, speedup)
+                        gameplay_clip = gameplay_clip.set_audio(new_audio)
+                except Exception:
+                    logger.exception("[GamingTemplate] Speedup failed — using original speed")
 
             if add_subtitles and subtitles_data:
                 gameplay_clip = add_subtitles(gameplay_clip, subtitles_data)
@@ -107,8 +101,6 @@ class GamingTemplate(TemplateBase):
                 )
 
             gameplay_clip = ensure_fps(gameplay_clip.set_duration(segment_duration))
-            if gameplay_clip.audio is None:
-                gameplay_clip.audio = CompositeAudioClip([])
             logger.debug("Clip FPS before layout: %s", gameplay_clip.fps)
 
             if detection:
@@ -119,17 +111,13 @@ class GamingTemplate(TemplateBase):
                 logger.warning("[GamingTemplate] No face detected, using gameplay-only layout")
                 final = self._build_layout_gameplay_only(gameplay_clip)
 
-            if final.audio is None:
-                final.audio = CompositeAudioClip([])
             final = ensure_fps(final.set_duration(segment_duration))
-            if final.fps is None:
-                logger.warning("Final clip had no fps – forcing 30fps")
-                final = final.set_fps(30)
-            logger.debug("Clip FPS before render: %s", final.fps)
+            output_fps = getattr(final, "fps", 30)
+            logger.debug("Clip FPS before render: %s", output_fps)
 
             final.write_videofile(
                 str(output_path),
-                fps=final.fps,
+                fps=output_fps,
                 codec="libx264",
                 audio_codec="aac",
                 threads=2,
@@ -140,30 +128,12 @@ class GamingTemplate(TemplateBase):
             clip.close()
             return output_path
         except Exception:
-            logger.exception("[GamingTemplate] Hard failure – falling back to color clip")
-            try:
-                fallback = ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=segment_duration)
-                fallback = fallback.set_fps(30)
-                fallback = ensure_fps(fallback)
-                fallback.audio = CompositeAudioClip([])
-                fallback = fallback.set_duration(segment_duration)
-                fallback.write_videofile(
-                    str(output_path),
-                    fps=fallback.fps,
-                    codec="libx264",
-                    audio_codec="aac",
-                    threads=2,
-                    verbose=False,
-                    logger=None,
-                )
-                fallback.close()
-            except Exception:
-                logger.exception("[GamingTemplate] Failed to render fallback clip")
+            logger.exception("[GamingTemplate] Hard failure during render")
             try:
                 clip.close()
             except Exception:
                 pass
-            return output_path
+            return None
 
     def _detect_facecam_region(
         self, video_path: Path, start: float, end: float, samples: int = 6
