@@ -452,7 +452,6 @@ class SejmHighlightsApp(QMainWindow):
             ("chat_burst_weight", "Chat burst weight"),
             ("acoustic_weight", "Acoustic weight"),
             ("semantic_weight", "Semantic weight"),
-            ("prompt_boost_weight", "Prompt boost weight"),
         ]:
             slider_row = self._create_weight_slider_row(label_text)
             self.weight_sliders[key] = slider_row["slider"]
@@ -527,7 +526,6 @@ class SejmHighlightsApp(QMainWindow):
             "chat_burst_weight": weights.chat_burst_weight,
             "acoustic_weight": weights.acoustic_weight,
             "semantic_weight": weights.semantic_weight,
-            "prompt_boost_weight": weights.prompt_boost_weight,
         }
         for key, value in mapping.items():
             slider = self.weight_sliders.get(key)
@@ -1729,7 +1727,6 @@ class SejmHighlightsApp(QMainWindow):
                 chat_burst_weight=self.weight_sliders['chat_burst_weight'].value() / 100,
                 acoustic_weight=self.weight_sliders['acoustic_weight'].value() / 100,
                 semantic_weight=self.weight_sliders['semantic_weight'].value() / 100,
-                prompt_boost_weight=self.weight_sliders['prompt_boost_weight'].value() / 100,
             )
 
         # Language switch updates Whisper + spaCy
