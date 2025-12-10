@@ -70,29 +70,15 @@ class ShortsGenerator:
                     subtitle_lang=subtitle_lang,
                     copyright_processor=copyright_processor,
                 )
+                if rendered is None:
+                    logger.warning("[Shorts] Template returned None — skipping segment %s", segment)
+                    continue
                 if copyright_processor:
                     fixed_path, status = copyright_processor.scan_and_fix(str(rendered))
                     logger.info("Copyright scan status for %s: %s", rendered, status)
                     rendered = Path(fixed_path)
                 results.append(rendered)
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.error("Short generation failed for segment %s: %s", segment, exc)
-                try:
-                    fallback = UniversalTemplate().apply(
-                        Path(video_path),
-                        segment.start,
-                        min(segment.end, segment.start + 60),
-                        out,
-                        speedup=speedup,
-                        add_subtitles=add_subtitles,
-                        subtitles=segment.subtitles,
-                        subtitle_lang=subtitle_lang,
-                    )
-                    if copyright_processor:
-                        fixed_path, status = copyright_processor.scan_and_fix(str(fallback))
-                        logger.info("Copyright scan status for %s: %s", fallback, status)
-                        fallback = Path(fixed_path)
-                    results.append(fallback)
-                except Exception as inner_exc:
-                    logger.error("Fallback also failed: %s", inner_exc)
+            except Exception:  # pragma: no cover - defensive
+                logger.exception("Short generation failed for segment %s", segment)
+                continue
         return results
