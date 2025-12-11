@@ -133,19 +133,29 @@ class GamingTemplate(TemplateBase):
 
             render_fps = 30  # Always use 30fps for Shorts
 
-            # BRUTAL FPS FIX: MoviePy's use_clip_fps_by_default decorator
-            # ignores fps= argument if clip.fps is None. Force attribute directly.
+            # NUCLEAR FPS FIX: MoviePy's use_clip_fps_by_default decorator
+            # ignores fps= argument if clip.fps is None.
+            # Use object.__setattr__ to bypass read-only property setters.
             try:
-                final.fps = render_fps
-                logger.debug("Forced clip.fps = %s", render_fps)
+                object.__setattr__(final, 'fps', render_fps)
+                logger.debug("Forced clip.fps via __setattr__ = %s", render_fps)
             except Exception as e:
-                logger.error("Cannot force fps attribute: %s", e)
+                logger.error("Cannot force fps via __setattr__: %s", e)
+                # Last resort: try regular assignment
+                try:
+                    final.fps = render_fps
+                except:
+                    pass
 
+            actual_fps = getattr(final, "fps", None)
             logger.debug(
-                "Clip FPS before render: %s (render_fps=%s)",
-                getattr(final, "fps", None),
+                "Clip FPS before render: %s (target=%s)",
+                actual_fps,
                 render_fps,
             )
+
+            if actual_fps is None:
+                logger.error("CRITICAL: clip.fps is still None after all fix attempts!")
 
             final.write_videofile(
                 str(output_path),
@@ -172,12 +182,20 @@ class GamingTemplate(TemplateBase):
                 fallback_clip = ensure_fps(fallback_clip, fallback=30)
                 render_fps = 30
 
-                # BRUTAL FPS FIX for fallback clip
+                # NUCLEAR FPS FIX for fallback clip
                 try:
-                    fallback_clip.fps = render_fps
-                    logger.debug("Forced fallback_clip.fps = %s", render_fps)
+                    object.__setattr__(fallback_clip, 'fps', render_fps)
+                    logger.debug("Forced fallback_clip.fps via __setattr__ = %s", render_fps)
                 except Exception as e:
-                    logger.error("Cannot force fallback fps attribute: %s", e)
+                    logger.error("Cannot force fallback fps via __setattr__: %s", e)
+                    try:
+                        fallback_clip.fps = render_fps
+                    except:
+                        pass
+
+                actual_fps = getattr(fallback_clip, "fps", None)
+                if actual_fps is None:
+                    logger.error("CRITICAL: fallback_clip.fps is still None!")
 
                 fallback_clip.write_videofile(
                     str(output_path),
