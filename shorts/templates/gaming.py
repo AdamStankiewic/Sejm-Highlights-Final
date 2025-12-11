@@ -138,15 +138,25 @@ class GamingTemplate(TemplateBase):
                 # set_audio also returns a new clip, restore fps again
                 final = ensure_fps(final, fallback=target_fps)
 
-            # Verify fps is properly set
-            actual_fps = getattr(final, "fps", None)
-            logger.debug("Clip FPS before render: %s", actual_fps)
+            # NUCLEAR OPTION: Force fps=30 directly on clip object before render
+            # This bypasses MoviePy's decorator which checks clip.fps
+            try:
+                final.fps = 30
+            except:
+                pass
+            try:
+                object.__setattr__(final, 'fps', 30)
+            except:
+                pass
 
-            # Render with explicit fps
-            logger.info("Rendering video with fps=%s", actual_fps or 30)
+            actual_fps = getattr(final, "fps", None)
+            logger.debug("Clip FPS after forced assignment: %s", actual_fps)
+
+            # Render - decorator will use clip.fps (which we just forced to 30)
+            logger.info("Rendering video with forced fps=30")
             final.write_videofile(
                 str(output_path),
-                fps=actual_fps or 30,
+                fps=30,  # Explicit fps=30
                 codec="libx264",
                 audio_codec="aac",
                 preset="medium",
@@ -171,14 +181,24 @@ class GamingTemplate(TemplateBase):
                     # set_audio returns a new clip, restore fps
                     fallback_clip = ensure_fps(fallback_clip, fallback=30)
 
-                actual_fps = getattr(fallback_clip, "fps", None)
-                logger.debug("Fallback clip fps: %s", actual_fps)
+                # NUCLEAR OPTION: Force fps=30 on fallback clip
+                try:
+                    fallback_clip.fps = 30
+                except:
+                    pass
+                try:
+                    object.__setattr__(fallback_clip, 'fps', 30)
+                except:
+                    pass
 
-                # Fallback render
-                logger.info("Rendering fallback video with fps=%s", actual_fps or 30)
+                actual_fps = getattr(fallback_clip, "fps", None)
+                logger.debug("Fallback clip fps after forced assignment: %s", actual_fps)
+
+                # Fallback render with forced fps
+                logger.info("Rendering fallback video with forced fps=30")
                 fallback_clip.write_videofile(
                     str(output_path),
-                    fps=actual_fps or 30,
+                    fps=30,  # Explicit fps=30
                     codec="libx264",
                     audio_codec="aac",
                     preset="medium",
