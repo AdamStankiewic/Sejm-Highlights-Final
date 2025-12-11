@@ -14,7 +14,6 @@ from utils.video import (
     add_subtitles,
     ensure_fps,
     ensure_output_path,
-    force_fps,
     load_subclip,
 )
 from .base import TemplateBase
@@ -71,12 +70,14 @@ class UniversalTemplate(TemplateBase):
                 clip = copyright_processor.clean_clip_audio(
                     clip, video_path, start, end, output_path.stem
                 )
-            clip = force_fps(clip, 30)
-            logger.debug("Clip FPS before render (forced): %s", getattr(clip, "fps", None))
+            clip = ensure_fps(clip, fallback=30)
+            render_fps = 30  # Always use 30fps for Shorts
+            logger.debug("Clip FPS before render: %s", getattr(clip, "fps", None))
             clip.write_videofile(
                 str(output_path),
                 codec="libx264",
                 audio_codec="aac",
+                fps=render_fps,
                 threads=2,
                 verbose=False,
                 logger=None,
@@ -86,16 +87,17 @@ class UniversalTemplate(TemplateBase):
         except Exception:
             logger.exception("[UniversalTemplate] Failed to render segment %.2f-%.2f", start, end)
             try:
-                fallback = force_fps(
+                fallback = ensure_fps(
                     ColorClip(
                         size=(1080, 1920), color=(0, 0, 0), duration=segment_duration
                     ),
-                    30,
+                    fallback=30,
                 )
                 fallback.write_videofile(
                     str(output_path),
                     codec="libx264",
                     audio_codec="aac",
+                    fps=30,
                     threads=2,
                     verbose=False,
                     logger=None,

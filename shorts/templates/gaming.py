@@ -1,53 +1,54 @@
-"""Gaming template with robust facecam detection and stable 9:16 layout."""
+"""Gaming template with MediaPipe facecam detection and stable 9:16 layout."""
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Tuple
+from typing import Iterable, Tuple, Optional
 
-import cv2
 from moviepy.editor import ColorClip, CompositeVideoClip, VideoClip, VideoFileClip
 from moviepy.video.fx.all import speedx as vfx_speedx
 
+from shorts.face_detection import FaceDetector, FaceRegion
 from utils.video import (
     add_subtitles,
     apply_speedup,
     center_crop_9_16,
     ensure_fps,
     ensure_output_path,
-    force_fps,
-    get_safe_fps,
     load_subclip,
 )
 from .base import TemplateBase
 
 logger = logging.getLogger(__name__)
 
-FACE_CASCADE = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-
-
-REGION_DEFS = {
-    "right_top": (0.60, 0.00, 0.38, 0.40),
-    "right_middle": (0.60, 0.30, 0.38, 0.40),
-    "right_bottom": (0.60, 0.60, 0.38, 0.40),
-    "left_top": (0.02, 0.00, 0.38, 0.40),
-    "left_middle": (0.02, 0.30, 0.38, 0.40),
-    "left_bottom": (0.02, 0.60, 0.38, 0.40),
-}
-
-
-@dataclass
-class FacecamDetection:
-    region: str
-    bbox: Tuple[int, int, int, int]
-
 
 class GamingTemplate(TemplateBase):
+    """Gaming template with automatic facecam detection and PIP overlay.
+
+    Uses MediaPipe Face Detection to automatically locate and crop the
+    streamer's facecam, then creates a picture-in-picture layout.
+
+    If no face is detected, falls back to gameplay-only 9:16 crop.
+    """
+
     name = "gaming"
 
-    def __init__(self, face_regions: Iterable[str] | None = None):
-        self.face_regions = list(face_regions) if face_regions else list(REGION_DEFS.keys())
+    def __init__(
+        self,
+        face_regions: Iterable[str] | None = None,
+        face_detector: Optional[FaceDetector] = None
+    ):
+        """Initialize gaming template
+
+        Args:
+            face_regions: Allowed face detection zones (for backward compat, unused)
+            face_detector: Optional pre-configured FaceDetector instance
+        """
+        self.face_detector = face_detector or FaceDetector(
+            confidence_threshold=0.5,
+            consensus_threshold=0.3,
+            num_samples=6
+        )
 
     def apply(
         self,
@@ -77,8 +78,16 @@ class GamingTemplate(TemplateBase):
 
         subtitles_data = list(subtitles or [])
 
-        detection = self._detect_facecam_region(video_path, start, end)
-        logger.debug("[GamingTemplate] Detection result: %s", detection)
+        # Detect facecam region using MediaPipe
+        face_region = self.face_detector.detect(Path(video_path), start, end)
+        if face_region:
+            logger.info(
+                "[GamingTemplate] Facecam detected in zone: %s (confidence: %.2f)",
+                face_region.zone,
+                face_region.confidence
+            )
+        else:
+            logger.info("[GamingTemplate] No facecam detected, using gameplay-only layout")
 
         try:
             gameplay_clip = center_crop_9_16(clip)
@@ -105,26 +114,23 @@ class GamingTemplate(TemplateBase):
             gameplay_clip = ensure_fps(gameplay_clip.set_duration(segment_duration))
             logger.debug("Clip FPS before layout: %s", gameplay_clip.fps)
 
-            if detection:
+            if face_region:
                 final = self._build_layout_with_face(
-                    clip, gameplay_clip, detection.region, detection.bbox
+                    clip, gameplay_clip, face_region
                 )
             else:
-                logger.warning("[GamingTemplate] No face detected, using gameplay-only layout")
                 final = self._build_layout_gameplay_only(gameplay_clip)
 
             final = final.set_duration(segment_duration)
             if gameplay_clip.audio is not None:
                 final = final.set_audio(gameplay_clip.audio)
 
-            # MoviePy in this environment occasionally drops fps metadata to None mid-pipeline.
-            # Resolve once, coerce to a constant fallback, and force it both on the clip and
-            # as the explicit render argument to avoid the TypeError seen by the user.
-            render_fps = self._coerce_fps(self._resolve_and_lock_fps(final), fallback=30.0)
-            final = force_fps(final, render_fps)
+            # Ensure fps is valid before render (MoviePy workaround)
+            final = ensure_fps(final, fallback=30)
+            render_fps = 30  # Always use 30fps for Shorts
 
             logger.debug(
-                "Clip FPS before render (forced): %s (render_fps=%s)",
+                "Clip FPS before render: %s (render_fps=%s)",
                 getattr(final, "fps", None),
                 render_fps,
             )
@@ -151,10 +157,8 @@ class GamingTemplate(TemplateBase):
                 if clip and getattr(clip, "audio", None):
                     fallback_clip = fallback_clip.set_audio(clip.audio)
 
-                render_fps = self._coerce_fps(
-                    self._resolve_and_lock_fps(fallback_clip), fallback=30.0
-                )
-                fallback_clip = force_fps(fallback_clip, render_fps)
+                fallback_clip = ensure_fps(fallback_clip, fallback=30)
+                render_fps = 30
 
                 fallback_clip.write_videofile(
                     str(output_path),
@@ -174,115 +178,53 @@ class GamingTemplate(TemplateBase):
                 pass
             return output_path
 
-    def _detect_facecam_region(
-        self, video_path: Path, start: float, end: float, samples: int = 6
-    ) -> FacecamDetection | None:
-        cap = cv2.VideoCapture(str(video_path))
-        if not cap.isOpened():
-            logger.exception("[GamingTemplate] Cannot open video for face detection: %s", video_path)
-            return None
-
-        try:
-            fps = cap.get(cv2.CAP_PROP_FPS) or 30
-            start_frame = int(max(0, start) * fps)
-            end_frame = int(max(start, end) * fps)
-            total_frames = max(end_frame - start_frame, 1)
-
-            frame_idxs = [start_frame + int(i * total_frames / max(samples - 1, 1)) for i in range(samples)]
-            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            regions_px = self._region_pixels(width, height)
-
-            matches: dict[str, list[Tuple[int, int, int, int]]] = {name: [] for name in regions_px}
-
-            for frame_idx in frame_idxs:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-                ret, frame = cap.read()
-                if not ret:
-                    continue
-
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                faces = FACE_CASCADE.detectMultiScale(gray, 1.1, 4)
-                for (fx, fy, fw, fh) in faces:
-                    cx, cy = fx + fw / 2, fy + fh / 2
-                    for region_name in self.face_regions:
-                        region = regions_px.get(region_name)
-                        if not region:
-                            continue
-                        x1, y1, x2, y2 = region
-                        if x1 <= cx <= x2 and y1 <= cy <= y2:
-                            matches[region_name].append((fx, fy, fw, fh))
-
-            best_region = None
-            best_count = 0
-            best_area = 0
-            for region_name, bboxes in matches.items():
-                if not bboxes:
-                    continue
-                count = len(bboxes)
-                area_sum = sum(w * h for (_, _, w, h) in bboxes)
-                if count > best_count or (count == best_count and area_sum > best_area):
-                    best_region = region_name
-                    best_count = count
-                    best_area = area_sum
-
-            if not best_region:
-                return None
-
-            bbox_list = matches[best_region]
-            avg = [int(sum(vals) / len(bbox_list)) for vals in zip(*bbox_list)]
-            logger.info(
-                "[GamingTemplate] Facecam detected in region %s, bbox=%s", best_region, tuple(avg)
-            )
-            return FacecamDetection(region=best_region, bbox=tuple(avg))
-        finally:
-            cap.release()
-
-    def _region_pixels(self, width: int, height: int) -> dict[str, Tuple[int, int, int, int]]:
-        regions = {}
-        for name in self.face_regions:
-            if name not in REGION_DEFS:
-                continue
-            rx, ry, rw, rh = REGION_DEFS[name]
-            x1 = int(width * rx)
-            y1 = int(height * ry)
-            x2 = int(width * (rx + rw))
-            y2 = int(height * (ry + rh))
-            regions[name] = (x1, y1, x2, y2)
-        return regions
-
     def _build_layout_with_face(
         self,
         source_clip: VideoFileClip,
         gameplay_clip: VideoFileClip,
-        region_name: str,
-        bbox: Tuple[int, int, int, int],
+        face_region: FaceRegion,
     ) -> VideoClip:
+        """Build PIP layout with gameplay background and facecam overlay
+
+        Args:
+            source_clip: Original video clip (full frame)
+            gameplay_clip: Already processed gameplay clip
+            face_region: Detected face region with bbox and zone info
+
+        Returns:
+            Composite video clip with PIP layout
+        """
         target_w, target_h = 1080, 1920
-        x, y, w, h = bbox
+        x, y, w, h = face_region.bbox
+
+        # Expand bbox by 20% margin for context around face
         margin = 1.2
         x1 = max(0, int(x - (margin - 1) * w / 2))
         y1 = max(0, int(y - (margin - 1) * h / 2))
         x2 = int(min(source_clip.w, x + w * margin))
         y2 = int(min(source_clip.h, y + h * margin))
 
+        # Crop and resize face clip to 45% of target width
         face_clip = source_clip.crop(x1=x1, y1=y1, x2=x2, y2=y2)
         face_clip = ensure_fps(face_clip.set_duration(source_clip.duration))
         face_clip = face_clip.resize(width=int(target_w * 0.45))
         logger.debug("Clip FPS after face crop: %s", face_clip.fps)
 
+        # Prepare full-frame gameplay background
         gameplay_full = center_crop_9_16(gameplay_clip)
         gameplay_full = ensure_fps(gameplay_full.resize((target_w, target_h)).set_duration(source_clip.duration))
         logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
 
-        side = "left" if region_name.startswith("left_") else "right"
-        if region_name.endswith("top"):
+        # Position facecam PIP based on detected zone
+        side = "left" if face_region.zone.startswith("left_") else "right"
+        if face_region.zone.endswith("top"):
             vertical = "top"
-        elif region_name.endswith("middle"):
+        elif face_region.zone.endswith("middle"):
             vertical = "middle"
         else:
             vertical = "bottom"
 
+        # Calculate PIP position (40px margin from edges)
         margin_px = 40
         face_x = margin_px if side == "left" else target_w - face_clip.w - margin_px
         if vertical == "top":
@@ -296,12 +238,13 @@ class GamingTemplate(TemplateBase):
         face_clip = ensure_fps(face_clip.set_duration(source_clip.duration))
         logger.debug("Clip FPS after face positioning: %s", face_clip.fps)
 
+        # Composite gameplay + facecam
         final = CompositeVideoClip(
             [gameplay_full, face_clip],
             size=(target_w, target_h),
         ).set_duration(source_clip.duration)
         final = ensure_fps(final)
-        logger.info("[GamingTemplate] Using gameplay+face layout (%s, %s)", side, vertical)
+        logger.info("[GamingTemplate] Using gameplay+face PIP layout (%s, %s)", side, vertical)
         return final
 
     def _build_layout_gameplay_only(self, gameplay_clip: VideoFileClip) -> VideoClip:
@@ -310,49 +253,4 @@ class GamingTemplate(TemplateBase):
         gameplay_full = ensure_fps(gameplay_full.resize((target_w, target_h)).set_duration(gameplay_clip.duration))
         logger.debug("Clip FPS after gameplay-only layout: %s", gameplay_full.fps)
         return gameplay_full
-
-    def _resolve_and_lock_fps(self, clip: VideoClip, fallback: float = 30.0) -> float:
-        """Return a concrete FPS value and log any coercion, avoiding None entirely."""
-
-        render_fps: float
-        try:
-            render_fps = get_safe_fps(clip, fallback)
-        except Exception:
-            logger.exception("[GamingTemplate] get_safe_fps failed; using fallback")
-            render_fps = float(fallback)
-
-        if not isinstance(render_fps, (int, float)) or render_fps <= 0:
-            logger.warning(
-                "[GamingTemplate] Invalid render_fps=%s detected; falling back to %s",
-                render_fps,
-                fallback,
-            )
-            render_fps = float(fallback)
-
-        # MoviePy may ignore clip.fps when fps is supplied to write_videofile; set both.
-        try:
-            clip.fps = float(render_fps)
-        except Exception:
-            logger.debug("[GamingTemplate] Unable to assign fps attribute directly during resolve")
-
-        return float(render_fps)
-
-    def _coerce_fps(self, fps: float | None, fallback: float = 30.0) -> float:
-        """Ensure a real, positive fps value before passing to MoviePy."""
-
-        if fps is None:
-            logger.warning("[GamingTemplate] Received fps=None, falling back to %s", fallback)
-            return float(fallback)
-
-        try:
-            numeric_fps = float(fps)
-        except Exception:
-            logger.warning("[GamingTemplate] Non-numeric fps=%s, falling back to %s", fps, fallback)
-            return float(fallback)
-
-        if numeric_fps <= 0:
-            logger.warning("[GamingTemplate] Non-positive fps=%s, falling back to %s", numeric_fps, fallback)
-            return float(fallback)
-
-        return numeric_fps
 

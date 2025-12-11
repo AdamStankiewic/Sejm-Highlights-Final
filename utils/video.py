@@ -18,45 +18,39 @@ logger = logging.getLogger(__name__)
 
 
 def ensure_fps(clip: VideoFileClip, fallback: int = 30) -> VideoFileClip:
-    """Force a deterministic FPS on the clip, logging the result."""
+    """THE ONLY fps enforcement function - ensures clip has valid, non-None fps.
 
+    This function handles MoviePy's unreliable fps metadata by:
+    1. Checking if current fps is valid (numeric, positive)
+    2. Setting to fallback if invalid
+    3. Force-assigning the attribute (MoviePy sometimes ignores set_fps)
+    4. Logging for debugging
+
+    Args:
+        clip: VideoFileClip or any clip object
+        fallback: FPS to use if current is invalid (default: 30)
+
+    Returns:
+        Clip with guaranteed valid fps attribute
+    """
+    # Determine target fps
     current_fps = getattr(clip, "fps", None)
     if not isinstance(current_fps, (int, float)) or current_fps <= 0:
-        clip = clip.set_fps(fallback)
-        current_fps = fallback
+        target_fps = fallback
+    else:
+        target_fps = current_fps
 
-    # Some clip types may not propagate fps even after set_fps; enforce attribute directly.
-    if not isinstance(getattr(clip, "fps", None), (int, float)) or getattr(clip, "fps", 0) <= 0:
-        try:
-            clip.fps = current_fps
-        except Exception:
-            # If attribute assignment fails, we rely on set_fps result; logging for diagnostics.
-            logger.debug("Unable to assign fps attribute directly; relying on set_fps")
+    # Set fps using MoviePy API
+    clip = clip.set_fps(target_fps)
+
+    # Force attribute assignment (MoviePy workaround)
+    try:
+        clip.fps = target_fps
+    except Exception:
+        logger.debug("Unable to assign fps attribute directly (read-only clip)")
 
     logger.debug("Clip FPS after ensure_fps: %s", getattr(clip, "fps", None))
     return clip
-
-
-def force_fps(clip: VideoFileClip, fps: int | float = 30) -> VideoFileClip:
-    """Apply a non-removable FPS to the clip right before rendering."""
-
-    forced = fps if isinstance(fps, (int, float)) and fps > 0 else 30
-    locked = clip.set_fps(forced)
-    try:
-        locked.fps = forced
-    except Exception:
-        logger.debug("Unable to set fps attribute directly during force_fps")
-    logger.debug("Clip FPS after force_fps: %s", getattr(locked, "fps", None))
-    return locked
-
-
-def get_safe_fps(clip: VideoFileClip, fallback: int = 30) -> float:
-    """Return a concrete fps value for the clip, coercing to fallback if invalid."""
-
-    current_fps = getattr(clip, "fps", None)
-    if not isinstance(current_fps, (int, float)) or current_fps <= 0:
-        return float(fallback)
-    return float(current_fps)
 
 
 def center_crop_9_16(clip: VideoFileClip, scale: float = 1.0) -> VideoFileClip:

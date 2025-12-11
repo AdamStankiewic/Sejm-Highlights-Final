@@ -772,9 +772,30 @@ class SejmHighlightsApp(QMainWindow):
         template_layout = QHBoxLayout()
         template_layout.addWidget(QLabel(self._t("shorts_template")))
         self.shorts_template_combo = QComboBox()
-        self.shorts_template_combo.addItems(["Gaming Facecam", "Universal"])
-        current_template = getattr(self.config.shorts, "template", "gaming")
-        self.shorts_template_combo.setCurrentIndex(0 if current_template == "gaming" else 1)
+
+        # Dynamically load templates from registry
+        try:
+            from shorts.templates import list_templates
+            templates = list_templates()
+            self.template_name_map = {}  # Map display name -> internal name
+            for internal_name, metadata in templates.items():
+                display_name = metadata.display_name
+                self.shorts_template_combo.addItem(display_name)
+                self.template_name_map[display_name] = internal_name
+
+            # Set current selection
+            current_template = getattr(self.config.shorts, "template", "gaming")
+            for display_name, internal_name in self.template_name_map.items():
+                if internal_name == current_template:
+                    idx = self.shorts_template_combo.findText(display_name)
+                    if idx >= 0:
+                        self.shorts_template_combo.setCurrentIndex(idx)
+                    break
+        except ImportError:
+            # Fallback if shorts module not available
+            self.shorts_template_combo.addItems(["Gaming Facecam", "Universal"])
+            self.template_name_map = {"Gaming Facecam": "gaming", "Universal": "universal"}
+
         template_layout.addWidget(self.shorts_template_combo)
         template_layout.addStretch()
         layout.addLayout(template_layout)
@@ -1692,7 +1713,15 @@ class SejmHighlightsApp(QMainWindow):
             enabled = bool(self.shorts_generate_cb.isChecked()) if hasattr(self, 'shorts_generate_cb') else False
             self.config.shorts.enabled = enabled
             self.config.shorts.generate_shorts = enabled
-            self.config.shorts.template = 'gaming' if self.shorts_template_combo.currentIndex() == 0 else 'universal'
+
+            # Get template from combo box using mapping
+            if hasattr(self, 'template_name_map'):
+                display_name = self.shorts_template_combo.currentText()
+                self.config.shorts.template = self.template_name_map.get(display_name, 'gaming')
+            else:
+                # Fallback for backward compat
+                self.config.shorts.template = 'gaming' if self.shorts_template_combo.currentIndex() == 0 else 'universal'
+
             self.config.shorts.add_subtitles = bool(self.shorts_add_subs_cb.isChecked())
             self.config.shorts.subtitles = bool(self.shorts_add_subs_cb.isChecked())
             self.config.shorts.speedup_factor = float(self.shorts_speed_slider.value()) / 100.0
