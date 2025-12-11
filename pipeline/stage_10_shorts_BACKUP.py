@@ -12,7 +12,6 @@ import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
-from collections import Counter
 import os
 import tempfile
 import numpy as np
@@ -91,236 +90,192 @@ class ShortsStage:
         except (subprocess.CalledProcessError, FileNotFoundError):
             raise RuntimeError("ffmpeg nie jest zainstalowany lub niedostępny w PATH")
 
-    def _classify_to_side_zone(self, detection: Dict[str, float], stream_w: int, stream_h: int) -> str:
-        """Klasyfikacja twarzy do 6 stref bocznych 3x3 (ignorując centrum).
-
-        Args:
-            detection: Bounding box twarzy (x, y, w, h) w pikselach.
-            stream_w: Szerokość klatki.
-            stream_h: Wysokość klatki.
-
-        Returns:
-            Nazwa strefy (left_top, left_middle, left_bottom, right_top, right_middle, right_bottom)
-            lub "center_ignored" jeśli twarz jest w kolumnie środkowej.
+    def _detect_webcam_region(self, input_file: Path, t_sample: float = 5.0) -> Dict[str, Any]:
         """
-
-        center_x = detection['x'] + detection['w'] / 2
-        center_y = detection['y'] + detection['h'] / 2
-
-        col_ratio = center_x / stream_w
-        row_ratio = center_y / stream_h
-
-        if 1 / 3 <= col_ratio <= 2 / 3:
-            return "center_ignored"
-
-        if col_ratio < 1 / 3:
-            col = "left"
-        else:
-            col = "right"
-
-        if row_ratio < 1 / 3:
-            row = "top"
-        elif row_ratio < 2 / 3:
-            row = "middle"
-        else:
-            row = "bottom"
-
-        return f"{col}_{row}"
-
-    def _detect_webcam_region(
-        self, input_file: Path, start_time: float, duration: float, num_samples: Optional[int] = None
-    ) -> Dict[str, Any]:
-        """Wieloklatkowa detekcja kamerki w 6 strefach bocznych.
+        Wykryj region kamerki streamera w video
 
         Args:
-            input_file: Ścieżka do pliku wideo.
-            start_time: Początek analizowanego fragmentu.
-            duration: Długość fragmentu do próbkowania.
-            num_samples: Liczba klatek do analizy (równomiernie rozmieszczone).
+            input_file: Ścieżka do pliku wideo
+            t_sample: Timestamp do próbkowania (środek video)
 
         Returns:
-            Dict z informacjami o detekcji facecama.
+            Dict z informacjami:
+            {
+                'type': 'bottom_bar' | 'corner' | 'full_face' | 'none',
+                'x': int, 'y': int, 'w': int, 'h': int,
+                'confidence': float,
+                'num_faces': int
+            }
         """
 
         if not self.face_detector:
             return {
                 'type': 'none',
-                'zone': None,
-                'detection_rate': 0.0,
-                'x': 0,
-                'y': 0,
-                'w': 0,
-                'h': 0,
+                'x': 0, 'y': 0, 'w': 0, 'h': 0,
                 'confidence': 0.0,
-                'num_faces': 0,
+                'num_faces': 0
             }
 
-        consensus_threshold = getattr(self.config.shorts, 'detection_threshold', 0.3)
-        sample_count = num_samples or getattr(self.config.shorts, 'num_samples', 5)
         try:
-            sample_count = max(1, int(sample_count))
-        except Exception:
-            sample_count = 5
+            # Extract single frame at t_sample using ffmpeg
+            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
+                tmp_frame = tmp.name
 
-        try:
-            sample_times = np.linspace(start_time, start_time + duration, sample_count)
-            detections: List[Dict[str, Any]] = []
-            all_zones: List[str] = []
+            cmd = [
+                'ffmpeg',
+                '-ss', str(t_sample),
+                '-i', str(input_file),
+                '-vframes', '1',
+                '-q:v', '2',
+                '-y',
+                tmp_frame
+            ]
 
-            for t in sample_times:
-                tmp_frame = None
-                try:
-                    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
-                        tmp_frame = tmp.name
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
 
-                    cmd = [
-                        'ffmpeg',
-                        '-ss', str(t),
-                        '-i', str(input_file),
-                        '-vframes', '1',
-                        '-q:v', '5',
-                        '-y',
-                        tmp_frame,
-                    ]
-                    subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            # Load frame with OpenCV
+            frame = self.cv2.imread(tmp_frame)
+            if frame is None:
+                return {'type': 'none', 'x': 0, 'y': 0, 'w': 0, 'h': 0, 'confidence': 0.0, 'num_faces': 0}
 
-                    frame = self.cv2.imread(tmp_frame)
-                    if frame is None:
-                        continue
+            # Convert BGR to RGB
+            frame_rgb = self.cv2.cvtColor(frame, self.cv2.COLOR_BGR2RGB)
+            h, w, _ = frame.shape
 
-                    frame_rgb = self.cv2.cvtColor(frame, self.cv2.COLOR_BGR2RGB)
-                    h, w, _ = frame.shape
+            # Detect faces
+            results = self.face_detector.process(frame_rgb)
 
-                    results = self.face_detector.process(frame_rgb)
-                    if not results or not results.detections:
-                        continue
+            # Clean up temp file
+            os.unlink(tmp_frame)
 
-                    faces = []
-                    for detection in results.detections:
-                        bbox = detection.location_data.relative_bounding_box
-                        confidence = detection.score[0]
+            if not results.detections:
+                return {'type': 'none', 'x': 0, 'y': 0, 'w': 0, 'h': 0, 'confidence': 0.0, 'num_faces': 0}
 
-                        x = max(int(bbox.xmin * w), 0)
-                        y = max(int(bbox.ymin * h), 0)
-                        fw = int(bbox.width * w)
-                        fh = int(bbox.height * h)
+            # Analyze detected faces
+            faces = []
+            for detection in results.detections:
+                bbox = detection.location_data.relative_bounding_box
+                confidence = detection.score[0]
 
-                        faces.append(
-                            {
-                                'x': x,
-                                'y': y,
-                                'w': fw,
-                                'h': fh,
-                                'confidence': confidence,
-                                'area': max(fw, 0) * max(fh, 0),
-                            }
-                        )
+                # Convert to absolute coordinates
+                x = int(bbox.xmin * w)
+                y = int(bbox.ymin * h)
+                fw = int(bbox.width * w)
+                fh = int(bbox.height * h)
 
-                    if not faces:
-                        continue
+                faces.append({
+                    'x': x, 'y': y, 'w': fw, 'h': fh,
+                    'confidence': confidence,
+                    'center_x': x + fw // 2,
+                    'center_y': y + fh // 2
+                })
 
-                    main_face = max(faces, key=lambda f: f['area'])
-                    zone = self._classify_to_side_zone(main_face, w, h)
-                    if zone == "center_ignored":
-                        continue
+            num_faces = len(faces)
 
-                    detections.append({
-                        'zone': zone,
-                        'bbox': main_face,
-                        'num_faces': len(faces),
-                    })
-                    all_zones.append(zone)
-                finally:
-                    if tmp_frame and os.path.exists(tmp_frame):
-                        os.unlink(tmp_frame)
+            # Classify webcam region type based on face positions
+            if num_faces == 0:
+                return {'type': 'none', 'x': 0, 'y': 0, 'w': 0, 'h': 0, 'confidence': 0.0, 'num_faces': 0}
 
-            if not all_zones:
-                return {
-                    'type': 'none',
-                    'zone': None,
-                    'detection_rate': 0.0,
+            # Sort by confidence
+            faces = sorted(faces, key=lambda f: f['confidence'], reverse=True)
+            main_face = faces[0]
+
+            # Classify based on position and size
+            face_area = main_face['w'] * main_face['h']
+            frame_area = w * h
+            face_ratio = face_area / frame_area
+
+            # Check if face is in bottom region (bottom 40% of frame)
+            is_bottom = main_face['center_y'] > h * 0.6
+
+            # Check if face is in corner (within 30% from edges)
+            is_corner = (
+                (main_face['center_x'] < w * 0.3 or main_face['center_x'] > w * 0.7) and
+                (main_face['center_y'] < h * 0.3 or main_face['center_y'] > h * 0.7)
+            )
+
+            # Classify
+            if face_ratio > 0.3 and not is_corner:
+                # Large face, likely full-screen IRL stream
+                region_type = 'full_face'
+                region_bbox = main_face
+            elif is_bottom and face_ratio < 0.15:
+                # Small face at bottom - likely gaming with webcam bar
+                region_type = 'bottom_bar'
+                # Estimate full webcam bar region (assume full width)
+                region_bbox = {
                     'x': 0,
-                    'y': 0,
-                    'w': 0,
-                    'h': 0,
-                    'confidence': 0.0,
-                    'num_faces': 0,
+                    'y': main_face['y'] - int(main_face['h'] * 0.2),  # Slight padding
+                    'w': w,
+                    'h': int(h * 0.35),  # 35% of screen height
+                    'confidence': main_face['confidence']
                 }
-
-            zone_counts = Counter(all_zones)
-            dominant_zone, dominant_count = zone_counts.most_common(1)[0]
-            detection_rate = dominant_count / max(sample_count, 1)
-
-            ambiguous = False
-            if len(zone_counts) > 1:
-                _, second_count = zone_counts.most_common(2)[1]
-                if second_count == dominant_count and detection_rate >= consensus_threshold:
-                    ambiguous = True
-
-            if detection_rate < consensus_threshold or ambiguous:
-                return {
-                    'type': 'none',
-                    'zone': dominant_zone if ambiguous else None,
-                    'detection_rate': detection_rate,
-                    'x': 0,
-                    'y': 0,
-                    'w': 0,
-                    'h': 0,
-                    'confidence': 0.0,
-                    'num_faces': 0,
-                }
-
-            dominant_entry = next((d for d in reversed(detections) if d['zone'] == dominant_zone), detections[-1])
-            bbox = dominant_entry['bbox']
+            elif is_corner:
+                # Face in corner - likely PIP setup
+                region_type = 'corner'
+                region_bbox = main_face
+            else:
+                # Default - treat as full face
+                region_type = 'full_face'
+                region_bbox = main_face
 
             return {
-                'type': 'face_detected',
-                'zone': dominant_zone,
-                'detection_rate': detection_rate,
-                'x': bbox['x'],
-                'y': bbox['y'],
-                'w': bbox['w'],
-                'h': bbox['h'],
-                'confidence': bbox.get('confidence', 0.0),
-                'num_faces': dominant_entry.get('num_faces', 1),
+                'type': region_type,
+                'x': region_bbox['x'],
+                'y': region_bbox['y'],
+                'w': region_bbox['w'],
+                'h': region_bbox['h'],
+                'confidence': main_face['confidence'],
+                'num_faces': num_faces
             }
 
         except Exception as e:
             print(f"      ⚠️ Błąd wykrywania kamerki: {e}")
-            return {
-                'type': 'none',
-                'zone': None,
-                'detection_rate': 0.0,
-                'x': 0,
-                'y': 0,
-                'w': 0,
-                'h': 0,
-                'confidence': 0.0,
-                'num_faces': 0,
-            }
+            return {'type': 'none', 'x': 0, 'y': 0, 'w': 0, 'h': 0, 'confidence': 0.0, 'num_faces': 0}
 
-    def _select_template(self, webcam_detection: Dict[str, Any], manual_override: Optional[str] = None) -> str:
-        """Wybór szablonu na podstawie detekcji kamerki lub ręcznego wyboru."""
+    def _select_template(self, webcam_detection: Dict[str, Any]) -> str:
+        """
+        Automatyczny wybór szablonu na podstawie wykrycia kamerki
 
-        if manual_override:
-            print(f"      🎨 Template override: {manual_override}")
-            return manual_override
+        Args:
+            webcam_detection: Wynik z _detect_webcam_region()
 
-        detection_rate = webcam_detection.get("detection_rate", 0.0) if webcam_detection else 0.0
-        zone = (webcam_detection or {}).get("zone") if webcam_detection else None
-        threshold = getattr(self.config.shorts, "detection_threshold", 0.3)
+        Returns:
+            Nazwa szablonu: 'classic_gaming' | 'pip_modern' | 'irl_fullface' | 'simple'
+        """
 
-        if not webcam_detection or webcam_detection.get("type") == "none" or detection_rate < threshold:
-            template = "simple_game_only"
-        elif zone in {"left_bottom", "right_bottom"}:
-            template = "game_top_face_bottom_bar"
-        elif zone in {"left_top", "left_middle", "right_top", "right_middle"}:
-            template = "full_game_with_floating_face"
+        region_type = webcam_detection['type']
+        num_faces = webcam_detection['num_faces']
+
+        # Decision tree
+        if region_type == 'none':
+            # No faces detected - use simple crop
+            print(f"      🤖 Auto-select: simple (brak twarzy)")
+            return 'simple'
+
+        elif region_type == 'bottom_bar':
+            # Gaming setup - kamerka na dole
+            print(f"      🤖 Auto-select: classic_gaming (kamerka na dole)")
+            return 'classic_gaming'
+
+        elif region_type == 'corner':
+            # PIP setup
+            print(f"      🤖 Auto-select: pip_modern (kamerka w rogu)")
+            return 'pip_modern'
+
+        elif region_type == 'full_face':
+            # IRL stream
+            if num_faces >= 2:
+                # Multiple faces - good candidate for speaker tracking
+                print(f"      🤖 Auto-select: dynamic_speaker (wykryto {num_faces} twarzy)")
+                return 'dynamic_speaker'
+            else:
+                print(f"      🤖 Auto-select: irl_fullface (pojedyncza twarz fullscreen)")
+                return 'irl_fullface'
+
         else:
-            template = "simple_game_only"
-
-        print(f"      🤖 Auto-select: {template} (zone={zone}, rate={detection_rate:.2f})")
-        return template
+            # Fallback
+            return 'simple'
 
     def process(
         self,
@@ -344,10 +299,6 @@ class ShortsStage:
                 - None (default): backward compatibility - prosty crop (dla Sejmu)
                 - "auto": automatyczna detekcja na podstawie webcam region
                 - "simple": prosty crop 9:16
-                - "game_top_face_bottom_bar": gameplay u góry, facecam pasek na dole
-                - "full_game_with_floating_face": pełny gameplay + PIP facecam
-                - "simple_game_only": sam gameplay 9:16
-                - "big_face_reaction": duża twarz na rozmytym tle (manualnie)
                 - "classic_gaming": gaming layout (kamerka dół)
                 - "pip_modern": PIP layout
                 - "irl_fullface": IRL fullscreen
@@ -399,6 +350,13 @@ class ShortsStage:
             )
             return {"shorts": [str(p) for p in paths], "shorts_dir": str(shorts_dir), "count": len(paths)}
 
+        # Auto-detect template if requested
+        detected_webcam = None
+        if template == "auto":
+            print(f"   🔍 Automatyczna detekcja szablonu...")
+            detected_webcam = self._detect_webcam_region(input_path, t_sample=shorts_clips[0]['t0'] + 5.0)
+            template = self._select_template(detected_webcam)
+
         # Generate each Short
         generated_shorts = []
 
@@ -406,43 +364,14 @@ class ShortsStage:
             print(f"\n   📱 Short {i}/{len(shorts_clips)}")
 
             try:
-                config_manual = getattr(self.config.shorts, "manual_template", None)
-                cli_manual = template if template not in (None, "auto") else None
-                config_template_override = (
-                    getattr(self.config.shorts, "template", "auto")
-                    if getattr(self.config.shorts, "template", "auto") not in (None, "auto")
-                    else None
-                )
-
-                manual_override = config_manual or cli_manual or config_template_override
-
-                webcam_detection = {"type": "none"}
-                if (
-                    getattr(self.config.shorts, "template", "auto") == "auto"
-                    and template in (None, "auto")
-                    and self.config.shorts.face_detection
-                    and not manual_override
-                ):
-                    clip_start = clip.get("t0", 0.0)
-                    clip_end = clip.get("t1", clip_start)
-                    detection_duration = max(clip_end - clip_start, 1.0)
-                    webcam_detection = self._detect_webcam_region(
-                        input_path,
-                        start_time=clip_start,
-                        duration=detection_duration,
-                        num_samples=self.config.shorts.num_samples,
-                    )
-
-                selected_template = self._select_template(webcam_detection, manual_override)
-
                 short_result = self._generate_single_short(
                     input_path,
                     clip,
                     segments,
                     shorts_dir,
                     i,
-                    template=selected_template,
-                    webcam_detection=webcam_detection if self.config.shorts.face_detection else None
+                    template=template,
+                    webcam_detection=detected_webcam
                 )
                 generated_shorts.append(short_result)
 
@@ -507,14 +436,6 @@ class ShortsStage:
             filter_complex = self._build_simple_template(width, height, str(ass_file))
         elif template == "classic_gaming":
             filter_complex = self._build_classic_gaming_template(width, height, str(ass_file), webcam_detection)
-        elif template == "game_top_face_bottom_bar":
-            filter_complex = self._build_game_top_face_bottom_bar(width, height, str(ass_file), webcam_detection)
-        elif template == "full_game_with_floating_face":
-            filter_complex = self._build_full_game_with_floating_face(width, height, str(ass_file), webcam_detection)
-        elif template == "simple_game_only":
-            filter_complex = self._build_simple_game_only(width, height, str(ass_file))
-        elif template == "big_face_reaction":
-            filter_complex = self._build_big_face_reaction(width, height, str(ass_file), webcam_detection)
         elif template == "pip_modern":
             filter_complex = self._build_pip_modern_template(width, height, str(ass_file), webcam_detection)
         elif template == "irl_fullface":
@@ -645,177 +566,6 @@ class ShortsStage:
 
             # === ADD SUBTITLES ===
             f"[stacked]ass='{ass_file.replace(chr(92), '/')}'"
-        )
-
-        return filter_complex
-
-    def _build_game_top_face_bottom_bar(
-        self,
-        width: int,
-        height: int,
-        ass_file: str,
-        webcam_detection: Optional[Dict] = None,
-    ) -> str:
-        """
-        Szablon GAME TOP / FACE BOTTOM BAR (układ pionowy góra-dół)
-        Layout:
-        - Gameplay w górnych ~70% (1080x1344)
-        - Pasek facecam na dole ~30% (1080x576)
-        - Całość w 1080x1920
-        """
-
-        gameplay_pct = getattr(self.config.shorts, "game_top_face_bar_gameplay_percentage", 0.7)
-        face_pct = getattr(self.config.shorts, "game_top_face_bar_facecam_percentage", 0.3)
-        gameplay_h = int(height * gameplay_pct)
-        facecam_h = max(1, int(height * face_pct))
-        if gameplay_h + facecam_h != height:
-            facecam_h = max(1, height - gameplay_h)
-
-        # Gameplay: pełna szerokość, crop do 9:16 i 70% wysokości
-        filter_parts = [
-            f"[0:v]split=2[gameplay][face];",
-            # === GAMEPLAY (top 70%) ===
-            f"[gameplay]scale={width}:{gameplay_h}:force_original_aspect_ratio=increase,",
-            f"crop={width}:{gameplay_h}[gameplay_scaled];",
-        ]
-
-        # Facecam crop na bazie detekcji lub fallback do dolnej części
-        if webcam_detection and webcam_detection.get('w') and webcam_detection.get('h'):
-            bbox = webcam_detection
-            x = max(int(bbox.get('x', 0)), 0)
-            y = max(int(bbox.get('y', 0)), 0)
-            w = max(int(bbox.get('w', 1)), 1)
-            h = max(int(bbox.get('h', 1)), 1)
-            crop_cmd = f"crop={w}:{h}:{x}:{y}"
-        else:
-            crop_cmd = "crop=iw:ih*0.35:0:ih*0.65"  # Bottom 35% fallback
-
-        filter_parts.extend(
-            [
-                # === FACE BAR (bottom 30%) ===
-                f"[face]{crop_cmd},",
-                f"scale={width}:{facecam_h}:force_original_aspect_ratio=decrease,",
-                f"pad={width}:{facecam_h}:(ow-iw)/2:0:black,",
-                f"crop={width}:{facecam_h}[face_scaled];",
-                # === STACK GAMEPLAY + FACE ===
-                f"[gameplay_scaled][face_scaled]vstack=inputs=2[stacked];",
-                # === SUBTITLES ===
-                f"[stacked]ass='{ass_file.replace(chr(92), '/')}'",
-            ]
-        )
-
-        return "".join(filter_parts)
-
-    def _build_full_game_with_floating_face(
-        self,
-        width: int,
-        height: int,
-        ass_file: str,
-        webcam_detection: Optional[Dict] = None,
-    ) -> str:
-        """
-        Szablon FULLSCREEN GAME + FLOATING FACE (PIP)
-        Layout:
-        - Gameplay pełnoekranowy 1080x1920
-        - PIP facecam ~38% szerokości, ~20% wysokości, umieszczony nisko
-        - Wyrównanie lewo/prawo zależne od wykrytej strefy
-        """
-
-        pip_w = int(width * getattr(self.config.shorts, "floating_face_pip_width_percentage", 0.38))
-        pip_h = int(height * getattr(self.config.shorts, "floating_face_pip_height_percentage", 0.20))
-        margin = int(width * 0.05)
-        pip_y = int(height * getattr(self.config.shorts, "floating_face_pip_y_percentage", 0.625))
-
-        zone = (webcam_detection or {}).get('zone', '') if webcam_detection else ''
-        if isinstance(zone, str) and zone.startswith('left'):
-            pip_x = margin
-        elif isinstance(zone, str) and zone.startswith('right'):
-            pip_x = width - pip_w - margin
-        else:
-            pip_x = width - pip_w - margin
-
-        if pip_y + pip_h + margin > height:
-            pip_y = max(height - pip_h - margin, 0)
-
-        # Facecam crop (detected bbox fallback to bottom slice)
-        if webcam_detection and webcam_detection.get('w') and webcam_detection.get('h'):
-            bbox = webcam_detection
-            x = max(int(bbox.get('x', 0)), 0)
-            y = max(int(bbox.get('y', 0)), 0)
-            w = max(int(bbox.get('w', 1)), 1)
-            h = max(int(bbox.get('h', 1)), 1)
-            face_crop = f"crop={w}:{h}:{x}:{y}"
-        else:
-            face_crop = "crop=iw:ih*0.35:0:ih*0.65"
-
-        filter_complex = (
-            # === SPLIT MAIN & FACE ===
-            f"[0:v]split=2[main][pip_src];"
-            # === MAIN FULLSCREEN ===
-            f"[main]scale={int(width*1.1)}:{height}:force_original_aspect_ratio=decrease,"
-            f"crop={width}:{height}[main_scaled];"
-            # === PIP FACE ===
-            f"[pip_src]{face_crop},"
-            f"scale={pip_w}:{pip_h}:force_original_aspect_ratio=decrease,"
-            f"pad={pip_w}:{pip_h}:(ow-iw)/2:(oh-ih)/2:black[pip];"
-            # === OVERLAY ===
-            f"[main_scaled][pip]overlay={pip_x}:{pip_y}[composed];"
-            # === SUBTITLES ===
-            f"[composed]ass='{ass_file.replace(chr(92), '/')}'"
-        )
-
-        return filter_complex
-
-    def _build_simple_game_only(self, width: int, height: int, ass_file: str) -> str:
-        """
-        Szablon SIMPLE GAME ONLY - pełnoekranowy gameplay 9:16 bez facecama.
-        """
-
-        return (
-            f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
-            f"crop={width}:{height}[game];"
-            f"[game]ass='{ass_file.replace(chr(92), '/')}'"
-        )
-
-    def _build_big_face_reaction(
-        self,
-        width: int,
-        height: int,
-        ass_file: str,
-        webcam_detection: Optional[Dict] = None,
-    ) -> str:
-        """
-        Szablon BIG FACE REACTION - rozmyte tło + duża twarz na froncie.
-        Użycie manualne przy mocnych reakcjach.
-        """
-
-        face_w = int(width * 0.9)
-        face_h = int(height * 0.4)
-        face_x = int((width - face_w) / 2)
-        face_y = int(height * 0.3)
-
-        if webcam_detection and webcam_detection.get('w') and webcam_detection.get('h'):
-            bbox = webcam_detection
-            x = max(int(bbox.get('x', 0)), 0)
-            y = max(int(bbox.get('y', 0)), 0)
-            w = max(int(bbox.get('w', 1)), 1)
-            h = max(int(bbox.get('h', 1)), 1)
-            face_crop = f"crop={w}:{h}:{x}:{y}"
-        else:
-            face_crop = "crop=iw:ih*0.35:0:ih*0.65"
-
-        filter_complex = (
-            # === BACKGROUND (blurred) ===
-            f"[0:v]scale={int(width*1.1)}:{height}:force_original_aspect_ratio=decrease,"
-            f"crop={width}:{height},gblur=sigma=30[bg];"
-            # === FACE FOREGROUND ===
-            f"[0:v]{face_crop},"
-            f"scale={face_w}:{face_h}:force_original_aspect_ratio=decrease,"
-            f"pad={face_w}:{face_h}:(ow-iw)/2:(oh-ih)/2:black[face];"
-            # === COMPOSE ===
-            f"[bg][face]overlay={face_x}:{face_y}[composed];"
-            # === SUBTITLES (opcjonalnie) ===
-            f"[composed]ass='{ass_file.replace(chr(92), '/')}'"
         )
 
         return filter_complex
@@ -972,20 +722,17 @@ class ShortsStage:
             return
 
         # Determine MarginV (vertical position) based on template
-        height = getattr(self.config.shorts, "height", 1920)
-        face_bar_margin = int(height * getattr(self.config.shorts, "game_top_face_bar_facecam_percentage", 0.3))
-
         if template == "classic_gaming":
+            # Napisy pod kamerką - wyżej niż zwykle
             margin_v = 800  # Wyżej, żeby nie zasłaniać kamerki na dole
         elif template == "pip_modern":
+            # Napisy w środku
             margin_v = 600
-        elif template == "game_top_face_bottom_bar":
-            margin_v = max(face_bar_margin, 600)
-        elif template == "full_game_with_floating_face":
-            margin_v = max(int(height * 0.05), 550)
         elif template in ["irl_fullface", "dynamic_speaker"]:
+            # Napisy niżej - bezpieczna strefa
             margin_v = 650
         else:
+            # Simple - default
             margin_v = 600
 
         # ASS Header - optymalizowany dla Shorts (9:16)
