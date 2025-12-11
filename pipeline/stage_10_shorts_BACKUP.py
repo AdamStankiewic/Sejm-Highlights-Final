@@ -12,7 +12,6 @@ import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
-from collections import Counter
 import os
 import tempfile
 import numpy as np
@@ -91,208 +90,148 @@ class ShortsStage:
         except (subprocess.CalledProcessError, FileNotFoundError):
             raise RuntimeError("ffmpeg nie jest zainstalowany lub niedostępny w PATH")
 
-    def _classify_to_side_zone(self, detection: Dict[str, float], stream_w: int, stream_h: int) -> str:
-        """Klasyfikacja twarzy do 6 stref bocznych 3x3 (ignorując centrum).
-
-        Args:
-            detection: Bounding box twarzy (x, y, w, h) w pikselach.
-            stream_w: Szerokość klatki.
-            stream_h: Wysokość klatki.
-
-        Returns:
-            Nazwa strefy (left_top, left_middle, left_bottom, right_top, right_middle, right_bottom)
-            lub "center_ignored" jeśli twarz jest w kolumnie środkowej.
+    def _detect_webcam_region(self, input_file: Path, t_sample: float = 5.0) -> Dict[str, Any]:
         """
-
-        center_x = detection['x'] + detection['w'] / 2
-        center_y = detection['y'] + detection['h'] / 2
-
-        col_ratio = center_x / stream_w
-        row_ratio = center_y / stream_h
-
-        if 1 / 3 <= col_ratio <= 2 / 3:
-            return "center_ignored"
-
-        if col_ratio < 1 / 3:
-            col = "left"
-        else:
-            col = "right"
-
-        if row_ratio < 1 / 3:
-            row = "top"
-        elif row_ratio < 2 / 3:
-            row = "middle"
-        else:
-            row = "bottom"
-
-        return f"{col}_{row}"
-
-    def _detect_webcam_region(
-        self, input_file: Path, start_time: float, duration: float, num_samples: int = 5
-    ) -> Dict[str, Any]:
-        """Wieloklatkowa detekcja kamerki w 6 strefach bocznych.
+        Wykryj region kamerki streamera w video
 
         Args:
-            input_file: Ścieżka do pliku wideo.
-            start_time: Początek analizowanego fragmentu.
-            duration: Długość fragmentu do próbkowania.
-            num_samples: Liczba klatek do analizy (równomiernie rozmieszczone).
+            input_file: Ścieżka do pliku wideo
+            t_sample: Timestamp do próbkowania (środek video)
 
         Returns:
-            Dict z informacjami o detekcji facecama.
+            Dict z informacjami:
+            {
+                'type': 'bottom_bar' | 'corner' | 'full_face' | 'none',
+                'x': int, 'y': int, 'w': int, 'h': int,
+                'confidence': float,
+                'num_faces': int
+            }
         """
 
         if not self.face_detector:
             return {
                 'type': 'none',
-                'zone': None,
-                'detection_rate': 0.0,
-                'x': 0,
-                'y': 0,
-                'w': 0,
-                'h': 0,
+                'x': 0, 'y': 0, 'w': 0, 'h': 0,
                 'confidence': 0.0,
-                'num_faces': 0,
+                'num_faces': 0
             }
 
-        consensus_threshold = getattr(self.config.shorts, 'detection_threshold', 0.3)  # TODO: move to config
-
         try:
-            sample_times = np.linspace(start_time, start_time + duration, num_samples)
-            detections: List[Dict[str, Any]] = []
-            all_zones: List[str] = []
+            # Extract single frame at t_sample using ffmpeg
+            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
+                tmp_frame = tmp.name
 
-            for t in sample_times:
-                tmp_frame = None
-                try:
-                    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
-                        tmp_frame = tmp.name
+            cmd = [
+                'ffmpeg',
+                '-ss', str(t_sample),
+                '-i', str(input_file),
+                '-vframes', '1',
+                '-q:v', '2',
+                '-y',
+                tmp_frame
+            ]
 
-                    cmd = [
-                        'ffmpeg',
-                        '-ss', str(t),
-                        '-i', str(input_file),
-                        '-vframes', '1',
-                        '-q:v', '5',
-                        '-y',
-                        tmp_frame,
-                    ]
-                    subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
 
-                    frame = self.cv2.imread(tmp_frame)
-                    if frame is None:
-                        continue
+            # Load frame with OpenCV
+            frame = self.cv2.imread(tmp_frame)
+            if frame is None:
+                return {'type': 'none', 'x': 0, 'y': 0, 'w': 0, 'h': 0, 'confidence': 0.0, 'num_faces': 0}
 
-                    frame_rgb = self.cv2.cvtColor(frame, self.cv2.COLOR_BGR2RGB)
-                    h, w, _ = frame.shape
+            # Convert BGR to RGB
+            frame_rgb = self.cv2.cvtColor(frame, self.cv2.COLOR_BGR2RGB)
+            h, w, _ = frame.shape
 
-                    results = self.face_detector.process(frame_rgb)
-                    if not results or not results.detections:
-                        continue
+            # Detect faces
+            results = self.face_detector.process(frame_rgb)
 
-                    faces = []
-                    for detection in results.detections:
-                        bbox = detection.location_data.relative_bounding_box
-                        confidence = detection.score[0]
+            # Clean up temp file
+            os.unlink(tmp_frame)
 
-                        x = max(int(bbox.xmin * w), 0)
-                        y = max(int(bbox.ymin * h), 0)
-                        fw = int(bbox.width * w)
-                        fh = int(bbox.height * h)
+            if not results.detections:
+                return {'type': 'none', 'x': 0, 'y': 0, 'w': 0, 'h': 0, 'confidence': 0.0, 'num_faces': 0}
 
-                        faces.append(
-                            {
-                                'x': x,
-                                'y': y,
-                                'w': fw,
-                                'h': fh,
-                                'confidence': confidence,
-                                'area': max(fw, 0) * max(fh, 0),
-                            }
-                        )
+            # Analyze detected faces
+            faces = []
+            for detection in results.detections:
+                bbox = detection.location_data.relative_bounding_box
+                confidence = detection.score[0]
 
-                    if not faces:
-                        continue
+                # Convert to absolute coordinates
+                x = int(bbox.xmin * w)
+                y = int(bbox.ymin * h)
+                fw = int(bbox.width * w)
+                fh = int(bbox.height * h)
 
-                    main_face = max(faces, key=lambda f: f['area'])
-                    zone = self._classify_to_side_zone(main_face, w, h)
-                    if zone == "center_ignored":
-                        continue
+                faces.append({
+                    'x': x, 'y': y, 'w': fw, 'h': fh,
+                    'confidence': confidence,
+                    'center_x': x + fw // 2,
+                    'center_y': y + fh // 2
+                })
 
-                    detections.append({
-                        'zone': zone,
-                        'bbox': main_face,
-                        'num_faces': len(faces),
-                    })
-                    all_zones.append(zone)
-                finally:
-                    if tmp_frame and os.path.exists(tmp_frame):
-                        os.unlink(tmp_frame)
+            num_faces = len(faces)
 
-            if not all_zones:
-                return {
-                    'type': 'none',
-                    'zone': None,
-                    'detection_rate': 0.0,
+            # Classify webcam region type based on face positions
+            if num_faces == 0:
+                return {'type': 'none', 'x': 0, 'y': 0, 'w': 0, 'h': 0, 'confidence': 0.0, 'num_faces': 0}
+
+            # Sort by confidence
+            faces = sorted(faces, key=lambda f: f['confidence'], reverse=True)
+            main_face = faces[0]
+
+            # Classify based on position and size
+            face_area = main_face['w'] * main_face['h']
+            frame_area = w * h
+            face_ratio = face_area / frame_area
+
+            # Check if face is in bottom region (bottom 40% of frame)
+            is_bottom = main_face['center_y'] > h * 0.6
+
+            # Check if face is in corner (within 30% from edges)
+            is_corner = (
+                (main_face['center_x'] < w * 0.3 or main_face['center_x'] > w * 0.7) and
+                (main_face['center_y'] < h * 0.3 or main_face['center_y'] > h * 0.7)
+            )
+
+            # Classify
+            if face_ratio > 0.3 and not is_corner:
+                # Large face, likely full-screen IRL stream
+                region_type = 'full_face'
+                region_bbox = main_face
+            elif is_bottom and face_ratio < 0.15:
+                # Small face at bottom - likely gaming with webcam bar
+                region_type = 'bottom_bar'
+                # Estimate full webcam bar region (assume full width)
+                region_bbox = {
                     'x': 0,
-                    'y': 0,
-                    'w': 0,
-                    'h': 0,
-                    'confidence': 0.0,
-                    'num_faces': 0,
+                    'y': main_face['y'] - int(main_face['h'] * 0.2),  # Slight padding
+                    'w': w,
+                    'h': int(h * 0.35),  # 35% of screen height
+                    'confidence': main_face['confidence']
                 }
-
-            zone_counts = Counter(all_zones)
-            dominant_zone, dominant_count = zone_counts.most_common(1)[0]
-            detection_rate = dominant_count / max(num_samples, 1)
-
-            ambiguous = False
-            if len(zone_counts) > 1:
-                _, second_count = zone_counts.most_common(2)[1]
-                if second_count == dominant_count and detection_rate >= consensus_threshold:
-                    ambiguous = True
-
-            if detection_rate < consensus_threshold or ambiguous:
-                return {
-                    'type': 'none',
-                    'zone': dominant_zone if ambiguous else None,
-                    'detection_rate': detection_rate,
-                    'x': 0,
-                    'y': 0,
-                    'w': 0,
-                    'h': 0,
-                    'confidence': 0.0,
-                    'num_faces': 0,
-                }
-
-            dominant_entry = next((d for d in reversed(detections) if d['zone'] == dominant_zone), detections[-1])
-            bbox = dominant_entry['bbox']
+            elif is_corner:
+                # Face in corner - likely PIP setup
+                region_type = 'corner'
+                region_bbox = main_face
+            else:
+                # Default - treat as full face
+                region_type = 'full_face'
+                region_bbox = main_face
 
             return {
-                'type': 'face_detected',
-                'zone': dominant_zone,
-                'detection_rate': detection_rate,
-                'x': bbox['x'],
-                'y': bbox['y'],
-                'w': bbox['w'],
-                'h': bbox['h'],
-                'confidence': bbox.get('confidence', 0.0),
-                'num_faces': dominant_entry.get('num_faces', 1),
+                'type': region_type,
+                'x': region_bbox['x'],
+                'y': region_bbox['y'],
+                'w': region_bbox['w'],
+                'h': region_bbox['h'],
+                'confidence': main_face['confidence'],
+                'num_faces': num_faces
             }
 
         except Exception as e:
             print(f"      ⚠️ Błąd wykrywania kamerki: {e}")
-            return {
-                'type': 'none',
-                'zone': None,
-                'detection_rate': 0.0,
-                'x': 0,
-                'y': 0,
-                'w': 0,
-                'h': 0,
-                'confidence': 0.0,
-                'num_faces': 0,
-            }
+            return {'type': 'none', 'x': 0, 'y': 0, 'w': 0, 'h': 0, 'confidence': 0.0, 'num_faces': 0}
 
     def _select_template(self, webcam_detection: Dict[str, Any]) -> str:
         """
@@ -415,13 +354,7 @@ class ShortsStage:
         detected_webcam = None
         if template == "auto":
             print(f"   🔍 Automatyczna detekcja szablonu...")
-            first_clip_start = shorts_clips[0].get('t0', 0.0)
-            first_clip_end = shorts_clips[0].get('t1', first_clip_start)
-            detected_webcam = self._detect_webcam_region(
-                input_path,
-                start_time=first_clip_start,
-                duration=max(first_clip_end - first_clip_start, 1.0),
-            )
+            detected_webcam = self._detect_webcam_region(input_path, t_sample=shorts_clips[0]['t0'] + 5.0)
             template = self._select_template(detected_webcam)
 
         # Generate each Short
