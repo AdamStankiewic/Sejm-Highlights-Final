@@ -267,7 +267,11 @@ class GamingTemplate(TemplateBase):
         gameplay_clip: VideoFileClip,
         face_region: FaceRegion,
     ) -> VideoClip:
-        """Build PIP layout with gameplay background and facecam overlay
+        """Build split layout with gameplay on top and detected facecam bar at bottom.
+
+        Layout:
+        - Top 70%: Gameplay (centered, zoomed out)
+        - Bottom 30%: Facecam (full width bar from detected region)
 
         Args:
             source_clip: Original video clip (full frame)
@@ -275,55 +279,48 @@ class GamingTemplate(TemplateBase):
             face_region: Detected face region with bbox and zone info
 
         Returns:
-            Composite video clip with PIP layout
+            Composite video clip with split layout
         """
         target_w, target_h = 1080, 1920
-        x, y, w, h = face_region.bbox
 
-        # Expand bbox by 20% margin for context around face
+        # Split layout: 70% gameplay top, 30% facecam bottom
+        gameplay_h = int(target_h * 0.70)
+        facecam_h = int(target_h * 0.30)
+
+        # Prepare gameplay for top section (centered, zoomed out)
+        gameplay_full = center_crop_9_16(gameplay_clip, scale=0.85)
+        gameplay_full = ensure_fps(gameplay_full.resize((target_w, gameplay_h)).set_duration(source_clip.duration))
+        gameplay_full = gameplay_full.set_position((0, 0))  # Top
+        logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
+
+        # Use detected face region with expanded margins
+        x, y, w, h = face_region.bbox
         margin = 1.2
         x1 = max(0, int(x - (margin - 1) * w / 2))
         y1 = max(0, int(y - (margin - 1) * h / 2))
         x2 = int(min(source_clip.w, x + w * margin))
         y2 = int(min(source_clip.h, y + h * margin))
 
-        # Crop and resize face clip to 35% of target width (smaller facecam)
+        logger.info(
+            "[GamingTemplate] Using detected facecam region: %s (%dx%d at %d,%d)",
+            face_region.zone, x2-x1, y2-y1, x1, y1
+        )
+
+        # Crop and resize detected facecam to full width bar at bottom
         face_clip = source_clip.crop(x1=x1, y1=y1, x2=x2, y2=y2)
         face_clip = ensure_fps(face_clip.set_duration(source_clip.duration))
-        face_clip = face_clip.resize(width=int(target_w * 0.35))
+        face_clip = face_clip.resize((target_w, facecam_h))  # Full width, bottom 30%
+        face_clip = face_clip.set_position((0, gameplay_h))  # Position at bottom
         logger.debug("Clip FPS after face crop: %s", face_clip.fps)
 
-        # Prepare full-frame gameplay background (zoomed out to see more)
-        gameplay_full = center_crop_9_16(gameplay_clip, scale=0.85)
-        gameplay_full = ensure_fps(gameplay_full.resize((target_w, target_h)).set_duration(source_clip.duration))
-        logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
-
-        # Position facecam PIP - always bottom, detect left/right
-        side = "left" if face_region.zone.startswith("left_") else "right"
-        vertical = "bottom"  # Always bottom regardless of detection
-
-        # Calculate PIP position (40px margin from edges)
-        margin_px = 40
-        face_x = margin_px if side == "left" else target_w - face_clip.w - margin_px
-        if vertical == "top":
-            face_y = margin_px
-        elif vertical == "middle":
-            face_y = (target_h - face_clip.h) // 2
-        else:
-            face_y = target_h - face_clip.h - margin_px
-
-        face_clip = face_clip.set_position((face_x, face_y))
-        face_clip = ensure_fps(face_clip.set_duration(source_clip.duration))
-        logger.debug("Clip FPS after face positioning: %s", face_clip.fps)
-
-        # Composite gameplay + facecam using FpsFixedCompositeVideoClip
+        # Composite gameplay (top) + facecam bar (bottom)
         final = FpsFixedCompositeVideoClip(
             [gameplay_full, face_clip],
             size=(target_w, target_h),
-            fps=30,  # Forced fps via custom subclass
+            fps=30,
         ).set_duration(source_clip.duration)
-        logger.debug("Clip FPS after composite (with face): %s", final.fps)
-        logger.info("[GamingTemplate] Using gameplay+face PIP layout (%s, %s)", side, vertical)
+        logger.debug("Clip FPS after composite (split layout): %s", final.fps)
+        logger.info("[GamingTemplate] Using split layout with detected face: gameplay top (70%), facecam bar bottom (30%)")
         return final
 
     def _build_layout_with_fixed_facecam(
@@ -331,67 +328,66 @@ class GamingTemplate(TemplateBase):
         source_clip: VideoFileClip,
         gameplay_clip: VideoFileClip,
     ) -> VideoClip:
-        """Build PIP layout with fixed facecam position (fallback when no face detected).
+        """Build split layout with gameplay on top and facecam bar at bottom.
 
-        Assumes facecam is in left bottom corner of source VOD (typical gaming stream layout).
+        Layout:
+        - Top 70%: Gameplay (centered, zoomed out)
+        - Bottom 30%: Facecam (full width bar)
 
         Args:
             source_clip: Original video clip (full frame)
             gameplay_clip: Already processed gameplay clip
 
         Returns:
-            Composite video clip with PIP layout
+            Composite video clip with split layout
         """
         target_w, target_h = 1080, 1920
 
+        # Split layout: 70% gameplay top, 30% facecam bottom
+        gameplay_h = int(target_h * 0.70)
+        facecam_h = int(target_h * 0.30)
+
+        # Prepare gameplay for top section (centered, zoomed out)
+        gameplay_full = center_crop_9_16(gameplay_clip, scale=0.85)
+        gameplay_full = ensure_fps(gameplay_full.resize((target_w, gameplay_h)).set_duration(source_clip.duration))
+        gameplay_full = gameplay_full.set_position((0, 0))  # Top
+        logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
+
         # Fixed facecam region: left bottom corner of source VOD
         # Assume last 25% of height, last 30% of width
-        facecam_h_percent = 0.25  # 25% of source height
-        facecam_w_percent = 0.30  # 30% of source width
+        facecam_h_percent = 0.25
+        facecam_w_percent = 0.30
 
         src_w, src_h = source_clip.size
         facecam_w = int(src_w * facecam_w_percent)
-        facecam_h = int(src_h * facecam_h_percent)
+        facecam_h_src = int(src_h * facecam_h_percent)
 
         # Crop from left bottom corner
         x1 = 0
-        y1 = src_h - facecam_h
+        y1 = src_h - facecam_h_src
         x2 = facecam_w
         y2 = src_h
 
         logger.info(
             "[GamingTemplate] Using fixed facecam region: left_bottom (%dx%d at %d,%d)",
-            facecam_w, facecam_h, x1, y1
+            facecam_w, facecam_h_src, x1, y1
         )
 
-        # Crop and resize facecam to 35% of target width
+        # Crop and resize facecam to full width bar at bottom
         face_clip = source_clip.crop(x1=x1, y1=y1, x2=x2, y2=y2)
         face_clip = ensure_fps(face_clip.set_duration(source_clip.duration))
-        face_clip = face_clip.resize(width=int(target_w * 0.35))
+        face_clip = face_clip.resize((target_w, facecam_h))  # Full width, bottom 30%
+        face_clip = face_clip.set_position((0, gameplay_h))  # Position at bottom
         logger.debug("Clip FPS after fixed facecam crop: %s", face_clip.fps)
 
-        # Prepare full-frame gameplay background (zoomed out to see more)
-        gameplay_full = center_crop_9_16(gameplay_clip, scale=0.85)
-        gameplay_full = ensure_fps(gameplay_full.resize((target_w, target_h)).set_duration(source_clip.duration))
-        logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
-
-        # Position facecam at bottom left
-        margin_px = 40
-        face_x = margin_px  # Left side
-        face_y = target_h - face_clip.h - margin_px  # Bottom
-
-        face_clip = face_clip.set_position((face_x, face_y))
-        face_clip = ensure_fps(face_clip.set_duration(source_clip.duration))
-        logger.debug("Clip FPS after facecam positioning: %s", face_clip.fps)
-
-        # Composite gameplay + facecam using FpsFixedCompositeVideoClip
+        # Composite gameplay (top) + facecam bar (bottom)
         final = FpsFixedCompositeVideoClip(
             [gameplay_full, face_clip],
             size=(target_w, target_h),
-            fps=30,  # Forced fps via custom subclass
+            fps=30,
         ).set_duration(source_clip.duration)
-        logger.debug("Clip FPS after composite (fixed facecam): %s", final.fps)
-        logger.info("[GamingTemplate] Using fixed facecam PIP layout (left, bottom)")
+        logger.debug("Clip FPS after composite (split layout): %s", final.fps)
+        logger.info("[GamingTemplate] Using split layout: gameplay top (70%), facecam bar bottom (30%)")
         return final
 
     def _build_layout_gameplay_only(self, gameplay_clip: VideoFileClip) -> VideoClip:
