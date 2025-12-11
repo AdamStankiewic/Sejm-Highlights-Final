@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Iterable, Tuple, Optional
 
@@ -21,6 +23,91 @@ from utils.video import (
 from .base import TemplateBase
 
 logger = logging.getLogger(__name__)
+
+
+def render_with_ffmpeg(clip: VideoClip, output_path: Path, fps: int = 30) -> None:
+    """Bypass MoviePy's broken write_videofile() and call ffmpeg directly.
+
+    MoviePy's use_clip_fps_by_default decorator ignores explicit fps parameters,
+    so we need to render frames and audio separately, then combine with ffmpeg.
+    """
+    import numpy as np
+    from moviepy.video.io.ffmpeg_writer import FFMPEG_VideoWriter
+
+    logger.info("Direct ffmpeg render: %s at %d fps", output_path, fps)
+
+    # Create temporary files for video and audio
+    temp_video = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False)
+    temp_audio = tempfile.NamedTemporaryFile(suffix='.mp3', delete=False)
+    temp_video_path = temp_video.name
+    temp_audio_path = temp_audio.name
+    temp_video.close()
+    temp_audio.close()
+
+    try:
+        # Write video with explicit fps using FFMPEG_VideoWriter directly
+        writer = FFMPEG_VideoWriter(
+            temp_video_path,
+            clip.size,
+            fps,  # EXPLICIT FPS - not from clip.fps!
+            codec='libx264',
+            preset='medium',
+            bitrate=None,
+            audiofile=None,  # No audio yet
+            threads=2,
+            ffmpeg_params=None
+        )
+
+        # Write frames
+        logger.debug("Writing %d frames at %d fps", int(clip.duration * fps), fps)
+        for t in np.arange(0, clip.duration, 1.0 / fps):
+            frame = clip.get_frame(t)
+            writer.write_frame(frame)
+
+        writer.close()
+        logger.debug("Video frames written to %s", temp_video_path)
+
+        # Write audio if present
+        if clip.audio is not None:
+            logger.debug("Writing audio to %s", temp_audio_path)
+            clip.audio.write_audiofile(
+                temp_audio_path,
+                codec='mp3',
+                bitrate='192k',
+                verbose=False,
+                logger=None
+            )
+
+            # Combine video and audio using ffmpeg subprocess
+            logger.debug("Combining video and audio with ffmpeg")
+            subprocess.run([
+                'ffmpeg',
+                '-y',  # Overwrite output
+                '-i', temp_video_path,
+                '-i', temp_audio_path,
+                '-c:v', 'copy',  # Copy video stream
+                '-c:a', 'aac',  # Re-encode audio to AAC
+                '-b:a', '192k',
+                '-shortest',  # Match shortest stream duration
+                str(output_path)
+            ], check=True, capture_output=True)
+        else:
+            # No audio, just copy video
+            logger.debug("No audio, copying video file")
+            Path(temp_video_path).rename(output_path)
+
+        logger.info("✓ Rendered successfully: %s", output_path)
+
+    finally:
+        # Cleanup temp files
+        try:
+            Path(temp_video_path).unlink(missing_ok=True)
+        except:
+            pass
+        try:
+            Path(temp_audio_path).unlink(missing_ok=True)
+        except:
+            pass
 
 
 
@@ -138,32 +225,9 @@ class GamingTemplate(TemplateBase):
                 # set_audio also returns a new clip, restore fps again
                 final = ensure_fps(final, fallback=target_fps)
 
-            # NUCLEAR OPTION: Force fps=30 directly on clip object before render
-            # This bypasses MoviePy's decorator which checks clip.fps
-            try:
-                final.fps = 30
-            except:
-                pass
-            try:
-                object.__setattr__(final, 'fps', 30)
-            except:
-                pass
-
-            actual_fps = getattr(final, "fps", None)
-            logger.debug("Clip FPS after forced assignment: %s", actual_fps)
-
-            # Render - decorator will use clip.fps (which we just forced to 30)
-            logger.info("Rendering video with forced fps=30")
-            final.write_videofile(
-                str(output_path),
-                fps=30,  # Explicit fps=30
-                codec="libx264",
-                audio_codec="aac",
-                preset="medium",
-                threads=2,
-                verbose=False,
-                logger=None,
-            )
+            # BYPASS MoviePy's broken write_videofile() and use direct ffmpeg
+            logger.info("Rendering video with direct ffmpeg (fps=30)")
+            render_with_ffmpeg(final, output_path, fps=30)
             final.close()
             clip.close()
             return output_path
@@ -181,31 +245,9 @@ class GamingTemplate(TemplateBase):
                     # set_audio returns a new clip, restore fps
                     fallback_clip = ensure_fps(fallback_clip, fallback=30)
 
-                # NUCLEAR OPTION: Force fps=30 on fallback clip
-                try:
-                    fallback_clip.fps = 30
-                except:
-                    pass
-                try:
-                    object.__setattr__(fallback_clip, 'fps', 30)
-                except:
-                    pass
-
-                actual_fps = getattr(fallback_clip, "fps", None)
-                logger.debug("Fallback clip fps after forced assignment: %s", actual_fps)
-
-                # Fallback render with forced fps
-                logger.info("Rendering fallback video with forced fps=30")
-                fallback_clip.write_videofile(
-                    str(output_path),
-                    fps=30,  # Explicit fps=30
-                    codec="libx264",
-                    audio_codec="aac",
-                    preset="medium",
-                    threads=2,
-                    verbose=False,
-                    logger=None,
-                )
+                # BYPASS MoviePy's broken write_videofile() - use direct ffmpeg
+                logger.info("Rendering fallback video with direct ffmpeg (fps=30)")
+                render_with_ffmpeg(fallback_clip, output_path, fps=30)
                 fallback_clip.close()
             except Exception:
                 logger.exception("[GamingTemplate] Fallback clip rendering failed")
