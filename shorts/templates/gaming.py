@@ -120,7 +120,7 @@ class GamingTemplate(TemplateBase):
             # MoviePy in this environment occasionally drops fps metadata to None mid-pipeline.
             # Resolve once, coerce to a constant fallback, and force it both on the clip and
             # as the explicit render argument to avoid the TypeError seen by the user.
-            render_fps = self._coerce_fps(self._resolve_and_lock_fps(final), fallback=30.0)
+            render_fps = self._resolve_render_fps(final, clip, fallback=30.0)
             final = force_fps(final, render_fps)
 
             logger.debug(
@@ -151,9 +151,7 @@ class GamingTemplate(TemplateBase):
                 if clip and getattr(clip, "audio", None):
                     fallback_clip = fallback_clip.set_audio(clip.audio)
 
-                render_fps = self._coerce_fps(
-                    self._resolve_and_lock_fps(fallback_clip), fallback=30.0
-                )
+                render_fps = self._resolve_render_fps(fallback_clip, clip, fallback=30.0)
                 fallback_clip = force_fps(fallback_clip, render_fps)
 
                 fallback_clip.write_videofile(
@@ -311,48 +309,38 @@ class GamingTemplate(TemplateBase):
         logger.debug("Clip FPS after gameplay-only layout: %s", gameplay_full.fps)
         return gameplay_full
 
-    def _resolve_and_lock_fps(self, clip: VideoClip, fallback: float = 30.0) -> float:
-        """Return a concrete FPS value and log any coercion, avoiding None entirely."""
+    def _resolve_render_fps(
+        self, clip: VideoClip, source_clip: VideoClip | None, fallback: float = 30.0
+    ) -> float:
+        """Return a concrete FPS value, never None, with aggressive probing."""
 
-        render_fps: float
+        candidates = []
+        # Primary preference: explicitly set fps on the clip.
+        candidates.append(getattr(clip, "fps", None))
+        # Secondary: reader fps if available (e.g., VideoFileClip).
+        candidates.append(getattr(getattr(clip, "reader", None), "fps", None))
+        # Tertiary: original source clip if provided.
+        if source_clip is not None:
+            candidates.append(getattr(source_clip, "fps", None))
+            candidates.append(getattr(getattr(source_clip, "reader", None), "fps", None))
+
+        for candidate in candidates:
+            if isinstance(candidate, (int, float)) and candidate > 0:
+                try:
+                    clip.fps = float(candidate)
+                except Exception:
+                    logger.debug("[GamingTemplate] Unable to lock fps=%s on clip directly", candidate)
+                return float(candidate)
+
+        logger.warning(
+            "[GamingTemplate] Failed to resolve fps from candidates=%s; using fallback %s",
+            candidates,
+            fallback,
+        )
         try:
-            render_fps = get_safe_fps(clip, fallback)
+            clip.fps = float(fallback)
         except Exception:
-            logger.exception("[GamingTemplate] get_safe_fps failed; using fallback")
-            render_fps = float(fallback)
+            logger.debug("[GamingTemplate] Unable to lock fallback fps on clip directly")
 
-        if not isinstance(render_fps, (int, float)) or render_fps <= 0:
-            logger.warning(
-                "[GamingTemplate] Invalid render_fps=%s detected; falling back to %s",
-                render_fps,
-                fallback,
-            )
-            render_fps = float(fallback)
-
-        # MoviePy may ignore clip.fps when fps is supplied to write_videofile; set both.
-        try:
-            clip.fps = float(render_fps)
-        except Exception:
-            logger.debug("[GamingTemplate] Unable to assign fps attribute directly during resolve")
-
-        return float(render_fps)
-
-    def _coerce_fps(self, fps: float | None, fallback: float = 30.0) -> float:
-        """Ensure a real, positive fps value before passing to MoviePy."""
-
-        if fps is None:
-            logger.warning("[GamingTemplate] Received fps=None, falling back to %s", fallback)
-            return float(fallback)
-
-        try:
-            numeric_fps = float(fps)
-        except Exception:
-            logger.warning("[GamingTemplate] Non-numeric fps=%s, falling back to %s", fps, fallback)
-            return float(fallback)
-
-        if numeric_fps <= 0:
-            logger.warning("[GamingTemplate] Non-positive fps=%s, falling back to %s", numeric_fps, fallback)
-            return float(fallback)
-
-        return numeric_fps
+        return float(fallback)
 
