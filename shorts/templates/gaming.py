@@ -9,6 +9,7 @@ import functools
 from moviepy.editor import ColorClip, CompositeVideoClip, VideoClip, VideoFileClip
 from moviepy.video.fx.all import speedx as vfx_speedx
 import moviepy.decorators
+from moviepy.video.io.ffmpeg_writer import ffmpeg_write_video
 
 from shorts.face_detection import FaceDetector, FaceRegion
 from utils.video import (
@@ -184,17 +185,33 @@ class GamingTemplate(TemplateBase):
             )
 
             if actual_fps is None:
-                logger.error("CRITICAL: clip.fps is still None after all fix attempts!")
-
-            final.write_videofile(
-                str(output_path),
-                codec="libx264",
-                audio_codec="aac",
-                fps=render_fps,
-                threads=2,
-                verbose=False,
-                logger=None,
-            )
+                logger.error("CRITICAL: clip.fps is still None - using direct ffmpeg_write_video")
+                # ULTIMATE FIX: Bypass write_videofile() entirely, call ffmpeg_write_video directly
+                ffmpeg_write_video(
+                    final,
+                    str(output_path),
+                    fps=render_fps,  # Force fps here
+                    codec="libx264",
+                    audiofile=None,  # Will extract from clip
+                    preset="medium",
+                    bitrate=None,
+                    audio_codec="aac",
+                    threads=2,
+                    ffmpeg_params=[],
+                    verbose=False,
+                    logger=None,
+                )
+            else:
+                # Normal path when fps is valid
+                final.write_videofile(
+                    str(output_path),
+                    codec="libx264",
+                    audio_codec="aac",
+                    fps=render_fps,
+                    threads=2,
+                    verbose=False,
+                    logger=None,
+                )
             final.close()
             clip.close()
             return output_path
@@ -224,17 +241,32 @@ class GamingTemplate(TemplateBase):
 
                 actual_fps = getattr(fallback_clip, "fps", None)
                 if actual_fps is None:
-                    logger.error("CRITICAL: fallback_clip.fps is still None!")
-
-                fallback_clip.write_videofile(
-                    str(output_path),
-                    codec="libx264",
-                    audio_codec="aac",
-                    fps=render_fps,
-                    threads=2,
-                    verbose=False,
-                    logger=None,
-                )
+                    logger.error("CRITICAL: fallback_clip.fps is still None - using direct ffmpeg_write_video")
+                    # ULTIMATE FIX: Bypass write_videofile(), call ffmpeg_write_video directly
+                    ffmpeg_write_video(
+                        fallback_clip,
+                        str(output_path),
+                        fps=render_fps,  # Force fps here
+                        codec="libx264",
+                        audiofile=None,  # Will extract from clip
+                        preset="medium",
+                        bitrate=None,
+                        audio_codec="aac",
+                        threads=2,
+                        ffmpeg_params=[],
+                        verbose=False,
+                        logger=None,
+                    )
+                else:
+                    fallback_clip.write_videofile(
+                        str(output_path),
+                        codec="libx264",
+                        audio_codec="aac",
+                        fps=render_fps,
+                        threads=2,
+                        verbose=False,
+                        logger=None,
+                    )
                 fallback_clip.close()
             except Exception:
                 logger.exception("[GamingTemplate] Fallback clip rendering failed")
