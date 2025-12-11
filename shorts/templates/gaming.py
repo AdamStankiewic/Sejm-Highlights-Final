@@ -124,16 +124,18 @@ class GamingTemplate(TemplateBase):
             else:
                 final = self._build_layout_gameplay_only(gameplay_clip)
 
-            # Get fps from FpsFixedCompositeVideoClip BEFORE set_duration/set_audio
+            # Get fps from layout BEFORE transformations
             target_fps = getattr(final, "fps", None) or 30
-            logger.debug("Clip FPS from FpsFixedCompositeVideoClip: %s", target_fps)
+            logger.debug("Clip FPS from layout: %s", target_fps)
 
+            # set_duration returns a NEW clip, restore fps
             final = final.set_duration(segment_duration)
+            final = ensure_fps(final, fallback=target_fps)
 
             # Set audio from gameplay clip
             if gameplay_clip.audio is not None:
                 final = final.set_audio(gameplay_clip.audio)
-                # set_audio returns a new clip object, restore fps
+                # set_audio also returns a new clip, restore fps again
                 final = ensure_fps(final, fallback=target_fps)
 
             # Verify fps is properly set
