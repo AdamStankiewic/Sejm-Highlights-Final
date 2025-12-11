@@ -360,6 +360,10 @@ class ShortsStage:
                 - None (default): backward compatibility - prosty crop (dla Sejmu)
                 - "auto": automatyczna detekcja na podstawie webcam region
                 - "simple": prosty crop 9:16
+                - "game_top_face_bottom_bar": gameplay u góry, facecam pasek na dole
+                - "full_game_with_floating_face": pełny gameplay + PIP facecam
+                - "simple_game_only": sam gameplay 9:16
+                - "big_face_reaction": duża twarz na rozmytym tle (manualnie)
                 - "classic_gaming": gaming layout (kamerka dół)
                 - "pip_modern": PIP layout
                 - "irl_fullface": IRL fullscreen
@@ -503,6 +507,14 @@ class ShortsStage:
             filter_complex = self._build_simple_template(width, height, str(ass_file))
         elif template == "classic_gaming":
             filter_complex = self._build_classic_gaming_template(width, height, str(ass_file), webcam_detection)
+        elif template == "game_top_face_bottom_bar":
+            filter_complex = self._build_game_top_face_bottom_bar(width, height, str(ass_file), webcam_detection)
+        elif template == "full_game_with_floating_face":
+            filter_complex = self._build_full_game_with_floating_face(width, height, str(ass_file), webcam_detection)
+        elif template == "simple_game_only":
+            filter_complex = self._build_simple_game_only(width, height, str(ass_file))
+        elif template == "big_face_reaction":
+            filter_complex = self._build_big_face_reaction(width, height, str(ass_file), webcam_detection)
         elif template == "pip_modern":
             filter_complex = self._build_pip_modern_template(width, height, str(ass_file), webcam_detection)
         elif template == "irl_fullface":
@@ -633,6 +645,173 @@ class ShortsStage:
 
             # === ADD SUBTITLES ===
             f"[stacked]ass='{ass_file.replace(chr(92), '/')}'"
+        )
+
+        return filter_complex
+
+    def _build_game_top_face_bottom_bar(
+        self,
+        width: int,
+        height: int,
+        ass_file: str,
+        webcam_detection: Optional[Dict] = None,
+    ) -> str:
+        """
+        Szablon GAME TOP / FACE BOTTOM BAR (układ pionowy góra-dół)
+        Layout:
+        - Gameplay w górnych ~70% (1080x1344)
+        - Pasek facecam na dole ~30% (1080x576)
+        - Całość w 1080x1920
+        """
+
+        gameplay_h = int(height * 0.7)
+        facecam_h = height - gameplay_h
+
+        # Gameplay: pełna szerokość, crop do 9:16 i 70% wysokości
+        filter_parts = [
+            f"[0:v]split=2[gameplay][face];",
+            # === GAMEPLAY (top 70%) ===
+            f"[gameplay]scale={width}:{gameplay_h}:force_original_aspect_ratio=increase,",
+            f"crop={width}:{gameplay_h}[gameplay_scaled];",
+        ]
+
+        # Facecam crop na bazie detekcji lub fallback do dolnej części
+        if webcam_detection and webcam_detection.get('w') and webcam_detection.get('h'):
+            bbox = webcam_detection
+            x = max(int(bbox.get('x', 0)), 0)
+            y = max(int(bbox.get('y', 0)), 0)
+            w = max(int(bbox.get('w', 1)), 1)
+            h = max(int(bbox.get('h', 1)), 1)
+            crop_cmd = f"crop={w}:{h}:{x}:{y}"
+        else:
+            crop_cmd = "crop=iw:ih*0.35:0:ih*0.65"  # Bottom 35% fallback
+
+        filter_parts.extend(
+            [
+                # === FACE BAR (bottom 30%) ===
+                f"[face]{crop_cmd},",
+                f"scale={width}:{facecam_h}:force_original_aspect_ratio=decrease,",
+                f"pad={width}:{facecam_h}:(ow-iw)/2:0:black,",
+                f"crop={width}:{facecam_h}[face_scaled];",
+                # === STACK GAMEPLAY + FACE ===
+                f"[gameplay_scaled][face_scaled]vstack=inputs=2[stacked];",
+                # === SUBTITLES ===
+                f"[stacked]ass='{ass_file.replace(chr(92), '/')}'",
+            ]
+        )
+
+        return "".join(filter_parts)
+
+    def _build_full_game_with_floating_face(
+        self,
+        width: int,
+        height: int,
+        ass_file: str,
+        webcam_detection: Optional[Dict] = None,
+    ) -> str:
+        """
+        Szablon FULLSCREEN GAME + FLOATING FACE (PIP)
+        Layout:
+        - Gameplay pełnoekranowy 1080x1920
+        - PIP facecam ~38% szerokości, ~20% wysokości, umieszczony nisko
+        - Wyrównanie lewo/prawo zależne od wykrytej strefy
+        """
+
+        pip_w = int(width * 0.38)
+        pip_h = int(height * 0.20)
+        margin = int(width * 0.05)
+        pip_y = int(height * 0.625)
+
+        zone = (webcam_detection or {}).get('zone', '') if webcam_detection else ''
+        if isinstance(zone, str) and zone.startswith('left'):
+            pip_x = margin
+        elif isinstance(zone, str) and zone.startswith('right'):
+            pip_x = width - pip_w - margin
+        else:
+            pip_x = width - pip_w - margin
+
+        if pip_y + pip_h + margin > height:
+            pip_y = max(height - pip_h - margin, 0)
+
+        # Facecam crop (detected bbox fallback to bottom slice)
+        if webcam_detection and webcam_detection.get('w') and webcam_detection.get('h'):
+            bbox = webcam_detection
+            x = max(int(bbox.get('x', 0)), 0)
+            y = max(int(bbox.get('y', 0)), 0)
+            w = max(int(bbox.get('w', 1)), 1)
+            h = max(int(bbox.get('h', 1)), 1)
+            face_crop = f"crop={w}:{h}:{x}:{y}"
+        else:
+            face_crop = "crop=iw:ih*0.35:0:ih*0.65"
+
+        filter_complex = (
+            # === SPLIT MAIN & FACE ===
+            f"[0:v]split=2[main][pip_src];"
+            # === MAIN FULLSCREEN ===
+            f"[main]scale={int(width*1.1)}:{height}:force_original_aspect_ratio=decrease,"
+            f"crop={width}:{height}[main_scaled];"
+            # === PIP FACE ===
+            f"[pip_src]{face_crop},"
+            f"scale={pip_w}:{pip_h}:force_original_aspect_ratio=decrease,"
+            f"pad={pip_w}:{pip_h}:(ow-iw)/2:(oh-ih)/2:black[pip];"
+            # === OVERLAY ===
+            f"[main_scaled][pip]overlay={pip_x}:{pip_y}[composed];"
+            # === SUBTITLES ===
+            f"[composed]ass='{ass_file.replace(chr(92), '/')}'"
+        )
+
+        return filter_complex
+
+    def _build_simple_game_only(self, width: int, height: int, ass_file: str) -> str:
+        """
+        Szablon SIMPLE GAME ONLY - pełnoekranowy gameplay 9:16 bez facecama.
+        """
+
+        return (
+            f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height}[game];"
+            f"[game]ass='{ass_file.replace(chr(92), '/')}'"
+        )
+
+    def _build_big_face_reaction(
+        self,
+        width: int,
+        height: int,
+        ass_file: str,
+        webcam_detection: Optional[Dict] = None,
+    ) -> str:
+        """
+        Szablon BIG FACE REACTION - rozmyte tło + duża twarz na froncie.
+        Użycie manualne przy mocnych reakcjach.
+        """
+
+        face_w = int(width * 0.9)
+        face_h = int(height * 0.4)
+        face_x = int((width - face_w) / 2)
+        face_y = int(height * 0.3)
+
+        if webcam_detection and webcam_detection.get('w') and webcam_detection.get('h'):
+            bbox = webcam_detection
+            x = max(int(bbox.get('x', 0)), 0)
+            y = max(int(bbox.get('y', 0)), 0)
+            w = max(int(bbox.get('w', 1)), 1)
+            h = max(int(bbox.get('h', 1)), 1)
+            face_crop = f"crop={w}:{h}:{x}:{y}"
+        else:
+            face_crop = "crop=iw:ih*0.35:0:ih*0.65"
+
+        filter_complex = (
+            # === BACKGROUND (blurred) ===
+            f"[0:v]scale={int(width*1.1)}:{height}:force_original_aspect_ratio=decrease,"
+            f"crop={width}:{height},gblur=sigma=30[bg];"
+            # === FACE FOREGROUND ===
+            f"[0:v]{face_crop},"
+            f"scale={face_w}:{face_h}:force_original_aspect_ratio=decrease,"
+            f"pad={face_w}:{face_h}:(ow-iw)/2:(oh-ih)/2:black[face];"
+            # === COMPOSE ===
+            f"[bg][face]overlay={face_x}:{face_y}[composed];"
+            # === SUBTITLES (opcjonalnie) ===
+            f"[composed]ass='{ass_file.replace(chr(92), '/')}'"
         )
 
         return filter_complex
