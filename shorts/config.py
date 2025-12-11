@@ -32,6 +32,8 @@ class ShortsConfig:
     face_detection: bool = False
     num_samples: int = 5
     detection_threshold: float = 0.30
+    game_top_face_bar: Optional[dict] = None
+    floating_face: Optional[dict] = None
     upload_to_youtube: bool = False
     add_hashtags: bool = False
     shorts_category_id: int = 24
@@ -78,6 +80,32 @@ class ShortsConfig:
             self.face_detection = bool(self.face_detection)
         except Exception:
             self.face_detection = False
+
+        # Nested layout configs -> map to flattened percentages
+        if isinstance(self.game_top_face_bar, dict):
+            try:
+                gameplay_pct = self.game_top_face_bar.get("gameplay_percentage")
+                if gameplay_pct is not None:
+                    self.game_top_face_bar_gameplay_percentage = float(gameplay_pct)
+                face_pct = self.game_top_face_bar.get("facecam_bar_percentage")
+                if face_pct is not None:
+                    self.game_top_face_bar_facecam_percentage = float(face_pct)
+            except Exception:
+                pass
+
+        if isinstance(self.floating_face, dict):
+            try:
+                pip_w = self.floating_face.get("pip_width_percentage")
+                if pip_w is not None:
+                    self.floating_face_pip_width_percentage = float(pip_w)
+                pip_h = self.floating_face.get("pip_height_percentage")
+                if pip_h is not None:
+                    self.floating_face_pip_height_percentage = float(pip_h)
+                pip_y = self.floating_face.get("pip_y_percentage")
+                if pip_y is not None:
+                    self.floating_face_pip_y_percentage = float(pip_y)
+            except Exception:
+                pass
 
         # Num shorts (alias count)
         provided_count = getattr(self, "count", None)
