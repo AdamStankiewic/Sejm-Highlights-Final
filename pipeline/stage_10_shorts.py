@@ -128,7 +128,7 @@ class ShortsStage:
         return f"{col}_{row}"
 
     def _detect_webcam_region(
-        self, input_file: Path, start_time: float, duration: float, num_samples: int = 5
+        self, input_file: Path, start_time: float, duration: float, num_samples: Optional[int] = None
     ) -> Dict[str, Any]:
         """Wieloklatkowa detekcja kamerki w 6 strefach bocznych.
 
@@ -155,10 +155,15 @@ class ShortsStage:
                 'num_faces': 0,
             }
 
-        consensus_threshold = getattr(self.config.shorts, 'detection_threshold', 0.3)  # TODO: move to config
+        consensus_threshold = getattr(self.config.shorts, 'detection_threshold', 0.3)
+        sample_count = num_samples or getattr(self.config.shorts, 'num_samples', 5)
+        try:
+            sample_count = max(1, int(sample_count))
+        except Exception:
+            sample_count = 5
 
         try:
-            sample_times = np.linspace(start_time, start_time + duration, num_samples)
+            sample_times = np.linspace(start_time, start_time + duration, sample_count)
             detections: List[Dict[str, Any]] = []
             all_zones: List[str] = []
 
@@ -244,7 +249,7 @@ class ShortsStage:
 
             zone_counts = Counter(all_zones)
             dominant_zone, dominant_count = zone_counts.most_common(1)[0]
-            detection_rate = dominant_count / max(num_samples, 1)
+            detection_rate = dominant_count / max(sample_count, 1)
 
             ambiguous = False
             if len(zone_counts) > 1:
@@ -303,8 +308,9 @@ class ShortsStage:
 
         detection_rate = webcam_detection.get("detection_rate", 0.0) if webcam_detection else 0.0
         zone = (webcam_detection or {}).get("zone") if webcam_detection else None
+        threshold = getattr(self.config.shorts, "detection_threshold", 0.3)
 
-        if not webcam_detection or webcam_detection.get("type") == "none" or detection_rate < 0.30:
+        if not webcam_detection or webcam_detection.get("type") == "none" or detection_rate < threshold:
             template = "simple_game_only"
         elif zone in {"left_bottom", "right_bottom"}:
             template = "game_top_face_bottom_bar"
@@ -400,12 +406,23 @@ class ShortsStage:
             print(f"\n   📱 Short {i}/{len(shorts_clips)}")
 
             try:
-                manual_override = getattr(self.config.shorts, "manual_template", None)
-                if template not in (None, "auto"):
-                    manual_override = template
+                config_manual = getattr(self.config.shorts, "manual_template", None)
+                cli_manual = template if template not in (None, "auto") else None
+                config_template_override = (
+                    getattr(self.config.shorts, "template", "auto")
+                    if getattr(self.config.shorts, "template", "auto") not in (None, "auto")
+                    else None
+                )
+
+                manual_override = config_manual or cli_manual or config_template_override
 
                 webcam_detection = {"type": "none"}
-                if template == "auto" and self.config.shorts.face_detection and not manual_override:
+                if (
+                    getattr(self.config.shorts, "template", "auto") == "auto"
+                    and template in (None, "auto")
+                    and self.config.shorts.face_detection
+                    and not manual_override
+                ):
                     clip_start = clip.get("t0", 0.0)
                     clip_end = clip.get("t1", clip_start)
                     detection_duration = max(clip_end - clip_start, 1.0)
@@ -413,6 +430,7 @@ class ShortsStage:
                         input_path,
                         start_time=clip_start,
                         duration=detection_duration,
+                        num_samples=self.config.shorts.num_samples,
                     )
 
                 selected_template = self._select_template(webcam_detection, manual_override)
@@ -646,8 +664,12 @@ class ShortsStage:
         - Całość w 1080x1920
         """
 
-        gameplay_h = int(height * 0.7)
-        facecam_h = height - gameplay_h
+        gameplay_pct = getattr(self.config.shorts, "game_top_face_bar_gameplay_percentage", 0.7)
+        face_pct = getattr(self.config.shorts, "game_top_face_bar_facecam_percentage", 0.3)
+        gameplay_h = int(height * gameplay_pct)
+        facecam_h = max(1, int(height * face_pct))
+        if gameplay_h + facecam_h != height:
+            facecam_h = max(1, height - gameplay_h)
 
         # Gameplay: pełna szerokość, crop do 9:16 i 70% wysokości
         filter_parts = [
@@ -699,10 +721,10 @@ class ShortsStage:
         - Wyrównanie lewo/prawo zależne od wykrytej strefy
         """
 
-        pip_w = int(width * 0.38)
-        pip_h = int(height * 0.20)
+        pip_w = int(width * getattr(self.config.shorts, "floating_face_pip_width_percentage", 0.38))
+        pip_h = int(height * getattr(self.config.shorts, "floating_face_pip_height_percentage", 0.20))
         margin = int(width * 0.05)
-        pip_y = int(height * 0.625)
+        pip_y = int(height * getattr(self.config.shorts, "floating_face_pip_y_percentage", 0.625))
 
         zone = (webcam_detection or {}).get('zone', '') if webcam_detection else ''
         if isinstance(zone, str) and zone.startswith('left'):
@@ -950,17 +972,20 @@ class ShortsStage:
             return
 
         # Determine MarginV (vertical position) based on template
+        height = getattr(self.config.shorts, "height", 1920)
+        face_bar_margin = int(height * getattr(self.config.shorts, "game_top_face_bar_facecam_percentage", 0.3))
+
         if template == "classic_gaming":
-            # Napisy pod kamerką - wyżej niż zwykle
             margin_v = 800  # Wyżej, żeby nie zasłaniać kamerki na dole
         elif template == "pip_modern":
-            # Napisy w środku
             margin_v = 600
+        elif template == "game_top_face_bottom_bar":
+            margin_v = max(face_bar_margin, 600)
+        elif template == "full_game_with_floating_face":
+            margin_v = max(int(height * 0.05), 550)
         elif template in ["irl_fullface", "dynamic_speaker"]:
-            # Napisy niżej - bezpieczna strefa
             margin_v = 650
         else:
-            # Simple - default
             margin_v = 600
 
         # ASS Header - optymalizowany dla Shorts (9:16)

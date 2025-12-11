@@ -216,7 +216,8 @@ youtube:
 shorts:
   enabled: true
   generate_shorts: false
-  template: "gaming"        # gaming | universal
+  template: "auto"        # "auto" albo konkretna nazwa szablonu (np. simple_game_only)
+  manual_template: null
   face_regions: ["bottom_right", "bottom_left", "top_right", "top_left"]
   speedup_factor: 1.0       # 1.0 - 1.5
   add_subtitles: false
@@ -227,13 +228,22 @@ shorts:
   face_resize_width: 250
   gameplay_scale: 0.88
   universal_scale: 0.90
-  face_detection: false
+  face_detection: true
+  num_samples: 5
+  detection_threshold: 0.30
+  webcam_detection_confidence: 0.5
   upload_to_youtube: false
   add_hashtags: false
   shorts_category_id: 24
-  webcam_detection_confidence: 0.5
   pre_roll: 0.0
   post_roll: 0.0
+  game_top_face_bar:
+    gameplay_percentage: 0.70
+    facecam_bar_percentage: 0.30
+  floating_face:
+    pip_width_percentage: 0.38
+    pip_height_percentage: 0.20
+    pip_y_percentage: 0.625
 
 copyright:
   enabled: false
