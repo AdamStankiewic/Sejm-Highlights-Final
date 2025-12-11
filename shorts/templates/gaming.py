@@ -133,6 +133,14 @@ class GamingTemplate(TemplateBase):
 
             render_fps = 30  # Always use 30fps for Shorts
 
+            # BRUTAL FPS FIX: MoviePy's use_clip_fps_by_default decorator
+            # ignores fps= argument if clip.fps is None. Force attribute directly.
+            try:
+                final.fps = render_fps
+                logger.debug("Forced clip.fps = %s", render_fps)
+            except Exception as e:
+                logger.error("Cannot force fps attribute: %s", e)
+
             logger.debug(
                 "Clip FPS before render: %s (render_fps=%s)",
                 getattr(final, "fps", None),
@@ -163,6 +171,13 @@ class GamingTemplate(TemplateBase):
 
                 fallback_clip = ensure_fps(fallback_clip, fallback=30)
                 render_fps = 30
+
+                # BRUTAL FPS FIX for fallback clip
+                try:
+                    fallback_clip.fps = render_fps
+                    logger.debug("Forced fallback_clip.fps = %s", render_fps)
+                except Exception as e:
+                    logger.error("Cannot force fallback fps attribute: %s", e)
 
                 fallback_clip.write_videofile(
                     str(output_path),
