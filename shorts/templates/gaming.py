@@ -117,7 +117,7 @@ class GamingTemplate(TemplateBase):
             if gameplay_clip.audio is not None:
                 final = final.set_audio(gameplay_clip.audio)
             final = force_fps(final, 30)
-            render_fps = get_safe_fps(final, 30)
+            render_fps = self._coerce_fps_value(self._resolve_render_fps(final))
             logger.debug(
                 "Clip FPS before render (forced): %s (render_fps=%s)",
                 getattr(final, "fps", None),
@@ -146,7 +146,7 @@ class GamingTemplate(TemplateBase):
                 if clip and getattr(clip, "audio", None):
                     fallback_clip = fallback_clip.set_audio(clip.audio)
                 fallback_clip = force_fps(fallback_clip, 30)
-                render_fps = get_safe_fps(fallback_clip, 30)
+                render_fps = self._coerce_fps_value(self._resolve_render_fps(fallback_clip))
                 fallback_clip.write_videofile(
                     str(output_path),
                     codec="libx264",
@@ -301,4 +301,34 @@ class GamingTemplate(TemplateBase):
         gameplay_full = ensure_fps(gameplay_full.resize((target_w, target_h)).set_duration(gameplay_clip.duration))
         logger.debug("Clip FPS after gameplay-only layout: %s", gameplay_full.fps)
         return gameplay_full
+
+    def _resolve_render_fps(self, clip: VideoClip, fallback: float = 30.0) -> float:
+        """Coerce a valid FPS value for rendering, never returning None."""
+
+        try:
+            render_fps = get_safe_fps(clip, fallback)
+        except Exception:
+            logger.exception("[GamingTemplate] get_safe_fps failed; using fallback")
+            return float(fallback)
+
+        if not isinstance(render_fps, (int, float)) or render_fps <= 0:
+            logger.warning(
+                "[GamingTemplate] Invalid render_fps=%s detected; falling back to %s",
+                render_fps,
+                fallback,
+            )
+            return float(fallback)
+
+        return float(render_fps)
+
+    def _coerce_fps_value(self, value: float | None, fallback: float = 30.0) -> float:
+        """Guarantee a numeric fps value, avoiding None in write_videofile calls."""
+
+        if not isinstance(value, (int, float)) or value <= 0:
+            logger.warning(
+                "[GamingTemplate] Invalid render fps resolved (%s); defaulting to %s", value, fallback
+            )
+            return float(fallback)
+
+        return float(value)
 
