@@ -124,13 +124,19 @@ class GamingTemplate(TemplateBase):
             else:
                 final = self._build_layout_gameplay_only(gameplay_clip)
 
+            # Get fps from FpsFixedCompositeVideoClip BEFORE set_duration/set_audio
+            target_fps = getattr(final, "fps", None) or 30
+            logger.debug("Clip FPS from FpsFixedCompositeVideoClip: %s", target_fps)
+
             final = final.set_duration(segment_duration)
 
             # Set audio from gameplay clip
             if gameplay_clip.audio is not None:
                 final = final.set_audio(gameplay_clip.audio)
+                # set_audio returns a new clip object, restore fps
+                final = ensure_fps(final, fallback=target_fps)
 
-            # Verify fps is properly set via FpsFixedCompositeVideoClip
+            # Verify fps is properly set
             actual_fps = getattr(final, "fps", None)
             logger.debug("Clip FPS before render: %s", actual_fps)
 
@@ -156,10 +162,13 @@ class GamingTemplate(TemplateBase):
                 fallback_clip = ColorClip(
                     size=(1080, 1920), color=(0, 0, 0), duration=duration
                 )
+                fallback_clip = ensure_fps(fallback_clip, fallback=30)
+
                 if clip and getattr(clip, "audio", None):
                     fallback_clip = fallback_clip.set_audio(clip.audio)
+                    # set_audio returns a new clip, restore fps
+                    fallback_clip = ensure_fps(fallback_clip, fallback=30)
 
-                fallback_clip = ensure_fps(fallback_clip, fallback=30)
                 actual_fps = getattr(fallback_clip, "fps", None)
                 logger.debug("Fallback clip fps: %s", actual_fps)
 
