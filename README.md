@@ -14,6 +14,11 @@ Automatyczne generowanie kompilacji "Najlepszych momentów z Sejmu" z długich t
 - [Konfiguracja](#konfiguracja)
 - [Architektura](#architektura)
 - [Troubleshooting](#troubleshooting)
+- [Opis Architektury Shorts 2.0](#opis-architektury-shorts-20)
+- [Konfiguracja Shorts](#konfiguracja-shorts)
+- [Instrukcja użytkownika (Shorts)](#instrukcja-uzytkownika-shorts)
+- [Troubleshooting (Shorts)](#troubleshooting-shorts)
+- [Plan wdrożenia Shorts 2.0](#plan-wdrozenia-shorts-20)
 
 ---
 
@@ -262,3 +267,56 @@ scoring:
 | `asr.model` | Model Whisper | `large-v3` |
 | `selection.target_total_duration` | Długość filmu (s) | 900 (15 min) |
 | `selection.max
+## 🧭 Opis Architektury Shorts 2.0
+
+Nowe Shortsy przechodzą z układu poziomego (facecam obok gameplay) na układ pionowy 9:16, w którym gameplay zajmuje pełną szerokość ekranu, a kamera pojawia się jako pasek na dole lub w postaci PIP. Multi-frame face detection (5 próbek) ignoruje twarze w centrum kadru, dzięki czemu automatycznie dobiera layout: kamerka na dole → pasek na dole, kamerka u góry/środku → PIP, brak kamerki → sam gameplay.
+
+Dostępne szablony:
+- **game_top_face_bottom_bar** – gameplay na górze, pasek z facecamem na dole (dla ujęć z kamerką w dolnej części kadru).
+- **full_game_with_floating_face** – pełny gameplay + małe okno PIP (dla kamerek w górnej/środkowej części).
+- **simple_game_only** – sam gameplay (fallback, gdy brak pewnej detekcji lub brak kamerki).
+- **big_face_reaction** – duża twarz na rozmytym tle (użycie manualne, np. highlight reakcji).
+
+**Nowa zależność:** MediaPipe (detekcja twarzy). Instalacja: `pip install mediapipe`.
+
+## ⚙️ Konfiguracja Shorts
+
+W sekcji `shorts:` w `config.yml` dodano parametry sterujące automatycznym doborem układu i detekcją kamerki:
+- `face_detection` (bool) – włącza/wyłącza analizę facecama.
+- `num_samples` – liczba próbek klatek do konsensusu (domyślnie 5).
+- `detection_threshold` – minimalny udział klatek z dominującą strefą, aby uznać detekcję (0–1).
+- `webcam_detection_confidence` – minimalna pewność detektora twarzy (MediaPipe).
+- `template` – "auto" lub nazwa szablonu, by wymusić jeden globalnie.
+- `manual_template` – jednorazowe wymuszenie szablonu dla bieżącej generacji.
+- `game_top_face_bar.*` oraz `floating_face.*` – współczynniki układów (wysokości/padding PIP) dla dostrajania layoutu.
+
+Przykłady konfiguracji:
+- **Brak kamerki:** `face_detection: false`, `template: "simple_game_only"` – pipeline pomija detekcję i renderuje sam gameplay.
+- **Wymuszona reakcja:** ustaw `manual_template: "big_face_reaction"` dla konkretnego klipu, aby uzyskać duży facecam na rozmytym tle.
+- **Tuning progu:** jeśli pojawiają się false-positive twarze, zwiększ `detection_threshold` (np. 0.5); jeśli detekcja zbyt często odpada, zmniejsz próg lub zwiększ `num_samples`.
+
+Stary układ side_left/side_right został usunięty; nowe szablony zastępują poprzednie layouty.
+
+## 🧑‍🏫 Instrukcja użytkownika (Shorts)
+
+- **Auto vs. manual:** ustaw `template: auto`, aby system sam dobierał układ; użyj `manual_template`, gdy chcesz konkretny layout (np. big_face_reaction).
+- **Przełączanie detekcji:** `face_detection: true/false` – wyłącz analizę, jeśli w materiale nie ma kamerki.
+- **Interpretacja logów:** niskie `detection_rate` oznacza brak stabilnej kamerki; `zone=center_ignored` informuje, że twarz była w centrum i została pominięta.
+- **Najlepsze praktyki:** dla gier zostaw auto; dla materiałów bez gameplay ustaw `template: simple_game_only`; kontroluj napisy, jeśli PIP zasłania UI – w razie potrzeby wymuś inny układ lub dostosuj styl napisów.
+
+## 🛠️ Troubleshooting (Shorts)
+
+- **Brak detekcji twarzy:** sprawdź `face_detection: true`, instalację MediaPipe oraz czy twarz jest widoczna (niezbyt mała/zamaskowana).
+- **Niewłaściwy wybór szablonu:** jeśli pipeline wybiera fallback mimo kamerki, obniż `detection_threshold` lub wydłuż materiał próbki; w razie potrzeby wymuś szablon manualnie.
+- **PIP zasłania UI gry:** wygeneruj klip z innym układem (np. manual_template) lub przesuń PIP w postprocess; obecnie system zakłada, że pierwotne położenie kamerki omija najważniejsze elementy UI.
+- **Wydajność:** multi-frame detekcja dodaje ~2-3s per short; upewnij się, że FFmpeg korzysta z akceleracji (jeśli dostępna) i masz aktualną wersję.
+- **Kompatybilność:** nowe shorty wciąż 1080x1920; stary side_by_side nie jest już wspierany.
+
+## 🚀 Plan wdrożenia Shorts 2.0
+
+- **Faza 1 – Canary (tydzień 1):** uruchom nowy system dla ~10% shortów, zmierz czasy renderu i zweryfikuj poprawność layoutów; zbierz feedback zespołu.
+- **Faza 2 – 50% rollout (tydzień 2):** jeśli brak krytycznych błędów, zwiększ udział do ~50% i wykonaj A/B test (CTR, zaangażowanie, czas produkcji).
+- **Faza 3 – 100% (tydzień 3):** pełne przełączenie na nowe layouty; monitoruj pierwsze batchowe renderingi i rozważ cleanup legacy kodu w kolejnym sprzątaniu.
+- **Rollback:** w razie krytycznych problemów użyj brancha `backup-before-vertical-templates` lub revertuj merge; kluczowe zmiany są odseparowane w `stage_10_shorts.py` i `config.yml`.
+- **Komunikacja:** poinformuj zespół o zmianach, podeprzyj się README/MIGRATION; upewnij się, że MediaPipe jest doinstalowane w środowiskach buildowych.
+
