@@ -116,16 +116,19 @@ class GamingTemplate(TemplateBase):
             final = final.set_duration(segment_duration)
             if gameplay_clip.audio is not None:
                 final = final.set_audio(gameplay_clip.audio)
-            final = force_fps(final, 30)
-            render_fps = self._coerce_fps(self._resolve_and_lock_fps(final))
+
+            # MoviePy in this environment occasionally drops fps metadata to None mid-pipeline.
+            # Resolve once, coerce to a constant fallback, and force it both on the clip and
+            # as the explicit render argument to avoid the TypeError seen by the user.
+            render_fps = self._coerce_fps(self._resolve_and_lock_fps(final), fallback=30.0)
+            final = force_fps(final, render_fps)
+
             logger.debug(
                 "Clip FPS before render (forced): %s (render_fps=%s)",
                 getattr(final, "fps", None),
                 render_fps,
             )
 
-            # MoviePy in this environment can emit fps=None; force_fps sets the attribute
-            # before render, and we also pass an explicit fps to avoid NoneType errors.
             final.write_videofile(
                 str(output_path),
                 codec="libx264",
@@ -147,8 +150,12 @@ class GamingTemplate(TemplateBase):
                 )
                 if clip and getattr(clip, "audio", None):
                     fallback_clip = fallback_clip.set_audio(clip.audio)
-                fallback_clip = force_fps(fallback_clip, 30)
-                render_fps = self._coerce_fps(self._resolve_and_lock_fps(fallback_clip))
+
+                render_fps = self._coerce_fps(
+                    self._resolve_and_lock_fps(fallback_clip), fallback=30.0
+                )
+                fallback_clip = force_fps(fallback_clip, render_fps)
+
                 fallback_clip.write_videofile(
                     str(output_path),
                     codec="libx264",
