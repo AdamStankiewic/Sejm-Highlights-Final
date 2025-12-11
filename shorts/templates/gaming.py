@@ -4,11 +4,9 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import Iterable, Tuple, Optional
-import functools
 
-from moviepy.editor import ColorClip, CompositeVideoClip, VideoClip, VideoFileClip
+from moviepy.editor import ColorClip, VideoClip, VideoFileClip
 from moviepy.video.fx.all import speedx as vfx_speedx
-import moviepy.decorators
 
 from shorts.face_detection import FaceDetector, FaceRegion
 from utils.video import (
@@ -18,37 +16,13 @@ from utils.video import (
     ensure_fps,
     ensure_output_path,
     load_subclip,
+    FpsFixedCompositeVideoClip,
 )
 from .base import TemplateBase
 
 logger = logging.getLogger(__name__)
 
 
-# MONKEY PATCH: Fix MoviePy's use_clip_fps_by_default to handle None fps
-_original_use_clip_fps_by_default = moviepy.decorators.use_clip_fps_by_default
-
-
-def _patched_use_clip_fps_by_default(func):
-    """Patched version that injects fps=30 if clip.fps is None."""
-    @functools.wraps(func)
-    def wrapper(clip, *args, **kwargs):
-        # If fps not explicitly provided and clip.fps is None, inject fps=30
-        if 'fps' not in kwargs:
-            clip_fps = getattr(clip, 'fps', None)
-            if clip_fps is None:
-                logger.warning(
-                    "Clip has fps=None, injecting fps=30 via monkey-patch"
-                )
-                kwargs['fps'] = 30
-            else:
-                kwargs['fps'] = clip_fps
-        return func(clip, *args, **kwargs)
-    return wrapper
-
-
-# Apply the monkey patch globally
-moviepy.decorators.use_clip_fps_by_default = _patched_use_clip_fps_by_default
-logger.info("Applied MoviePy fps monkey-patch")
 
 
 class GamingTemplate(TemplateBase):
@@ -152,42 +126,19 @@ class GamingTemplate(TemplateBase):
 
             final = final.set_duration(segment_duration)
 
-            # CRITICAL: Ensure fps before and after audio operations
-            final = ensure_fps(final, fallback=30)
-
+            # Set audio from gameplay clip
             if gameplay_clip.audio is not None:
                 final = final.set_audio(gameplay_clip.audio)
-                # set_audio might clear fps, restore it
-                final = ensure_fps(final, fallback=30)
 
-            render_fps = 30  # Always use 30fps for Shorts
-
-            # NUCLEAR FPS FIX: MoviePy's use_clip_fps_by_default decorator
-            # ignores fps= argument if clip.fps is None.
-            # Use object.__setattr__ to bypass read-only property setters.
-            try:
-                object.__setattr__(final, 'fps', render_fps)
-                logger.debug("Forced clip.fps via __setattr__ = %s", render_fps)
-            except Exception as e:
-                logger.error("Cannot force fps via __setattr__: %s", e)
-                # Last resort: try regular assignment
-                try:
-                    final.fps = render_fps
-                except:
-                    pass
-
+            # Verify fps is properly set via FpsFixedCompositeVideoClip
             actual_fps = getattr(final, "fps", None)
-            logger.debug(
-                "Clip FPS before render: %s (target=%s)",
-                actual_fps,
-                render_fps,
-            )
+            logger.debug("Clip FPS before render: %s", actual_fps)
 
-            # Write with explicit fps - decorator should respect this
-            logger.info("Rendering with write_videofile(fps=30)")
+            # Render with explicit fps
+            logger.info("Rendering video with fps=%s", actual_fps or 30)
             final.write_videofile(
                 str(output_path),
-                fps=30,  # EXPLICIT fps should override clip.fps in decorator
+                fps=actual_fps or 30,
                 codec="libx264",
                 audio_codec="aac",
                 preset="medium",
@@ -209,27 +160,14 @@ class GamingTemplate(TemplateBase):
                     fallback_clip = fallback_clip.set_audio(clip.audio)
 
                 fallback_clip = ensure_fps(fallback_clip, fallback=30)
-                render_fps = 30
-
-                # NUCLEAR FPS FIX for fallback clip
-                try:
-                    object.__setattr__(fallback_clip, 'fps', render_fps)
-                    logger.debug("Forced fallback_clip.fps via __setattr__ = %s", render_fps)
-                except Exception as e:
-                    logger.error("Cannot force fallback fps via __setattr__: %s", e)
-                    try:
-                        fallback_clip.fps = render_fps
-                    except:
-                        pass
-
                 actual_fps = getattr(fallback_clip, "fps", None)
                 logger.debug("Fallback clip fps: %s", actual_fps)
 
-                # Fallback render with explicit fps
-                logger.info("Rendering fallback with write_videofile(fps=30)")
+                # Fallback render
+                logger.info("Rendering fallback video with fps=%s", actual_fps or 30)
                 fallback_clip.write_videofile(
                     str(output_path),
-                    fps=30,  # EXPLICIT fps should override clip.fps in decorator
+                    fps=actual_fps or 30,
                     codec="libx264",
                     audio_codec="aac",
                     preset="medium",
@@ -306,11 +244,11 @@ class GamingTemplate(TemplateBase):
         face_clip = ensure_fps(face_clip.set_duration(source_clip.duration))
         logger.debug("Clip FPS after face positioning: %s", face_clip.fps)
 
-        # Composite gameplay + facecam
-        final = CompositeVideoClip(
+        # Composite gameplay + facecam using FpsFixedCompositeVideoClip
+        final = FpsFixedCompositeVideoClip(
             [gameplay_full, face_clip],
             size=(target_w, target_h),
-            fps=30,  # CRITICAL: CompositeVideoClip needs explicit fps
+            fps=30,  # Forced fps via custom subclass
         ).set_duration(source_clip.duration)
         logger.debug("Clip FPS after composite (with face): %s", final.fps)
         logger.info("[GamingTemplate] Using gameplay+face PIP layout (%s, %s)", side, vertical)

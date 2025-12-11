@@ -17,6 +17,40 @@ from moviepy.video.fx.crop import crop
 logger = logging.getLogger(__name__)
 
 
+class FpsFixedCompositeVideoClip(CompositeVideoClip):
+    """CompositeVideoClip with forced fps property.
+
+    MoviePy's CompositeVideoClip.fps property can return None even when
+    fps is explicitly provided to the constructor. This subclass overrides
+    the fps property to always return our forced fps value.
+    """
+    def __init__(self, clips, size=None, bg_color=None, use_bgclip=False, fps=30, **kwargs):
+        """Initialize with forced fps value.
+
+        Args:
+            clips: List of clips to compose
+            size: Output size (width, height)
+            bg_color: Background color
+            use_bgclip: Whether to use first clip as background
+            fps: Forced fps value (default: 30)
+            **kwargs: Additional arguments for CompositeVideoClip
+        """
+        super().__init__(clips, size=size, bg_color=bg_color, use_bgclip=use_bgclip, **kwargs)
+        self._forced_fps = fps
+        logger.debug("FpsFixedCompositeVideoClip initialized with forced fps=%s", fps)
+
+    @property
+    def fps(self):
+        """Always return forced fps value."""
+        return self._forced_fps
+
+    @fps.setter
+    def fps(self, value):
+        """Update forced fps value."""
+        self._forced_fps = value
+        logger.debug("FpsFixedCompositeVideoClip fps set to %s", value)
+
+
 def ensure_fps(clip: VideoFileClip, fallback: int = 30) -> VideoFileClip:
     """THE ONLY fps enforcement function - ensures clip has valid, non-None fps.
 
@@ -141,9 +175,9 @@ def add_subtitles(
         return clip
     # Get fps from source clip before creating composite
     source_fps = getattr(clip, "fps", None) or 30
-    composed = CompositeVideoClip(
+    composed = FpsFixedCompositeVideoClip(
         [clip, *text_clips],
-        fps=source_fps  # CRITICAL: CompositeVideoClip needs explicit fps
+        fps=source_fps  # Forced fps via custom subclass
     ).set_duration(clip.duration)
     logger.debug("Clip FPS after subtitles composite: %s", composed.fps)
     return composed
