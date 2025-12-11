@@ -4,9 +4,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import Iterable, Tuple, Optional
+import functools
 
 from moviepy.editor import ColorClip, CompositeVideoClip, VideoClip, VideoFileClip
 from moviepy.video.fx.all import speedx as vfx_speedx
+import moviepy.decorators
 
 from shorts.face_detection import FaceDetector, FaceRegion
 from utils.video import (
@@ -20,6 +22,33 @@ from utils.video import (
 from .base import TemplateBase
 
 logger = logging.getLogger(__name__)
+
+
+# MONKEY PATCH: Fix MoviePy's use_clip_fps_by_default to handle None fps
+_original_use_clip_fps_by_default = moviepy.decorators.use_clip_fps_by_default
+
+
+def _patched_use_clip_fps_by_default(func):
+    """Patched version that injects fps=30 if clip.fps is None."""
+    @functools.wraps(func)
+    def wrapper(clip, *args, **kwargs):
+        # If fps not explicitly provided and clip.fps is None, inject fps=30
+        if 'fps' not in kwargs:
+            clip_fps = getattr(clip, 'fps', None)
+            if clip_fps is None:
+                logger.warning(
+                    "Clip has fps=None, injecting fps=30 via monkey-patch"
+                )
+                kwargs['fps'] = 30
+            else:
+                kwargs['fps'] = clip_fps
+        return func(clip, *args, **kwargs)
+    return wrapper
+
+
+# Apply the monkey patch globally
+moviepy.decorators.use_clip_fps_by_default = _patched_use_clip_fps_by_default
+logger.info("Applied MoviePy fps monkey-patch")
 
 
 class GamingTemplate(TemplateBase):
