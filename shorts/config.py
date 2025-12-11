@@ -8,14 +8,15 @@ aby uniknąć błędów typu AttributeError podczas migracji.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 
 @dataclass
 class ShortsConfig:
     enabled: bool = True
     generate_shorts: bool = False
-    template: str = "gaming"  # lub "universal"
+    template: str = "auto"  # "auto" albo nazwa konkretnego szablonu
+    manual_template: Optional[str] = None
     face_regions: List[str] = field(
         default_factory=lambda: ["bottom_right", "bottom_left", "top_right", "top_left"]
     )
@@ -29,6 +30,8 @@ class ShortsConfig:
     universal_scale: float = 0.90
     face_resize_width: int = 250
     face_detection: bool = False
+    num_samples: int = 5
+    detection_threshold: float = 0.30
     upload_to_youtube: bool = False
     add_hashtags: bool = False
     shorts_category_id: int = 24
@@ -43,6 +46,11 @@ class ShortsConfig:
     pip_corner_radius: int = 20
     irl_zoom_factor: float = 1.2
     irl_crop_ratio: float = 0.12
+    game_top_face_bar_gameplay_percentage: float = 0.70
+    game_top_face_bar_facecam_percentage: float = 0.30
+    floating_face_pip_width_percentage: float = 0.38
+    floating_face_pip_height_percentage: float = 0.20
+    floating_face_pip_y_percentage: float = 0.625
 
     # Aliasy kompatybilności (nie inicjalizowane w konstruktorze)
     count: int = field(init=False, default=5)
@@ -111,6 +119,7 @@ class ShortsConfig:
             ("upload_to_youtube", False, bool),
             ("add_hashtags", False, bool),
             ("webcam_detection_confidence", 0.5, float),
+            ("detection_threshold", 0.3, float),
             ("pre_roll", 0.0, float),
             ("post_roll", 0.0, float),
             ("width", 1080, int),
@@ -121,6 +130,11 @@ class ShortsConfig:
             ("pip_corner_radius", 20, int),
             ("irl_zoom_factor", 1.2, float),
             ("irl_crop_ratio", 0.12, float),
+            ("game_top_face_bar_gameplay_percentage", 0.70, float),
+            ("game_top_face_bar_facecam_percentage", 0.30, float),
+            ("floating_face_pip_width_percentage", 0.38, float),
+            ("floating_face_pip_height_percentage", 0.20, float),
+            ("floating_face_pip_y_percentage", 0.625, float),
             ("shorts_category_id", 24, int),
         ]:
             try:
@@ -131,8 +145,17 @@ class ShortsConfig:
 
         # Granice pewnych parametrów
         self.webcam_detection_confidence = max(0.0, min(1.0, self.webcam_detection_confidence))
+        self.detection_threshold = max(0.0, min(1.0, self.detection_threshold))
         self.width = max(320, self.width)
         self.height = max(320, self.height)
+
+        try:
+            self.num_samples = max(1, int(self.num_samples))
+        except Exception:
+            self.num_samples = 5
+
+        if self.manual_template in {"", "null", "None"}:
+            self.manual_template = None
 
         # Regiony twarzy – fallback na domyślne, gdy lista pusta/None
         if not self.face_regions:
