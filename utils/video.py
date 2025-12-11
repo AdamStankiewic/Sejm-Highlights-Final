@@ -37,19 +37,31 @@ def ensure_fps(clip: VideoFileClip, fallback: int = 30) -> VideoFileClip:
     current_fps = getattr(clip, "fps", None)
     if not isinstance(current_fps, (int, float)) or current_fps <= 0:
         target_fps = fallback
+        logger.debug("ensure_fps: Invalid fps=%s, using fallback=%s", current_fps, fallback)
     else:
         target_fps = current_fps
+        logger.debug("ensure_fps: Current fps=%s is valid", current_fps)
 
     # Set fps using MoviePy API
     clip = clip.set_fps(target_fps)
 
-    # Force attribute assignment (MoviePy workaround)
+    # Force attribute assignment (MoviePy workaround for some clip types)
     try:
         clip.fps = target_fps
-    except Exception:
-        logger.debug("Unable to assign fps attribute directly (read-only clip)")
+        logger.debug("ensure_fps: Direct fps attribute assignment successful")
+    except (AttributeError, TypeError) as e:
+        logger.warning("ensure_fps: Unable to assign fps attribute directly: %s", e)
 
-    logger.debug("Clip FPS after ensure_fps: %s", getattr(clip, "fps", None))
+    # Verify fps was actually set
+    final_fps = getattr(clip, "fps", None)
+    if final_fps is None or final_fps != target_fps:
+        logger.error(
+            "ensure_fps: FAILED to set fps! target=%s, final=%s, clip_type=%s",
+            target_fps, final_fps, type(clip).__name__
+        )
+    else:
+        logger.debug("ensure_fps: SUCCESS - fps=%s", final_fps)
+
     return clip
 
 
@@ -127,8 +139,12 @@ def add_subtitles(
             logger.exception("Failed to render subtitle '%s': %s", text, exc)
     if not text_clips:
         return clip
-    composed = CompositeVideoClip([clip, *text_clips]).set_duration(clip.duration)
-    composed = ensure_fps(composed)
+    # Get fps from source clip before creating composite
+    source_fps = getattr(clip, "fps", None) or 30
+    composed = CompositeVideoClip(
+        [clip, *text_clips],
+        fps=source_fps  # CRITICAL: CompositeVideoClip needs explicit fps
+    ).set_duration(clip.duration)
     logger.debug("Clip FPS after subtitles composite: %s", composed.fps)
     return composed
 

@@ -122,11 +122,15 @@ class GamingTemplate(TemplateBase):
                 final = self._build_layout_gameplay_only(gameplay_clip)
 
             final = final.set_duration(segment_duration)
+
+            # CRITICAL: Ensure fps before and after audio operations
+            final = ensure_fps(final, fallback=30)
+
             if gameplay_clip.audio is not None:
                 final = final.set_audio(gameplay_clip.audio)
+                # set_audio might clear fps, restore it
+                final = ensure_fps(final, fallback=30)
 
-            # Ensure fps is valid before render (MoviePy workaround)
-            final = ensure_fps(final, fallback=30)
             render_fps = 30  # Always use 30fps for Shorts
 
             logger.debug(
@@ -242,8 +246,9 @@ class GamingTemplate(TemplateBase):
         final = CompositeVideoClip(
             [gameplay_full, face_clip],
             size=(target_w, target_h),
+            fps=30,  # CRITICAL: CompositeVideoClip needs explicit fps
         ).set_duration(source_clip.duration)
-        final = ensure_fps(final)
+        logger.debug("Clip FPS after composite (with face): %s", final.fps)
         logger.info("[GamingTemplate] Using gameplay+face PIP layout (%s, %s)", side, vertical)
         return final
 
