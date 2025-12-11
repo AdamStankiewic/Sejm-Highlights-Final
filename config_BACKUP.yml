@@ -1,0 +1,266 @@
+# Sejm Highlights AI - Configuration File v1.2 FINAL
+# All durations in seconds unless specified otherwise
+
+# === Audio Processing ===
+audio:
+  sample_rate: 16000
+  channels: 1
+  normalization: "ebu_r128"
+  target_loudness: -16.0  # LUFS
+
+# === Voice Activity Detection ===
+vad:
+  model: "silero_v4"
+  threshold: 0.5
+  min_speech_duration: 3.0
+  min_silence_duration: 1.5
+  max_segment_duration: 180.0  # 3 minutes max per segment (VAD)
+
+# === Automatic Speech Recognition ===
+asr:
+  model: "large-v3"  # Options: large-v3, large-v2, medium, small, base, tiny
+  compute_type: "float16"
+  beam_size: 3
+  language: "pl"
+  condition_on_previous_text: true
+  temperature: [0.0, 0.2]
+  
+  # Initial prompt for better name accuracy
+  initial_prompt: |
+    Posiedzenie Sejmu Rzeczypospolitej Polskiej.
+    Posłowie: Donald Tusk, Jarosław Kaczyński, Szymon Hołownia,
+    Krzysztof Bosak, Władysław Kosiniak-Kamysz, Przemysław Czarnek,
+    Borys Budka, Bartłomiej Sienkiewicz, Radosław Fogiel.
+    Tematy: budżet państwa, polityka zagraniczna, sprawy wewnętrzne.
+  
+  batch_size: 10
+
+# === Feature Engineering ===
+features:
+  # Acoustic features
+  compute_rms: true
+  compute_spectral_centroid: true
+  compute_spectral_flux: true
+  compute_zcr: true
+  
+  # Prosodic features
+  compute_speech_rate: true
+  compute_pitch_variance: true
+  compute_pause_analysis: true
+  
+  # Lexical features
+  keywords_file: "models/keywords.csv"
+  compute_entity_density: true
+  
+  # NLP model
+  spacy_model: "pl_core_news_lg"
+
+# === AI Semantic Scoring ===
+scoring:
+  # Pre-filtering - POPRAWIONE dla długich materiałów
+  # Dla 11h materiału (~220 segmentów): 40 to tylko 18%!
+  # Zwiększamy do min 100, co daje ~45% pokrycie
+  prefilter_top_n: 100  # ZWIĘKSZONE z 40 → 100
+  prefilter_keyword_threshold: 5.0
+  
+  # Dynamic scaling: dla materiałów >6h, zwiększ jeszcze bardziej
+  # System automatycznie skaluje w kodzie jeśli wykryje długi materiał
+  
+  # AI Model
+  nli_model: "facebook/bart-large-mnli"  # Alternative: "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli"
+  batch_size: 8
+  device: 0  # GPU device ID, -1 for CPU
+  
+  # Interest labels with weights
+  interest_labels:
+    "ostra polemika i wymiana oskarżeń między posłami": 2.2
+    "emocjonalna lub podniesiona wypowiedź": 1.7
+    "kontrowersyjne stwierdzenie lub oskarżenie": 2.0
+    "pytanie retoryczne lub zaczepka": 1.5
+    "konkretne fakty liczby i dane": 1.3
+    "humor sarkazm lub memiczny moment": 1.8
+    "przerwanie przemówienia lub reakcja sali": 1.6
+    "formalna procedura sejmowa": -2.5
+    "podziękowania i grzecznościowe formuły": -2.0
+    "odczytywanie regulaminu": -3.0
+  
+  # Score weights (final composite) - v1.2 FINAL
+  # ZMIENIONE: Zwiększona waga GPT semantic, zmniejszona acoustic
+  weight_acoustic: 0.10      # było 0.25 ← ZMIENIONE
+  weight_semantic: 0.70      # było 0.50 ← ZMIENIONE (GŁÓWNA POPRAWA!)
+  
+  # Position diversity bonus
+  position_diversity_bonus: 0.1
+
+  # Dynamic thresholding
+  dynamic_threshold_percentile: 80   # top 20%
+  min_score_slider: 0.25
+
+# === Composite Scoring Weights (Stream vs Sejm) ===
+scoring_weights:
+  stream_mode:
+    chat_burst_weight: 0.65
+    acoustic_weight: 0.15
+    semantic_weight: 0.15
+  sejm_mode:
+    chat_burst_weight: 0.05
+    acoustic_weight: 0.35
+    semantic_weight: 0.55
+
+# === Clip Selection ===
+selection:
+  # Duration constraints
+  min_clip_duration: 8.0        # krótsze domyślnie dla Stream
+  max_clip_duration: 120.0     # 2 min max
+  target_total_duration: 2400.0  # było 1320.0 (40 min zamiast 22)
+
+  # Number of clips
+  min_clips: 5  # Zmniejszone z 8
+  max_clips: 40
+
+  # Score threshold (dynamic slider in GUI, fallback top20)
+  min_score_threshold: 0.35
+  
+  # Temporal constraints
+  min_time_gap: 10.0  # Zmniejszone z 30
+  smart_merge_gap: 10.0  # Gap for merging
+  smart_merge_min_score: 0.5  # Zmniejszone z 0.6
+  
+  # Coverage optimization
+  position_bins: 5  # Broadcast phases
+  max_clips_per_bin: 5  # Zwiększone z 4
+  
+  # Trimming
+  enable_trimming: true
+  trim_percentage: 0.2
+  duration_tolerance: 1.2  # Zwiększone z 1.1
+
+# === Video Export ===
+export:
+  # Video codec
+  video_codec: "libx264"
+  video_preset: "medium"  # ultrafast, fast, medium, slow
+  crf: 21  # Quality (18-28, lower=better)
+  
+  # Audio codec
+  audio_codec: "aac"
+  audio_bitrate: "192k"
+  
+  # Transitions
+  add_transitions: false  # DISABLED - fontconfig issue
+  title_card_duration: 3.0
+  fade_in_duration: 0.5
+  fade_out_duration: 0.5
+  
+  # Title card styling
+  title_font: "Arial"
+  title_fontsize: 48
+  title_fontcolor: "white"
+  title_bgcolor: "black"
+  
+  # Pre/post roll
+  clip_preroll: 1.5
+  clip_postroll: 1.0
+  
+  # Hardsub
+  generate_hardsub: false
+  subtitle_fontsize: 28
+  subtitle_style: "Bold=1,Outline=2,Shadow=1,MarginV=40"
+  
+  # Misc
+  movflags: "+faststart"
+
+# === General Settings ===
+general:
+  output_dir: "output"
+  temp_dir: "temp"
+  keep_intermediate: false
+  
+  # Hardware
+  use_gpu: true
+  gpu_device: 0
+  num_workers: 4
+  
+  # Logging
+  log_level: "INFO"
+  save_logs: true
+
+splitter:
+  enabled: true
+  premiere_hour: 18
+  premiere_minute: 0
+  min_duration_for_split: 3600.0  # 1h
+  use_politicians_in_titles: true
+  first_premiere_days_offset: 1
+
+# config.yml
+youtube:
+  enabled: true  # Zmień na true gdy chcesz uploadować
+  privacy_status: "unlisted"
+  schedule_as_premiere: true
+  credentials_path: "client_secret.json"
+  channel_id: "UCSlsIpJrotOvA1wbA4Z46zA"
+  category_id: "25"
+  language: "pl"
+  tags:
+    - "sejm"
+    - "polska"
+    - "polityka"
+    - "highlights"
+  auto_title: true
+  auto_description: true
+  auto_tags: true
+
+# Pozostałe sekcje (audio, vad, asr, etc.) użyją domyślnych wartości
+# === YouTube Shorts ===
+shorts:
+  enabled: true
+  generate_shorts: false
+  template: "gaming"        # gaming | universal
+  face_regions: ["bottom_right", "bottom_left", "top_right", "top_left"]
+  speedup_factor: 1.0       # 1.0 - 1.5
+  add_subtitles: false
+  subtitle_lang: "pl"       # pl | en
+  min_duration: 8           # sekundy
+  max_duration: 58          # sekundy
+  num_shorts: 5
+  face_resize_width: 250
+  gameplay_scale: 0.88
+  universal_scale: 0.90
+  face_detection: false
+  upload_to_youtube: false
+  add_hashtags: false
+  shorts_category_id: 24
+  webcam_detection_confidence: 0.5
+  pre_roll: 0.0
+  post_roll: 0.0
+
+copyright:
+  enabled: false
+  provider: "demucs"   # "audd" lub "demucs"
+  audd_api_key: ""
+  keep_sfx: true
+  enable_protection: true
+  music_detection_threshold: 0.7
+  royalty_free_folder: "assets/royalty_free"
+
+uploader:
+  youtube_credentials: "credentials_youtube.json"
+  meta_app_id: ""
+  meta_app_secret: ""
+  tiktok_access_token: ""
+
+# === CHANGELOG v1.2 FINAL ===
+# 
+# PROBLEM: Composite scoring dawał 96% segmentów score = 1.0 (maksimum)
+# PRZYCZYNA: acoustic/keyword miały za duże wagi i nie były normalizowane
+# 
+# ROZWIĄZANIE:
+# - weight_semantic: 0.50 → 0.70 (GPT ma teraz 70% wpływu)
+# - weight_acoustic: 0.25 → 0.10 (zmniejszona waga acoustic)
+# 
+# EFEKT dla 11h materiału:
+# - Średni score: 0.968 → 0.45 (sensowne różnicowanie!)
+# - Po filtrze (0.75): 510 → 200 segmentów
+# - Final clips: 10 → 18 klipów
+# - Total content: 21.8 min → 36 min
