@@ -117,7 +117,7 @@ class GamingTemplate(TemplateBase):
             if gameplay_clip.audio is not None:
                 final = final.set_audio(gameplay_clip.audio)
             final = force_fps(final, 30)
-            render_fps = self._resolve_and_lock_fps(final)
+            render_fps = self._coerce_fps(self._resolve_and_lock_fps(final))
             logger.debug(
                 "Clip FPS before render (forced): %s (render_fps=%s)",
                 getattr(final, "fps", None),
@@ -148,7 +148,7 @@ class GamingTemplate(TemplateBase):
                 if clip and getattr(clip, "audio", None):
                     fallback_clip = fallback_clip.set_audio(clip.audio)
                 fallback_clip = force_fps(fallback_clip, 30)
-                render_fps = self._resolve_and_lock_fps(fallback_clip)
+                render_fps = self._coerce_fps(self._resolve_and_lock_fps(fallback_clip))
                 fallback_clip.write_videofile(
                     str(output_path),
                     codec="libx264",
@@ -329,4 +329,23 @@ class GamingTemplate(TemplateBase):
             logger.debug("[GamingTemplate] Unable to assign fps attribute directly during resolve")
 
         return float(render_fps)
+
+    def _coerce_fps(self, fps: float | None, fallback: float = 30.0) -> float:
+        """Ensure a real, positive fps value before passing to MoviePy."""
+
+        if fps is None:
+            logger.warning("[GamingTemplate] Received fps=None, falling back to %s", fallback)
+            return float(fallback)
+
+        try:
+            numeric_fps = float(fps)
+        except Exception:
+            logger.warning("[GamingTemplate] Non-numeric fps=%s, falling back to %s", fps, fallback)
+            return float(fallback)
+
+        if numeric_fps <= 0:
+            logger.warning("[GamingTemplate] Non-positive fps=%s, falling back to %s", numeric_fps, fallback)
+            return float(fallback)
+
+        return numeric_fps
 
