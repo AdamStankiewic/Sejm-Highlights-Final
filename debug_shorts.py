@@ -25,6 +25,11 @@ class Segment:
     score: float = 0.0
     subtitles: str | None = None
 
+    @property
+    def duration(self) -> float:
+        """Calculate segment duration from start and end times."""
+        return self.end - self.start
+
 
 def load_candidates(json_path: Path) -> list[Segment]:
     """Load segments from shorts_candidates.json."""
