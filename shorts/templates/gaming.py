@@ -116,16 +116,19 @@ class GamingTemplate(TemplateBase):
             final = final.set_duration(segment_duration)
             if gameplay_clip.audio is not None:
                 final = final.set_audio(gameplay_clip.audio)
-            final = force_fps(final, 30)
-            render_fps = get_safe_fps(final, 30)
+
+            # MoviePy in this environment occasionally drops fps metadata to None mid-pipeline.
+            # Resolve once, coerce to a constant fallback, and force it both on the clip and
+            # as the explicit render argument to avoid the TypeError seen by the user.
+            render_fps = self._resolve_render_fps(final, clip, fallback=30.0)
+            final = force_fps(final, render_fps)
+
             logger.debug(
                 "Clip FPS before render (forced): %s (render_fps=%s)",
                 getattr(final, "fps", None),
                 render_fps,
             )
 
-            # MoviePy in this environment can emit fps=None; force_fps sets the attribute
-            # before render, and we also pass an explicit fps to avoid NoneType errors.
             final.write_videofile(
                 str(output_path),
                 codec="libx264",
@@ -142,11 +145,15 @@ class GamingTemplate(TemplateBase):
             logger.exception("[GamingTemplate] Hard failure during render")
             try:
                 duration = segment_duration
-                fallback_clip = ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=duration)
+                fallback_clip = ColorClip(
+                    size=(1080, 1920), color=(0, 0, 0), duration=duration
+                )
                 if clip and getattr(clip, "audio", None):
                     fallback_clip = fallback_clip.set_audio(clip.audio)
-                fallback_clip = force_fps(fallback_clip, 30)
-                render_fps = get_safe_fps(fallback_clip, 30)
+
+                render_fps = self._resolve_render_fps(fallback_clip, clip, fallback=30.0)
+                fallback_clip = force_fps(fallback_clip, render_fps)
+
                 fallback_clip.write_videofile(
                     str(output_path),
                     codec="libx264",
@@ -301,4 +308,39 @@ class GamingTemplate(TemplateBase):
         gameplay_full = ensure_fps(gameplay_full.resize((target_w, target_h)).set_duration(gameplay_clip.duration))
         logger.debug("Clip FPS after gameplay-only layout: %s", gameplay_full.fps)
         return gameplay_full
+
+    def _resolve_render_fps(
+        self, clip: VideoClip, source_clip: VideoClip | None, fallback: float = 30.0
+    ) -> float:
+        """Return a concrete FPS value, never None, with aggressive probing."""
+
+        candidates = []
+        # Primary preference: explicitly set fps on the clip.
+        candidates.append(getattr(clip, "fps", None))
+        # Secondary: reader fps if available (e.g., VideoFileClip).
+        candidates.append(getattr(getattr(clip, "reader", None), "fps", None))
+        # Tertiary: original source clip if provided.
+        if source_clip is not None:
+            candidates.append(getattr(source_clip, "fps", None))
+            candidates.append(getattr(getattr(source_clip, "reader", None), "fps", None))
+
+        for candidate in candidates:
+            if isinstance(candidate, (int, float)) and candidate > 0:
+                try:
+                    clip.fps = float(candidate)
+                except Exception:
+                    logger.debug("[GamingTemplate] Unable to lock fps=%s on clip directly", candidate)
+                return float(candidate)
+
+        logger.warning(
+            "[GamingTemplate] Failed to resolve fps from candidates=%s; using fallback %s",
+            candidates,
+            fallback,
+        )
+        try:
+            clip.fps = float(fallback)
+        except Exception:
+            logger.debug("[GamingTemplate] Unable to lock fallback fps on clip directly")
+
+        return float(fallback)
 
