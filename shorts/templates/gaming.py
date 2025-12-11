@@ -118,6 +118,11 @@ class GamingTemplate(TemplateBase):
                 final = final.set_audio(gameplay_clip.audio)
             final = force_fps(final, 30)
             render_fps = self._resolve_render_fps(final)
+            if not isinstance(render_fps, (int, float)) or render_fps <= 0:
+                logger.warning(
+                    "[GamingTemplate] Invalid render fps resolved (%s); defaulting to 30", render_fps
+                )
+                render_fps = 30.0
             logger.debug(
                 "Clip FPS before render (forced): %s (render_fps=%s)",
                 getattr(final, "fps", None),
@@ -147,6 +152,11 @@ class GamingTemplate(TemplateBase):
                     fallback_clip = fallback_clip.set_audio(clip.audio)
                 fallback_clip = force_fps(fallback_clip, 30)
                 render_fps = self._resolve_render_fps(fallback_clip)
+                if not isinstance(render_fps, (int, float)) or render_fps <= 0:
+                    logger.warning(
+                        "[GamingTemplate] Invalid fallback render fps (%s); defaulting to 30", render_fps
+                    )
+                    render_fps = 30.0
                 fallback_clip.write_videofile(
                     str(output_path),
                     codec="libx264",
