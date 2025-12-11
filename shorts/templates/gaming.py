@@ -17,6 +17,7 @@ from utils.video import (
     ensure_fps,
     ensure_output_path,
     force_fps,
+    get_safe_fps,
     load_subclip,
 )
 from .base import TemplateBase
@@ -116,13 +117,20 @@ class GamingTemplate(TemplateBase):
             if gameplay_clip.audio is not None:
                 final = final.set_audio(gameplay_clip.audio)
             final = force_fps(final, 30)
-            logger.debug("Clip FPS before render (forced): %s", getattr(final, "fps", None))
+            render_fps = get_safe_fps(final, 30)
+            logger.debug(
+                "Clip FPS before render (forced): %s (render_fps=%s)",
+                getattr(final, "fps", None),
+                render_fps,
+            )
 
-            # MoviePy in this environment can emit fps=None; force_fps sets the attribute before render.
+            # MoviePy in this environment can emit fps=None; force_fps sets the attribute
+            # before render, and we also pass an explicit fps to avoid NoneType errors.
             final.write_videofile(
                 str(output_path),
                 codec="libx264",
                 audio_codec="aac",
+                fps=render_fps,
                 threads=2,
                 verbose=False,
                 logger=None,
@@ -138,10 +146,12 @@ class GamingTemplate(TemplateBase):
                 if clip and getattr(clip, "audio", None):
                     fallback_clip = fallback_clip.set_audio(clip.audio)
                 fallback_clip = force_fps(fallback_clip, 30)
+                render_fps = get_safe_fps(fallback_clip, 30)
                 fallback_clip.write_videofile(
                     str(output_path),
                     codec="libx264",
                     audio_codec="aac",
+                    fps=render_fps,
                     threads=2,
                     verbose=False,
                     logger=None,
