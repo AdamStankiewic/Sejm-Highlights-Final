@@ -294,49 +294,27 @@ class ShortsStage:
                 'num_faces': 0,
             }
 
-    def _select_template(self, webcam_detection: Dict[str, Any]) -> str:
-        """
-        Automatyczny wybór szablonu na podstawie wykrycia kamerki
+    def _select_template(self, webcam_detection: Dict[str, Any], manual_override: Optional[str] = None) -> str:
+        """Wybór szablonu na podstawie detekcji kamerki lub ręcznego wyboru."""
 
-        Args:
-            webcam_detection: Wynik z _detect_webcam_region()
+        if manual_override:
+            print(f"      🎨 Template override: {manual_override}")
+            return manual_override
 
-        Returns:
-            Nazwa szablonu: 'classic_gaming' | 'pip_modern' | 'irl_fullface' | 'simple'
-        """
+        detection_rate = webcam_detection.get("detection_rate", 0.0) if webcam_detection else 0.0
+        zone = (webcam_detection or {}).get("zone") if webcam_detection else None
 
-        region_type = webcam_detection['type']
-        num_faces = webcam_detection['num_faces']
-
-        # Decision tree
-        if region_type == 'none':
-            # No faces detected - use simple crop
-            print(f"      🤖 Auto-select: simple (brak twarzy)")
-            return 'simple'
-
-        elif region_type == 'bottom_bar':
-            # Gaming setup - kamerka na dole
-            print(f"      🤖 Auto-select: classic_gaming (kamerka na dole)")
-            return 'classic_gaming'
-
-        elif region_type == 'corner':
-            # PIP setup
-            print(f"      🤖 Auto-select: pip_modern (kamerka w rogu)")
-            return 'pip_modern'
-
-        elif region_type == 'full_face':
-            # IRL stream
-            if num_faces >= 2:
-                # Multiple faces - good candidate for speaker tracking
-                print(f"      🤖 Auto-select: dynamic_speaker (wykryto {num_faces} twarzy)")
-                return 'dynamic_speaker'
-            else:
-                print(f"      🤖 Auto-select: irl_fullface (pojedyncza twarz fullscreen)")
-                return 'irl_fullface'
-
+        if not webcam_detection or webcam_detection.get("type") == "none" or detection_rate < 0.30:
+            template = "simple_game_only"
+        elif zone in {"left_bottom", "right_bottom"}:
+            template = "game_top_face_bottom_bar"
+        elif zone in {"left_top", "left_middle", "right_top", "right_middle"}:
+            template = "full_game_with_floating_face"
         else:
-            # Fallback
-            return 'simple'
+            template = "simple_game_only"
+
+        print(f"      🤖 Auto-select: {template} (zone={zone}, rate={detection_rate:.2f})")
+        return template
 
     def process(
         self,
@@ -415,19 +393,6 @@ class ShortsStage:
             )
             return {"shorts": [str(p) for p in paths], "shorts_dir": str(shorts_dir), "count": len(paths)}
 
-        # Auto-detect template if requested
-        detected_webcam = None
-        if template == "auto":
-            print(f"   🔍 Automatyczna detekcja szablonu...")
-            first_clip_start = shorts_clips[0].get('t0', 0.0)
-            first_clip_end = shorts_clips[0].get('t1', first_clip_start)
-            detected_webcam = self._detect_webcam_region(
-                input_path,
-                start_time=first_clip_start,
-                duration=max(first_clip_end - first_clip_start, 1.0),
-            )
-            template = self._select_template(detected_webcam)
-
         # Generate each Short
         generated_shorts = []
 
@@ -435,14 +400,31 @@ class ShortsStage:
             print(f"\n   📱 Short {i}/{len(shorts_clips)}")
 
             try:
+                manual_override = getattr(self.config.shorts, "manual_template", None)
+                if template not in (None, "auto"):
+                    manual_override = template
+
+                webcam_detection = {"type": "none"}
+                if template == "auto" and self.config.shorts.face_detection and not manual_override:
+                    clip_start = clip.get("t0", 0.0)
+                    clip_end = clip.get("t1", clip_start)
+                    detection_duration = max(clip_end - clip_start, 1.0)
+                    webcam_detection = self._detect_webcam_region(
+                        input_path,
+                        start_time=clip_start,
+                        duration=detection_duration,
+                    )
+
+                selected_template = self._select_template(webcam_detection, manual_override)
+
                 short_result = self._generate_single_short(
                     input_path,
                     clip,
                     segments,
                     shorts_dir,
                     i,
-                    template=template,
-                    webcam_detection=detected_webcam
+                    template=selected_template,
+                    webcam_detection=webcam_detection if self.config.shorts.face_detection else None
                 )
                 generated_shorts.append(short_result)
 
