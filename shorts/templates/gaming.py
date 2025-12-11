@@ -9,7 +9,6 @@ import functools
 from moviepy.editor import ColorClip, CompositeVideoClip, VideoClip, VideoFileClip
 from moviepy.video.fx.all import speedx as vfx_speedx
 import moviepy.decorators
-from moviepy.video.io.ffmpeg_writer import ffmpeg_write_video
 
 from shorts.face_detection import FaceDetector, FaceRegion
 from utils.video import (
@@ -184,18 +183,14 @@ class GamingTemplate(TemplateBase):
                 render_fps,
             )
 
-            # ALWAYS bypass write_videofile() and use ffmpeg_write_video directly
-            # to avoid MoviePy's problematic use_clip_fps_by_default decorator
-            logger.info("Using direct ffmpeg_write_video to avoid decorator issues")
-            ffmpeg_write_video(
-                final,
+            # Write with explicit fps - decorator should respect this
+            logger.info("Rendering with write_videofile(fps=30)")
+            final.write_videofile(
                 str(output_path),
-                fps=render_fps,  # Force fps=30 directly
+                fps=30,  # EXPLICIT fps should override clip.fps in decorator
                 codec="libx264",
+                audio_codec="aac",
                 preset="medium",
-                bitrate=None,
-                audio=True,  # Extract audio from clip
-                audio_bitrate="192k",
                 threads=2,
                 verbose=False,
                 logger=None,
@@ -230,17 +225,14 @@ class GamingTemplate(TemplateBase):
                 actual_fps = getattr(fallback_clip, "fps", None)
                 logger.debug("Fallback clip fps: %s", actual_fps)
 
-                # ALWAYS use ffmpeg_write_video directly for fallback too
-                logger.info("Using direct ffmpeg_write_video for fallback clip")
-                ffmpeg_write_video(
-                    fallback_clip,
+                # Fallback render with explicit fps
+                logger.info("Rendering fallback with write_videofile(fps=30)")
+                fallback_clip.write_videofile(
                     str(output_path),
-                    fps=render_fps,  # Force fps=30 directly
+                    fps=30,  # EXPLICIT fps should override clip.fps in decorator
                     codec="libx264",
+                    audio_codec="aac",
                     preset="medium",
-                    bitrate=None,
-                    audio=True,  # Extract audio from clip
-                    audio_bitrate="192k",
                     threads=2,
                     verbose=False,
                     logger=None,
