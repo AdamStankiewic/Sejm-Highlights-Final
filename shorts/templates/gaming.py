@@ -192,12 +192,11 @@ class GamingTemplate(TemplateBase):
                 str(output_path),
                 fps=render_fps,  # Force fps=30 directly
                 codec="libx264",
-                audiofile=None,  # Will extract from clip
                 preset="medium",
                 bitrate=None,
-                audio_codec="aac",
+                audio=True,  # Extract audio from clip
+                audio_bitrate="192k",
                 threads=2,
-                ffmpeg_params=[],
                 verbose=False,
                 logger=None,
             )
@@ -238,12 +237,11 @@ class GamingTemplate(TemplateBase):
                     str(output_path),
                     fps=render_fps,  # Force fps=30 directly
                     codec="libx264",
-                    audiofile=None,  # Will extract from clip
                     preset="medium",
                     bitrate=None,
-                    audio_codec="aac",
+                    audio=True,  # Extract audio from clip
+                    audio_bitrate="192k",
                     threads=2,
-                    ffmpeg_params=[],
                     verbose=False,
                     logger=None,
                 )
