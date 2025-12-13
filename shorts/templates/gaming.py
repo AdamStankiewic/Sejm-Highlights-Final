@@ -293,17 +293,35 @@ class GamingTemplate(TemplateBase):
         gameplay_full = gameplay_full.set_position((0, 0))  # Top
         logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
 
-        # Use detected face region with expanded margins
-        x, y, w, h = face_region.bbox
-        margin = 1.2
-        x1 = max(0, int(x - (margin - 1) * w / 2))
-        y1 = max(0, int(y - (margin - 1) * h / 2))
-        x2 = int(min(source_clip.w, x + w * margin))
-        y2 = int(min(source_clip.h, y + h * margin))
+        # Use FULL REGION of detected zone (not just bbox around face)
+        # This ensures we capture the entire facecam area, not just the face
+        src_w, src_h = source_clip.size
+        facecam_h_percent = 0.30  # 30% of height
+        facecam_w_percent = 0.35  # 35% of width
+        facecam_w = int(src_w * facecam_w_percent)
+        facecam_h_src = int(src_h * facecam_h_percent)
 
+        # Map detected zone to full region coordinates
+        regions = {
+            "right_top": (src_w - facecam_w, 0, src_w, facecam_h_src),
+            "right_bottom": (src_w - facecam_w, src_h - facecam_h_src, src_w, src_h),
+            "left_top": (0, 0, facecam_w, facecam_h_src),
+            "left_bottom": (0, src_h - facecam_h_src, facecam_w, src_h),
+        }
+
+        # Get full region based on detected zone
+        detected_zone = face_region.zone
+        if detected_zone not in regions:
+            logger.warning(
+                "[GamingTemplate] Unknown zone '%s', defaulting to right_top",
+                detected_zone
+            )
+            detected_zone = "right_top"
+
+        x1, y1, x2, y2 = regions[detected_zone]
         logger.info(
-            "[GamingTemplate] Using detected facecam region: %s (%dx%d at %d,%d)",
-            face_region.zone, x2-x1, y2-y1, x1, y1
+            "[GamingTemplate] Face detected in zone: %s → using full region (%dx%d at %d,%d)",
+            detected_zone, x2-x1, y2-y1, x1, y1
         )
 
         # Crop and resize detected facecam to full width bar at bottom
