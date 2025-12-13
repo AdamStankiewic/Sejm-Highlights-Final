@@ -334,8 +334,8 @@ class GamingTemplate(TemplateBase):
         face_clip = source_clip.crop(x1=x1, y1=y1, x2=x2, y2=y2)
         face_clip = ensure_fps(face_clip.set_duration(source_clip.duration))
 
-        # Resize to fill 80% of bottom bar width, preserving aspect ratio
-        target_facecam_w = int(target_w * 0.80)  # 80% of 1080px = 864px
+        # Resize to fill 90% of bottom bar width, preserving aspect ratio
+        target_facecam_w = int(target_w * 0.90)  # 90% of 1080px = 972px
         new_facecam_w = target_facecam_w
         new_facecam_h = int(target_facecam_w / aspect_ratio)
 
@@ -446,8 +446,8 @@ class GamingTemplate(TemplateBase):
         facecam_h_actual = y2 - y1
         aspect_ratio = facecam_w_actual / facecam_h_actual
 
-        # Resize to fill 80% of bottom bar width, preserving aspect ratio
-        target_facecam_w = int(target_w * 0.80)  # 80% of 1080px = 864px
+        # Resize to fill 90% of bottom bar width, preserving aspect ratio
+        target_facecam_w = int(target_w * 0.90)  # 90% of 1080px = 972px
         new_facecam_w = target_facecam_w
         new_facecam_h = int(target_facecam_w / aspect_ratio)
 

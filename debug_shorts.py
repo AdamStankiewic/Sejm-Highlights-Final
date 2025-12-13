@@ -6,11 +6,18 @@ Compatible with previous debug_shorts.py interface.
 
 import argparse
 import json
+import logging
 from pathlib import Path
 import sys
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
+
+# Configure logging to see DEBUG messages from gaming.py
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(levelname)s: %(message)s'
+)
 
 from shorts.generator import ShortsGenerator
 from shorts.face_detection import FaceDetector
