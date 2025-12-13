@@ -297,10 +297,10 @@ class GamingTemplate(TemplateBase):
         src_w, src_h = source_clip.size
         x, y, w, h = face_region.bbox
 
-        # Expand bbox to capture entire facecam (3x width, 2.5x height)
+        # Expand bbox to capture entire facecam (5x width, 4x height)
         # This captures the face + background/frame around it
-        expand_w = 3.0  # 3x wider to get full facecam width
-        expand_h = 2.5  # 2.5x taller to get full facecam height
+        expand_w = 5.0  # 5x wider to get full facecam width
+        expand_h = 4.0  # 4x taller to get full facecam height
 
         new_w = int(w * expand_w)
         new_h = int(h * expand_h)
@@ -322,7 +322,7 @@ class GamingTemplate(TemplateBase):
         aspect_ratio = facecam_w_actual / facecam_h_actual
 
         logger.info(
-            "[GamingTemplate] Smart crop: face bbox expanded 3x×2.5x → %dx%d (AR: %.2f) at (%d,%d)",
+            "[GamingTemplate] Smart crop: face bbox expanded 5x×4x → %dx%d (AR: %.2f) at (%d,%d)",
             facecam_w_actual, facecam_h_actual, aspect_ratio, x1, y1
         )
 
@@ -406,18 +406,18 @@ class GamingTemplate(TemplateBase):
         gameplay_full = gameplay_full.set_position((0, 0))  # Top
         logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
 
-        # Try to find facecam in multiple regions (use larger regions to ensure full facecam)
+        # Try to find facecam in multiple regions (smaller regions to match actual facecam size)
         src_w, src_h = source_clip.size
 
-        # Larger regions to ensure we capture full facecam (35% width x 30% height)
-        facecam_h_percent = 0.30  # 30% of height
-        facecam_w_percent = 0.35  # 35% of width
+        # Smaller regions to better match facecam size (20% width x 20% height)
+        facecam_h_percent = 0.20  # 20% of height
+        facecam_w_percent = 0.20  # 20% of width
         facecam_w = int(src_w * facecam_w_percent)
         facecam_h_src = int(src_h * facecam_h_percent)
 
         # Since face detection is unreliable, just use right_top directly
         # This is where the facecam is in your VOD based on the screenshot
-        logger.info("[GamingTemplate] Using fixed right_top region (35%x30%) for facecam")
+        logger.info("[GamingTemplate] Using fixed right_top region (20%x20%) for facecam")
 
         best_region = "right_top"
         regions = {
