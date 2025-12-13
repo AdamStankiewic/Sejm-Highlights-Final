@@ -293,47 +293,79 @@ class GamingTemplate(TemplateBase):
         gameplay_full = gameplay_full.set_position((0, 0))  # Top
         logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
 
-        # Use FULL REGION of detected zone (not just bbox around face)
-        # This ensures we capture the entire facecam area, not just the face
+        # Smart crop: expand face bbox to capture full facecam (with natural proportions)
         src_w, src_h = source_clip.size
-        facecam_h_percent = 0.30  # 30% of height
-        facecam_w_percent = 0.35  # 35% of width
-        facecam_w = int(src_w * facecam_w_percent)
-        facecam_h_src = int(src_h * facecam_h_percent)
+        x, y, w, h = face_region.bbox
 
-        # Map detected zone to full region coordinates
-        regions = {
-            "right_top": (src_w - facecam_w, 0, src_w, facecam_h_src),
-            "right_bottom": (src_w - facecam_w, src_h - facecam_h_src, src_w, src_h),
-            "left_top": (0, 0, facecam_w, facecam_h_src),
-            "left_bottom": (0, src_h - facecam_h_src, facecam_w, src_h),
-        }
+        # Expand bbox to capture entire facecam (3x width, 2.5x height)
+        # This captures the face + background/frame around it
+        expand_w = 3.0  # 3x wider to get full facecam width
+        expand_h = 2.5  # 2.5x taller to get full facecam height
 
-        # Get full region based on detected zone
-        detected_zone = face_region.zone
-        if detected_zone not in regions:
-            logger.warning(
-                "[GamingTemplate] Unknown zone '%s', defaulting to right_top",
-                detected_zone
-            )
-            detected_zone = "right_top"
+        new_w = int(w * expand_w)
+        new_h = int(h * expand_h)
 
-        x1, y1, x2, y2 = regions[detected_zone]
+        # Center expansion around face
+        x1 = max(0, int(x + w/2 - new_w/2))
+        y1 = max(0, int(y + h/2 - new_h/2))
+        x2 = min(src_w, x1 + new_w)
+        y2 = min(src_h, y1 + new_h)
+
+        # Adjust if we hit boundaries
+        if x2 == src_w:
+            x1 = max(0, x2 - new_w)
+        if y2 == src_h:
+            y1 = max(0, y2 - new_h)
+
+        facecam_w_actual = x2 - x1
+        facecam_h_actual = y2 - y1
+        aspect_ratio = facecam_w_actual / facecam_h_actual
+
         logger.info(
-            "[GamingTemplate] Face detected in zone: %s → using full region (%dx%d at %d,%d)",
-            detected_zone, x2-x1, y2-y1, x1, y1
+            "[GamingTemplate] Smart crop: face bbox expanded 3x×2.5x → %dx%d (AR: %.2f) at (%d,%d)",
+            facecam_w_actual, facecam_h_actual, aspect_ratio, x1, y1
         )
 
-        # Crop and resize detected facecam to full width bar at bottom
+        # Crop facecam region
         face_clip = source_clip.crop(x1=x1, y1=y1, x2=x2, y2=y2)
         face_clip = ensure_fps(face_clip.set_duration(source_clip.duration))
-        face_clip = face_clip.resize((target_w, facecam_h))  # Full width, bottom 30%
-        face_clip = face_clip.set_position((0, gameplay_h))  # Position at bottom
-        logger.debug("Clip FPS after face crop: %s", face_clip.fps)
 
-        # Composite gameplay (top) + facecam bar (bottom)
+        # Resize preserving aspect ratio to fit in bottom bar (576px height)
+        # Calculate width that maintains aspect ratio
+        new_facecam_h = facecam_h  # 576px (30% of 1920)
+        new_facecam_w = int(new_facecam_h * aspect_ratio)
+
+        # If facecam is wider than target, limit width and adjust height
+        if new_facecam_w > target_w:
+            new_facecam_w = target_w
+            new_facecam_h = int(target_w / aspect_ratio)
+
+        face_clip = face_clip.resize((new_facecam_w, new_facecam_h))
+
+        # Center facecam horizontally in the bottom bar
+        facecam_x = (target_w - new_facecam_w) // 2
+        facecam_y = gameplay_h + (facecam_h - new_facecam_h) // 2  # Center vertically in bar too
+
+        face_clip = face_clip.set_position((facecam_x, facecam_y))
+        logger.debug("Clip FPS after smart facecam crop: %s", face_clip.fps)
+        logger.info(
+            "[GamingTemplate] Facecam positioned: %dx%d at (%d, %d) - aspect ratio preserved!",
+            new_facecam_w, new_facecam_h, facecam_x, facecam_y
+        )
+
+        # Create black background for bottom bar (for padding around facecam)
+        from moviepy.video.VideoClip import ColorClip
+        black_bg = ColorClip(
+            size=(target_w, facecam_h),
+            color=(0, 0, 0),
+            duration=source_clip.duration
+        )
+        black_bg = ensure_fps(black_bg)
+        black_bg = black_bg.set_position((0, gameplay_h))  # Bottom bar
+
+        # Composite: gameplay (top) + black background (bottom) + facecam (centered on black)
         final = FpsFixedCompositeVideoClip(
-            [gameplay_full, face_clip],
+            [gameplay_full, black_bg, face_clip],
             size=(target_w, target_h),
             fps=30,
         ).set_duration(source_clip.duration)
@@ -401,16 +433,50 @@ class GamingTemplate(TemplateBase):
             best_region, x2-x1, y2-y1, x1, y1
         )
 
-        # Crop and resize facecam to full width bar at bottom
+        # Crop facecam region
         face_clip = source_clip.crop(x1=x1, y1=y1, x2=x2, y2=y2)
         face_clip = ensure_fps(face_clip.set_duration(source_clip.duration))
-        face_clip = face_clip.resize((target_w, facecam_h))  # Full width, bottom 30%
-        face_clip = face_clip.set_position((0, gameplay_h))  # Position at bottom
-        logger.debug("Clip FPS after fixed facecam crop: %s", face_clip.fps)
 
-        # Composite gameplay (top) + facecam bar (bottom)
+        # Calculate aspect ratio and resize preserving it
+        facecam_w_actual = x2 - x1
+        facecam_h_actual = y2 - y1
+        aspect_ratio = facecam_w_actual / facecam_h_actual
+
+        # Resize preserving aspect ratio to fit in bottom bar (576px height)
+        new_facecam_h = facecam_h  # 576px (30% of 1920)
+        new_facecam_w = int(new_facecam_h * aspect_ratio)
+
+        # If facecam is wider than target, limit width and adjust height
+        if new_facecam_w > target_w:
+            new_facecam_w = target_w
+            new_facecam_h = int(target_w / aspect_ratio)
+
+        face_clip = face_clip.resize((new_facecam_w, new_facecam_h))
+
+        # Center facecam horizontally in the bottom bar
+        facecam_x = (target_w - new_facecam_w) // 2
+        facecam_y = gameplay_h + (facecam_h - new_facecam_h) // 2  # Center vertically too
+
+        face_clip = face_clip.set_position((facecam_x, facecam_y))
+        logger.debug("Clip FPS after fixed facecam crop: %s", face_clip.fps)
+        logger.info(
+            "[GamingTemplate] Fixed facecam positioned: %dx%d at (%d, %d) - aspect ratio preserved!",
+            new_facecam_w, new_facecam_h, facecam_x, facecam_y
+        )
+
+        # Create black background for bottom bar (for padding around facecam)
+        from moviepy.video.VideoClip import ColorClip
+        black_bg = ColorClip(
+            size=(target_w, facecam_h),
+            color=(0, 0, 0),
+            duration=source_clip.duration
+        )
+        black_bg = ensure_fps(black_bg)
+        black_bg = black_bg.set_position((0, gameplay_h))  # Bottom bar
+
+        # Composite: gameplay (top) + black background (bottom) + facecam (centered on black)
         final = FpsFixedCompositeVideoClip(
-            [gameplay_full, face_clip],
+            [gameplay_full, black_bg, face_clip],
             size=(target_w, target_h),
             fps=30,
         ).set_duration(source_clip.duration)
