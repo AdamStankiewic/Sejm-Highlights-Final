@@ -297,9 +297,9 @@ class GamingTemplate(TemplateBase):
         # This ensures consistent aspect ratio (square regions)
         src_w, src_h = source_clip.size
 
-        # Square regions (20% width x 20% height) for each zone
-        facecam_h_percent = 0.20  # 20% of height
-        facecam_w_percent = 0.20  # 20% of width
+        # Square regions (25% width x 25% height) for each zone
+        facecam_h_percent = 0.25  # 25% of height
+        facecam_w_percent = 0.25  # 25% of width
         facecam_w = int(src_w * facecam_w_percent)
         facecam_h_src = int(src_h * facecam_h_percent)
 
@@ -334,15 +334,15 @@ class GamingTemplate(TemplateBase):
         face_clip = source_clip.crop(x1=x1, y1=y1, x2=x2, y2=y2)
         face_clip = ensure_fps(face_clip.set_duration(source_clip.duration))
 
-        # Resize preserving aspect ratio to fit in bottom bar (576px height)
-        # Calculate width that maintains aspect ratio
-        new_facecam_h = facecam_h  # 576px (30% of 1920)
-        new_facecam_w = int(new_facecam_h * aspect_ratio)
+        # Resize to fill 80% of bottom bar width, preserving aspect ratio
+        target_facecam_w = int(target_w * 0.80)  # 80% of 1080px = 864px
+        new_facecam_w = target_facecam_w
+        new_facecam_h = int(target_facecam_w / aspect_ratio)
 
-        # If facecam is wider than target, limit width and adjust height
-        if new_facecam_w > target_w:
-            new_facecam_w = target_w
-            new_facecam_h = int(target_w / aspect_ratio)
+        # If height exceeds bottom bar, scale down to fit
+        if new_facecam_h > facecam_h:
+            new_facecam_h = facecam_h
+            new_facecam_w = int(facecam_h * aspect_ratio)
 
         face_clip = face_clip.resize((new_facecam_w, new_facecam_h))
 
@@ -413,15 +413,15 @@ class GamingTemplate(TemplateBase):
         # Try to find facecam in multiple regions (smaller regions to match actual facecam size)
         src_w, src_h = source_clip.size
 
-        # Smaller regions to better match facecam size (20% width x 20% height)
-        facecam_h_percent = 0.20  # 20% of height
-        facecam_w_percent = 0.20  # 20% of width
+        # Square regions (25% width x 25% height) for each zone
+        facecam_h_percent = 0.25  # 25% of height
+        facecam_w_percent = 0.25  # 25% of width
         facecam_w = int(src_w * facecam_w_percent)
         facecam_h_src = int(src_h * facecam_h_percent)
 
         # Since face detection is unreliable, just use right_top directly
         # This is where the facecam is in your VOD based on the screenshot
-        logger.info("[GamingTemplate] Using fixed right_top region (20%x20%) for facecam")
+        logger.info("[GamingTemplate] Using fixed right_top region (25%x25%) for facecam")
 
         best_region = "right_top"
         regions = {
@@ -446,14 +446,15 @@ class GamingTemplate(TemplateBase):
         facecam_h_actual = y2 - y1
         aspect_ratio = facecam_w_actual / facecam_h_actual
 
-        # Resize preserving aspect ratio to fit in bottom bar (576px height)
-        new_facecam_h = facecam_h  # 576px (30% of 1920)
-        new_facecam_w = int(new_facecam_h * aspect_ratio)
+        # Resize to fill 80% of bottom bar width, preserving aspect ratio
+        target_facecam_w = int(target_w * 0.80)  # 80% of 1080px = 864px
+        new_facecam_w = target_facecam_w
+        new_facecam_h = int(target_facecam_w / aspect_ratio)
 
-        # If facecam is wider than target, limit width and adjust height
-        if new_facecam_w > target_w:
-            new_facecam_w = target_w
-            new_facecam_h = int(target_w / aspect_ratio)
+        # If height exceeds bottom bar, scale down to fit
+        if new_facecam_h > facecam_h:
+            new_facecam_h = facecam_h
+            new_facecam_w = int(facecam_h * aspect_ratio)
 
         face_clip = face_clip.resize((new_facecam_w, new_facecam_h))
 
