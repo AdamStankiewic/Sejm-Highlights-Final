@@ -297,9 +297,9 @@ class GamingTemplate(TemplateBase):
         # This ensures consistent aspect ratio (square regions)
         src_w, src_h = source_clip.size
 
-        # Square regions (25% width x 25% height) for each zone
-        facecam_h_percent = 0.25  # 25% of height
-        facecam_w_percent = 0.25  # 25% of width
+        # Square regions (35% width x 35% height) for each zone
+        facecam_h_percent = 0.35  # 35% of height
+        facecam_w_percent = 0.35  # 35% of width
         facecam_w = int(src_w * facecam_w_percent)
         facecam_h_src = int(src_h * facecam_h_percent)
 
@@ -413,15 +413,15 @@ class GamingTemplate(TemplateBase):
         # Try to find facecam in multiple regions (smaller regions to match actual facecam size)
         src_w, src_h = source_clip.size
 
-        # Square regions (25% width x 25% height) for each zone
-        facecam_h_percent = 0.25  # 25% of height
-        facecam_w_percent = 0.25  # 25% of width
+        # Square regions (35% width x 35% height) for each zone
+        facecam_h_percent = 0.35  # 35% of height
+        facecam_w_percent = 0.35  # 35% of width
         facecam_w = int(src_w * facecam_w_percent)
         facecam_h_src = int(src_h * facecam_h_percent)
 
         # Since face detection is unreliable, just use right_top directly
         # This is where the facecam is in your VOD based on the screenshot
-        logger.info("[GamingTemplate] Using fixed right_top region (25%x25%) for facecam")
+        logger.info("[GamingTemplate] Using fixed right_top region (35%x35%) for facecam")
 
         best_region = "right_top"
         regions = {
