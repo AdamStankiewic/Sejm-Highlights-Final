@@ -356,56 +356,62 @@ class GamingTemplate(TemplateBase):
         gameplay_full = gameplay_full.set_position((0, 0))  # Top
         logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
 
-        # Try to find facecam in all 4 corners
+        # Try to find facecam in multiple regions (smaller, more precise)
         src_w, src_h = source_clip.size
-        facecam_h_percent = 0.25
-        facecam_w_percent = 0.30
+
+        # Smaller regions for better precision (20% width x 20% height)
+        facecam_h_percent = 0.20
+        facecam_w_percent = 0.20
         facecam_w = int(src_w * facecam_w_percent)
         facecam_h_src = int(src_h * facecam_h_percent)
 
-        # Define all 4 corners to check
-        corners = {
-            "left_bottom": (0, src_h - facecam_h_src, facecam_w, src_h),
+        # Define regions to check (prioritize corners where facecams usually are)
+        regions = {
+            # Corners (most common) - check these first
+            "right_top": (src_w - facecam_w, 0, src_w, facecam_h_src),
             "right_bottom": (src_w - facecam_w, src_h - facecam_h_src, src_w, src_h),
             "left_top": (0, 0, facecam_w, facecam_h_src),
-            "right_top": (src_w - facecam_w, 0, src_w, facecam_h_src),
+            "left_bottom": (0, src_h - facecam_h_src, facecam_w, src_h),
+            # Middle positions (less common but possible)
+            "right_middle": (src_w - facecam_w, (src_h - facecam_h_src) // 2, src_w, (src_h + facecam_h_src) // 2),
+            "left_middle": (0, (src_h - facecam_h_src) // 2, facecam_w, (src_h + facecam_h_src) // 2),
         }
 
-        # Try each corner and use the first one where we detect a face
-        best_corner = None
-        for corner_name, (x1, y1, x2, y2) in corners.items():
+        # Try each region and use the first one where we detect a face
+        best_region = None
+        for region_name, (x1, y1, x2, y2) in regions.items():
             # Extract a single frame from middle of clip to check for face
             try:
                 import mediapipe as mp
                 test_frame = source_clip.get_frame(source_clip.duration / 2)
-                corner_frame = test_frame[y1:y2, x1:x2]
+                region_frame = test_frame[y1:y2, x1:x2]
 
-                # Quick face detection on this corner
+                # Quick face detection on this region
                 mp_face_detection = mp.solutions.face_detection
                 with mp_face_detection.FaceDetection(
-                    model_selection=0, min_detection_confidence=0.3
+                    model_selection=0, min_detection_confidence=0.2  # Even lower threshold
                 ) as face_detection:
-                    results = face_detection.process(corner_frame)
+                    results = face_detection.process(region_frame)
                     if results.detections:
                         logger.info(
-                            "[GamingTemplate] Found face in %s corner (confidence: %.2f)",
-                            corner_name, results.detections[0].score[0]
+                            "[GamingTemplate] Found face in %s region (confidence: %.2f)",
+                            region_name, results.detections[0].score[0]
                         )
-                        best_corner = corner_name
+                        best_region = region_name
                         break
             except Exception as e:
-                logger.debug("Face check failed for %s: %s", corner_name, e)
+                logger.debug("Face check failed for %s: %s", region_name, e)
                 continue
 
-        # Use best corner or fallback to left_bottom
-        if not best_corner:
-            best_corner = "left_bottom"
-            logger.info("[GamingTemplate] No face found in corners, using left_bottom fallback")
+        # Use best region or fallback to right_top (where facecam is in your VOD)
+        if not best_region:
+            best_region = "right_top"
+            logger.info("[GamingTemplate] No face found in regions, using right_top fallback")
 
-        x1, y1, x2, y2 = corners[best_corner]
+        x1, y1, x2, y2 = regions[best_region]
         logger.info(
             "[GamingTemplate] Using facecam region: %s (%dx%d at %d,%d)",
-            best_corner, x2-x1, y2-y1, x1, y1
+            best_region, x2-x1, y2-y1, x1, y1
         )
 
         # Crop and resize facecam to full width bar at bottom
