@@ -135,9 +135,9 @@ class GamingTemplate(TemplateBase):
             face_detector: Optional pre-configured FaceDetector instance
         """
         self.face_detector = face_detector or FaceDetector(
-            confidence_threshold=0.5,
-            consensus_threshold=0.3,
-            num_samples=6
+            confidence_threshold=0.3,  # Lower threshold for smaller facecams
+            consensus_threshold=0.2,   # Lower consensus needed
+            num_samples=15             # More samples for better detection
         )
 
     def apply(
@@ -330,6 +330,9 @@ class GamingTemplate(TemplateBase):
     ) -> VideoClip:
         """Build split layout with gameplay on top and facecam bar at bottom.
 
+        Tries to detect facecam in all 4 corners and uses the one with a face.
+        Falls back to left bottom if no face found anywhere.
+
         Layout:
         - Top 70%: Gameplay (centered, zoomed out)
         - Bottom 30%: Facecam (full width bar)
@@ -353,24 +356,56 @@ class GamingTemplate(TemplateBase):
         gameplay_full = gameplay_full.set_position((0, 0))  # Top
         logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
 
-        # Fixed facecam region: left bottom corner of source VOD
-        # Assume last 25% of height, last 30% of width
+        # Try to find facecam in all 4 corners
+        src_w, src_h = source_clip.size
         facecam_h_percent = 0.25
         facecam_w_percent = 0.30
-
-        src_w, src_h = source_clip.size
         facecam_w = int(src_w * facecam_w_percent)
         facecam_h_src = int(src_h * facecam_h_percent)
 
-        # Crop from left bottom corner
-        x1 = 0
-        y1 = src_h - facecam_h_src
-        x2 = facecam_w
-        y2 = src_h
+        # Define all 4 corners to check
+        corners = {
+            "left_bottom": (0, src_h - facecam_h_src, facecam_w, src_h),
+            "right_bottom": (src_w - facecam_w, src_h - facecam_h_src, src_w, src_h),
+            "left_top": (0, 0, facecam_w, facecam_h_src),
+            "right_top": (src_w - facecam_w, 0, src_w, facecam_h_src),
+        }
 
+        # Try each corner and use the first one where we detect a face
+        best_corner = None
+        for corner_name, (x1, y1, x2, y2) in corners.items():
+            # Extract a single frame from middle of clip to check for face
+            try:
+                import mediapipe as mp
+                test_frame = source_clip.get_frame(source_clip.duration / 2)
+                corner_frame = test_frame[y1:y2, x1:x2]
+
+                # Quick face detection on this corner
+                mp_face_detection = mp.solutions.face_detection
+                with mp_face_detection.FaceDetection(
+                    model_selection=0, min_detection_confidence=0.3
+                ) as face_detection:
+                    results = face_detection.process(corner_frame)
+                    if results.detections:
+                        logger.info(
+                            "[GamingTemplate] Found face in %s corner (confidence: %.2f)",
+                            corner_name, results.detections[0].score[0]
+                        )
+                        best_corner = corner_name
+                        break
+            except Exception as e:
+                logger.debug("Face check failed for %s: %s", corner_name, e)
+                continue
+
+        # Use best corner or fallback to left_bottom
+        if not best_corner:
+            best_corner = "left_bottom"
+            logger.info("[GamingTemplate] No face found in corners, using left_bottom fallback")
+
+        x1, y1, x2, y2 = corners[best_corner]
         logger.info(
-            "[GamingTemplate] Using fixed facecam region: left_bottom (%dx%d at %d,%d)",
-            facecam_w, facecam_h_src, x1, y1
+            "[GamingTemplate] Using facecam region: %s (%dx%d at %d,%d)",
+            best_corner, x2-x1, y2-y1, x1, y1
         )
 
         # Crop and resize facecam to full width bar at bottom
