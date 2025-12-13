@@ -359,9 +359,9 @@ class GamingTemplate(TemplateBase):
         # Try to find facecam in multiple regions (smaller, more precise)
         src_w, src_h = source_clip.size
 
-        # Smaller regions for better precision (20% width x 20% height)
-        facecam_h_percent = 0.20
-        facecam_w_percent = 0.20
+        # Larger regions for better detection (25% width x 25% height)
+        facecam_h_percent = 0.25
+        facecam_w_percent = 0.25
         facecam_w = int(src_w * facecam_w_percent)
         facecam_h_src = int(src_h * facecam_h_percent)
 
@@ -372,41 +372,61 @@ class GamingTemplate(TemplateBase):
             "right_bottom": (src_w - facecam_w, src_h - facecam_h_src, src_w, src_h),
             "left_top": (0, 0, facecam_w, facecam_h_src),
             "left_bottom": (0, src_h - facecam_h_src, facecam_w, src_h),
-            # Middle positions (less common but possible)
-            "right_middle": (src_w - facecam_w, (src_h - facecam_h_src) // 2, src_w, (src_h + facecam_h_src) // 2),
-            "left_middle": (0, (src_h - facecam_h_src) // 2, facecam_w, (src_h + facecam_h_src) // 2),
         }
 
         # Try each region and use the first one where we detect a face
         best_region = None
-        for region_name, (x1, y1, x2, y2) in regions.items():
-            # Extract a single frame from middle of clip to check for face
-            try:
-                import mediapipe as mp
-                test_frame = source_clip.get_frame(source_clip.duration / 2)
-                region_frame = test_frame[y1:y2, x1:x2]
+        best_confidence = 0.0
 
-                # Quick face detection on this region
-                mp_face_detection = mp.solutions.face_detection
-                with mp_face_detection.FaceDetection(
-                    model_selection=0, min_detection_confidence=0.2  # Even lower threshold
-                ) as face_detection:
-                    results = face_detection.process(region_frame)
-                    if results.detections:
-                        logger.info(
-                            "[GamingTemplate] Found face in %s region (confidence: %.2f)",
-                            region_name, results.detections[0].score[0]
-                        )
-                        best_region = region_name
-                        break
-            except Exception as e:
-                logger.debug("Face check failed for %s: %s", region_name, e)
-                continue
+        for region_name, (x1, y1, x2, y2) in regions.items():
+            # Check multiple frames (start, middle, end) for better reliability
+            check_times = [
+                source_clip.duration * 0.2,
+                source_clip.duration * 0.5,
+                source_clip.duration * 0.8,
+            ]
+
+            faces_detected = 0
+            max_confidence = 0.0
+
+            for check_time in check_times:
+                try:
+                    import mediapipe as mp
+                    test_frame = source_clip.get_frame(check_time)
+                    region_frame = test_frame[y1:y2, x1:x2]
+
+                    # Quick face detection on this region
+                    mp_face_detection = mp.solutions.face_detection
+                    with mp_face_detection.FaceDetection(
+                        model_selection=0, min_detection_confidence=0.1  # Very low threshold
+                    ) as face_detection:
+                        results = face_detection.process(region_frame)
+                        if results.detections:
+                            faces_detected += 1
+                            confidence = results.detections[0].score[0]
+                            max_confidence = max(max_confidence, confidence)
+                            logger.debug(
+                                "[GamingTemplate] Face found in %s at t=%.1fs (confidence: %.2f)",
+                                region_name, check_time, confidence
+                            )
+                except Exception as e:
+                    logger.debug("Face check failed for %s at t=%.1f: %s", region_name, check_time, e)
+                    continue
+
+            # If we found faces in at least 2 out of 3 frames, consider it valid
+            if faces_detected >= 2 and max_confidence > best_confidence:
+                best_region = region_name
+                best_confidence = max_confidence
+                logger.info(
+                    "[GamingTemplate] Found face in %s region (%d/3 frames, max confidence: %.2f)",
+                    region_name, faces_detected, max_confidence
+                )
+                break  # Use first valid region
 
         # Use best region or fallback to right_top (where facecam is in your VOD)
         if not best_region:
             best_region = "right_top"
-            logger.info("[GamingTemplate] No face found in regions, using right_top fallback")
+            logger.info("[GamingTemplate] No face found in any region, using right_top fallback")
 
         x1, y1, x2, y2 = regions[best_region]
         logger.info(
