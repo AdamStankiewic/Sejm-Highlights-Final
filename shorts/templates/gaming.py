@@ -293,37 +293,41 @@ class GamingTemplate(TemplateBase):
         gameplay_full = gameplay_full.set_position((0, 0))  # Top
         logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
 
-        # Smart crop: expand face bbox to capture full facecam (with natural proportions)
+        # Use face detection only for LOCATION - then use fixed region for that zone
+        # This ensures consistent aspect ratio (square regions)
         src_w, src_h = source_clip.size
-        x, y, w, h = face_region.bbox
 
-        # Expand bbox to capture entire facecam (5x width, 4x height)
-        # This captures the face + background/frame around it
-        expand_w = 5.0  # 5x wider to get full facecam width
-        expand_h = 4.0  # 4x taller to get full facecam height
+        # Square regions (20% width x 20% height) for each zone
+        facecam_h_percent = 0.20  # 20% of height
+        facecam_w_percent = 0.20  # 20% of width
+        facecam_w = int(src_w * facecam_w_percent)
+        facecam_h_src = int(src_h * facecam_h_percent)
 
-        new_w = int(w * expand_w)
-        new_h = int(h * expand_h)
+        # Define fixed regions for each zone
+        regions = {
+            "right_top": (src_w - facecam_w, 0, src_w, facecam_h_src),
+            "right_bottom": (src_w - facecam_w, src_h - facecam_h_src, src_w, src_h),
+            "left_top": (0, 0, facecam_w, facecam_h_src),
+            "left_bottom": (0, src_h - facecam_h_src, facecam_w, src_h),
+        }
 
-        # Center expansion around face
-        x1 = max(0, int(x + w/2 - new_w/2))
-        y1 = max(0, int(y + h/2 - new_h/2))
-        x2 = min(src_w, x1 + new_w)
-        y2 = min(src_h, y1 + new_h)
+        # Get detected zone and use its fixed region
+        detected_zone = face_region.zone
+        if detected_zone not in regions:
+            logger.warning(
+                "[GamingTemplate] Unknown zone '%s', defaulting to right_top",
+                detected_zone
+            )
+            detected_zone = "right_top"
 
-        # Adjust if we hit boundaries
-        if x2 == src_w:
-            x1 = max(0, x2 - new_w)
-        if y2 == src_h:
-            y1 = max(0, y2 - new_h)
-
+        x1, y1, x2, y2 = regions[detected_zone]
         facecam_w_actual = x2 - x1
         facecam_h_actual = y2 - y1
         aspect_ratio = facecam_w_actual / facecam_h_actual
 
         logger.info(
-            "[GamingTemplate] Smart crop: face bbox expanded 5x×4x → %dx%d (AR: %.2f) at (%d,%d)",
-            facecam_w_actual, facecam_h_actual, aspect_ratio, x1, y1
+            "[GamingTemplate] Face detected in zone '%s' → using fixed region %dx%d (AR: %.2f) at (%d,%d)",
+            detected_zone, facecam_w_actual, facecam_h_actual, aspect_ratio, x1, y1
         )
 
         # Crop facecam region
