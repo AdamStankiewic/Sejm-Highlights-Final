@@ -214,8 +214,19 @@ class FaceDetector:
             logger.exception("Face detection failed: %s", e)
             return None
 
-    def _detect_in_frame(self, video_path: Path, timestamp: float) -> Optional[dict]:
-        """Detect faces in a single frame at given timestamp
+    def _detect_in_frame(
+        self,
+        video_path: Path,
+        timestamp: float,
+        search_regions_only: bool = True
+    ) -> Optional[dict]:
+        """Detect faces in a single frame at given timestamp.
+
+        Args:
+            video_path: Path to video file
+            timestamp: Timestamp in seconds
+            search_regions_only: If True, crop to corner regions before detection
+                                (avoids detecting game character faces in center)
 
         Returns:
             Dict with {zone, bbox, confidence, num_faces} or None
@@ -256,76 +267,115 @@ class FaceDetector:
                 timestamp, w, h, self.confidence_threshold
             )
 
-            # Detect faces
-            results = self.face_detector.process(frame_rgb)
+            # If search_regions_only, check only corner regions to avoid game character faces
+            regions_to_check = []
+            if search_regions_only:
+                # Define 4 corner regions (30% width x 30% height each)
+                region_w = int(w * 0.30)
+                region_h = int(h * 0.30)
 
-            # DEBUG: Log what MediaPipe returns
-            if not results:
-                logger.debug("MediaPipe returned None at t=%.2fs", timestamp)
+                regions_to_check = [
+                    ("right_top", w - region_w, 0, w, region_h),
+                    ("right_bottom", w - region_w, h - region_h, w, h),
+                    ("left_top", 0, 0, region_w, region_h),
+                    ("left_bottom", 0, h - region_h, region_w, h),
+                ]
+                logger.debug(
+                    "Searching %d corner regions (30%%x30%% each) instead of full frame",
+                    len(regions_to_check)
+                )
+            else:
+                # Search full frame (original behavior)
+                regions_to_check = [("full_frame", 0, 0, w, h)]
+
+            # Check each region for faces
+            best_detection = None
+            best_confidence = 0.0
+
+            for region_name, x1, y1, x2, y2 in regions_to_check:
+                # Crop to region
+                region_frame = frame_rgb[y1:y2, x1:x2]
+                region_w = x2 - x1
+                region_h = y2 - y1
+
+                # Detect faces in this region
+                results = self.face_detector.process(region_frame)
+
+                if not results or not results.detections:
+                    logger.debug(
+                        "  Region '%s': no faces detected",
+                        region_name
+                    )
+                    continue
+
+                logger.debug(
+                    "  Region '%s': found %d face(s)",
+                    region_name, len(results.detections)
+                )
+
+                # Extract faces from this region
+                for detection in results.detections:
+                    bbox = detection.location_data.relative_bounding_box
+                    confidence = detection.score[0]
+
+                    # Convert bbox from region coordinates to full frame coordinates
+                    face_x = x1 + max(int(bbox.xmin * region_w), 0)
+                    face_y = y1 + max(int(bbox.ymin * region_h), 0)
+                    face_w = int(bbox.width * region_w)
+                    face_h = int(bbox.height * region_h)
+
+                    logger.debug(
+                        "    Face: confidence=%.3f, bbox=(%d,%d,%d,%d), size=%dx%d",
+                        confidence, face_x, face_y, face_x + face_w, face_y + face_h,
+                        face_w, face_h
+                    )
+
+                    # Keep track of best detection across all regions
+                    if confidence > best_confidence:
+                        best_confidence = confidence
+                        best_detection = {
+                            'x': face_x,
+                            'y': face_y,
+                            'w': face_w,
+                            'h': face_h,
+                            'confidence': confidence,
+                            'area': max(face_w, 0) * max(face_h, 0),
+                            'zone': region_name if search_regions_only else None
+                        }
+
+            if not best_detection:
+                logger.debug("No faces detected in any region at t=%.2fs", timestamp)
                 return None
 
-            if not results.detections:
+            # Use pre-determined zone if we searched regions, otherwise classify
+            if search_regions_only and best_detection['zone']:
+                zone = best_detection['zone']
                 logger.debug(
-                    "MediaPipe returned results but no detections at t=%.2fs (frame size: %dx%d)",
-                    timestamp, w, h
+                    "Using face from region '%s' (conf=%.3f)",
+                    zone, best_detection['confidence']
                 )
-                return None
-
-            logger.debug(
-                "MediaPipe found %d face(s) at t=%.2fs",
-                len(results.detections), timestamp
-            )
-
-            # Extract all face bboxes
-            faces = []
-            for detection in results.detections:
-                bbox = detection.location_data.relative_bounding_box
-                confidence = detection.score[0]
-
-                x = max(int(bbox.xmin * w), 0)
-                y = max(int(bbox.ymin * h), 0)
-                fw = int(bbox.width * w)
-                fh = int(bbox.height * h)
-
-                logger.debug(
-                    "  Face #%d: confidence=%.3f, bbox=(%d,%d,%d,%d), size=%dx%d",
-                    len(faces) + 1, confidence, x, y, x + fw, y + fh, fw, fh
-                )
-
-                faces.append({
-                    'x': x,
-                    'y': y,
-                    'w': fw,
-                    'h': fh,
-                    'confidence': confidence,
-                    'area': max(fw, 0) * max(fh, 0),
-                })
-
-            if not faces:
-                return None
-
-            # Take largest face (main streamer)
-            main_face = max(faces, key=lambda f: f['area'])
-
-            # Classify to zone
-            zone = self._classify_to_zone(main_face, w, h)
-            if zone == "center_middle":
-                logger.debug(
-                    "Face at t=%.2fs in center_middle (ignored) - conf=%.2f",
-                    timestamp, main_face['confidence']
-                )
-                return None  # Ignore center_middle faces (main gameplay area)
+            else:
+                # Classify to zone (original behavior for full-frame search)
+                zone = self._classify_to_zone(best_detection, w, h)
+                if zone == "center_middle":
+                    logger.debug(
+                        "Face at t=%.2fs in center_middle (ignored) - conf=%.2f",
+                        timestamp, best_detection['confidence']
+                    )
+                    return None  # Ignore center_middle faces (main gameplay area)
 
             logger.info(
                 "Face detected at t=%.2fs in zone '%s' (conf=%.2f, size=%dx%d)",
-                timestamp, zone, main_face['confidence'], main_face['w'], main_face['h']
+                timestamp, zone, best_detection['confidence'],
+                best_detection['w'], best_detection['h']
             )
 
             return {
                 'zone': zone,
-                'bbox': (main_face['x'], main_face['y'], main_face['w'], main_face['h']),
-                'confidence': main_face['confidence'],
-                'num_faces': len(faces)
+                'bbox': (best_detection['x'], best_detection['y'],
+                        best_detection['w'], best_detection['h']),
+                'confidence': best_detection['confidence'],
+                'num_faces': 1  # Only keeping best detection
             }
 
         finally:
