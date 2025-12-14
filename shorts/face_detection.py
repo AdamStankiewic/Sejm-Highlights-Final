@@ -245,16 +245,36 @@ class FaceDetector:
             # Load and process frame
             frame = self.cv2.imread(tmp_frame)
             if frame is None:
+                logger.warning("Failed to load extracted frame at t=%.2fs from %s", timestamp, tmp_frame)
                 return None
 
             frame_rgb = self.cv2.cvtColor(frame, self.cv2.COLOR_BGR2RGB)
             h, w, _ = frame.shape
 
+            logger.debug(
+                "Loaded frame at t=%.2fs: %dx%d pixels, processing with MediaPipe (threshold=%.2f)",
+                timestamp, w, h, self.confidence_threshold
+            )
+
             # Detect faces
             results = self.face_detector.process(frame_rgb)
-            if not results or not results.detections:
-                logger.debug("No faces detected at t=%.2fs", timestamp)
+
+            # DEBUG: Log what MediaPipe returns
+            if not results:
+                logger.debug("MediaPipe returned None at t=%.2fs", timestamp)
                 return None
+
+            if not results.detections:
+                logger.debug(
+                    "MediaPipe returned results but no detections at t=%.2fs (frame size: %dx%d)",
+                    timestamp, w, h
+                )
+                return None
+
+            logger.debug(
+                "MediaPipe found %d face(s) at t=%.2fs",
+                len(results.detections), timestamp
+            )
 
             # Extract all face bboxes
             faces = []
@@ -266,6 +286,11 @@ class FaceDetector:
                 y = max(int(bbox.ymin * h), 0)
                 fw = int(bbox.width * w)
                 fh = int(bbox.height * h)
+
+                logger.debug(
+                    "  Face #%d: confidence=%.3f, bbox=(%d,%d,%d,%d), size=%dx%d",
+                    len(faces) + 1, confidence, x, y, x + fw, y + fh, fw, fh
+                )
 
                 faces.append({
                     'x': x,
