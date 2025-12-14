@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # Configure logging to see DEBUG messages from gaming.py
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(levelname)s: %(message)s'
 )
 
