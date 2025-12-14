@@ -5,8 +5,18 @@ import logging
 from pathlib import Path
 from typing import Iterable, Tuple
 
-from moviepy import ColorClip
-from moviepy.video.fx import MultiplySpeed
+# Support both MoviePy 1.x and 2.x
+try:
+    # MoviePy 2.x
+    from moviepy import ColorClip
+    from moviepy.video.fx import MultiplySpeed
+    MOVIEPY_V2 = True
+except ImportError:
+    # MoviePy 1.x
+    from moviepy.editor import ColorClip
+    from moviepy.video.fx.all import speedx as vfx_speedx
+    MultiplySpeed = None
+    MOVIEPY_V2 = False
 
 from utils.video import (
     apply_speedup,
@@ -59,7 +69,10 @@ class UniversalTemplate(TemplateBase):
                 logger.debug("Clip FPS after subtitles: %s", clip.fps)
             if speedup > 1.0 and clip.audio is not None:
                 try:
-                    clip = ensure_fps(clip.fx(MultiplySpeed, factor=speedup))
+                    if MOVIEPY_V2:
+                        clip = ensure_fps(clip.fx(MultiplySpeed, factor=speedup))
+                    else:
+                        clip = ensure_fps(clip.fx(vfx_speedx, speedup))
                     if clip.audio:
                         clip = clip.set_audio(apply_speedup(clip.audio, speedup))
                     clip = ensure_fps(clip)

@@ -8,11 +8,23 @@ import logging
 from pathlib import Path
 from typing import Iterable, Tuple
 
-from moviepy.audio.AudioClip import AudioClip
-import moviepy.audio.fx as afx
-from moviepy import CompositeVideoClip, TextClip, VideoFileClip
-from moviepy.video.fx import Resize
-from moviepy.video.fx import Crop
+# Support both MoviePy 1.x and 2.x
+try:
+    # MoviePy 2.x
+    from moviepy.audio.AudioClip import AudioClip
+    import moviepy.audio.fx as afx
+    from moviepy import CompositeVideoClip, TextClip, VideoFileClip
+    from moviepy.video.fx import Resize, Crop
+    MOVIEPY_V2 = True
+except ImportError:
+    # MoviePy 1.x
+    from moviepy.audio.AudioClip import AudioClip
+    from moviepy.audio.fx import all as afx
+    from moviepy.editor import CompositeVideoClip, TextClip, VideoFileClip
+    from moviepy.video.fx import resize, crop
+    Resize = None
+    Crop = None
+    MOVIEPY_V2 = False
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +114,10 @@ def ensure_fps(clip: VideoFileClip, fallback: int = 30) -> VideoFileClip:
 def center_crop_9_16(clip: VideoFileClip, scale: float = 1.0) -> VideoFileClip:
     """Crop clip to 9:16 keeping center, optional scale (zoom out)."""
     target_ratio = 9 / 16
-    clip = ensure_fps(clip.fx(Resize, new_size=scale))
+    if MOVIEPY_V2:
+        clip = ensure_fps(clip.fx(Resize, new_size=scale))
+    else:
+        clip = ensure_fps(clip.fx(resize.resize, scale))
     logger.debug("Clip FPS after resize: %s", clip.fps)
     w, h = clip.size
     current_ratio = w / h
@@ -111,13 +126,19 @@ def center_crop_9_16(clip: VideoFileClip, scale: float = 1.0) -> VideoFileClip:
     if current_ratio > target_ratio:
         new_w = int(h * target_ratio)
         x1 = int((w - new_w) / 2)
-        cropped = clip.fx(Crop, x1=x1, y1=0, width=new_w, height=h)
+        if MOVIEPY_V2:
+            cropped = clip.fx(Crop, x1=x1, y1=0, width=new_w, height=h)
+        else:
+            cropped = crop.crop(clip, x1=x1, y1=0, width=new_w, height=h)
         cropped = ensure_fps(cropped)
         logger.debug("Clip FPS after center_crop_9_16 width crop: %s", cropped.fps)
         return cropped
     new_h = int(w / target_ratio)
     y1 = int((h - new_h) / 2)
-    cropped = clip.fx(Crop, x1=0, y1=y1, width=w, height=new_h)
+    if MOVIEPY_V2:
+        cropped = clip.fx(Crop, x1=0, y1=y1, width=w, height=new_h)
+    else:
+        cropped = crop.crop(clip, x1=0, y1=y1, width=w, height=new_h)
     cropped = ensure_fps(cropped)
     logger.debug("Clip FPS after center_crop_9_16 height crop: %s", cropped.fps)
     return cropped

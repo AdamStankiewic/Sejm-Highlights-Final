@@ -7,8 +7,18 @@ import tempfile
 from pathlib import Path
 from typing import Iterable, Tuple, Optional
 
-from moviepy import ColorClip, VideoClip, VideoFileClip
-from moviepy.video.fx import MultiplySpeed
+# Support both MoviePy 1.x and 2.x
+try:
+    # MoviePy 2.x
+    from moviepy import ColorClip, VideoClip, VideoFileClip
+    from moviepy.video.fx import MultiplySpeed
+    MOVIEPY_V2 = True
+except ImportError:
+    # MoviePy 1.x
+    from moviepy.editor import ColorClip, VideoClip, VideoFileClip
+    from moviepy.video.fx.all import speedx as vfx_speedx
+    MultiplySpeed = None
+    MOVIEPY_V2 = False
 
 from shorts.face_detection import FaceDetector, FaceRegion
 from utils.video import (
@@ -184,7 +194,10 @@ class GamingTemplate(TemplateBase):
             logger.debug("Clip FPS after gameplay crop: %s", gameplay_clip.fps)
             if speedup and speedup > 1.0:
                 try:
-                    gameplay_clip = ensure_fps(gameplay_clip.fx(MultiplySpeed, factor=speedup))
+                    if MOVIEPY_V2:
+                        gameplay_clip = ensure_fps(gameplay_clip.fx(MultiplySpeed, factor=speedup))
+                    else:
+                        gameplay_clip = ensure_fps(gameplay_clip.fx(vfx_speedx, speedup))
                     logger.debug("Clip FPS after video speedup: %s", gameplay_clip.fps)
                     if gameplay_clip.audio:
                         new_audio = apply_speedup(gameplay_clip.audio, speedup)
