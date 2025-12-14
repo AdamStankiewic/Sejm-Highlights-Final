@@ -7,8 +7,8 @@ import tempfile
 from pathlib import Path
 from typing import Iterable, Tuple, Optional
 
-from moviepy.editor import ColorClip, VideoClip, VideoFileClip
-from moviepy.video.fx.all import speedx as vfx_speedx
+from moviepy import ColorClip, VideoClip, VideoFileClip
+from moviepy.video.fx import MultiplySpeed
 
 from shorts.face_detection import FaceDetector, FaceRegion
 from utils.video import (
@@ -184,7 +184,7 @@ class GamingTemplate(TemplateBase):
             logger.debug("Clip FPS after gameplay crop: %s", gameplay_clip.fps)
             if speedup and speedup > 1.0:
                 try:
-                    gameplay_clip = ensure_fps(gameplay_clip.fx(vfx_speedx, speedup))
+                    gameplay_clip = ensure_fps(gameplay_clip.fx(MultiplySpeed, factor=speedup))
                     logger.debug("Clip FPS after video speedup: %s", gameplay_clip.fps)
                     if gameplay_clip.audio:
                         new_audio = apply_speedup(gameplay_clip.audio, speedup)
@@ -293,49 +293,57 @@ class GamingTemplate(TemplateBase):
         gameplay_full = gameplay_full.set_position((0, 0))  # Top
         logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
 
-        # Use face detection only for LOCATION - then use fixed region for that zone
-        # This ensures consistent aspect ratio (square regions)
+        # Use actual detected face bbox with padding for tight, centered framing
         src_w, src_h = source_clip.size
 
-        # Square regions (35% width x 35% height) for each zone
-        facecam_h_percent = 0.35  # 35% of height
-        facecam_w_percent = 0.35  # 35% of width
-        facecam_w = int(src_w * facecam_w_percent)
-        facecam_h_src = int(src_h * facecam_h_percent)
+        # Extract face bbox (x, y, w, h) from detection
+        face_x, face_y, face_w, face_h = face_region.bbox
 
-        # Define fixed regions for each zone (9-zone grid)
-        center_x = (src_w - facecam_w) // 2  # Center horizontally
-        regions = {
-            # Left edge
-            "left_top": (0, 0, facecam_w, facecam_h_src),
-            "left_middle": (0, (src_h - facecam_h_src) // 2, facecam_w, (src_h + facecam_h_src) // 2),
-            "left_bottom": (0, src_h - facecam_h_src, facecam_w, src_h),
-            # Center column
-            "center_top": (center_x, 0, center_x + facecam_w, facecam_h_src),
-            "center_bottom": (center_x, src_h - facecam_h_src, center_x + facecam_w, src_h),
-            # Right edge
-            "right_top": (src_w - facecam_w, 0, src_w, facecam_h_src),
-            "right_middle": (src_w - facecam_w, (src_h - facecam_h_src) // 2, src_w, (src_h + facecam_h_src) // 2),
-            "right_bottom": (src_w - facecam_w, src_h - facecam_h_src, src_w, src_h),
-        }
+        # Calculate face center
+        face_center_x = face_x + face_w // 2
+        face_center_y = face_y + face_h // 2
 
-        # Get detected zone and use its fixed region
-        detected_zone = face_region.zone
-        if detected_zone not in regions:
-            logger.warning(
-                "[GamingTemplate] Unknown zone '%s', defaulting to right_top",
-                detected_zone
-            )
-            detected_zone = "right_top"
+        # Use larger dimension for square crop, add generous padding (2x face size)
+        face_size = max(face_w, face_h)
+        crop_size = int(face_size * 2.0)  # 2x padding for good framing
 
-        x1, y1, x2, y2 = regions[detected_zone]
+        # Create square crop centered on face
+        x1 = face_center_x - crop_size // 2
+        y1 = face_center_y - crop_size // 2
+        x2 = x1 + crop_size
+        y2 = y1 + crop_size
+
+        # Ensure crop stays within frame boundaries
+        if x1 < 0:
+            x2 -= x1
+            x1 = 0
+        if y1 < 0:
+            y2 -= y1
+            y1 = 0
+        if x2 > src_w:
+            x1 -= (x2 - src_w)
+            x2 = src_w
+        if y2 > src_h:
+            y1 -= (y2 - src_h)
+            y2 = src_h
+
+        # Clamp to valid range
+        x1 = max(0, x1)
+        y1 = max(0, y1)
+        x2 = min(src_w, x2)
+        y2 = min(src_h, y2)
+
         facecam_w_actual = x2 - x1
         facecam_h_actual = y2 - y1
         aspect_ratio = facecam_w_actual / facecam_h_actual
 
         logger.info(
-            "[GamingTemplate] Face detected in zone '%s' → using fixed region %dx%d (AR: %.2f) at (%d,%d)",
-            detected_zone, facecam_w_actual, facecam_h_actual, aspect_ratio, x1, y1
+            "[GamingTemplate] Face detected in zone '%s' → using bbox-based crop %dx%d (AR: %.2f) at (%d,%d)",
+            face_region.zone, facecam_w_actual, facecam_h_actual, aspect_ratio, x1, y1
+        )
+        logger.info(
+            "[GamingTemplate] Original face bbox: %dx%d at (%d,%d), crop padding: 2.0x",
+            face_w, face_h, face_x, face_y
         )
 
         # Crop facecam region
@@ -366,7 +374,6 @@ class GamingTemplate(TemplateBase):
         )
 
         # Create black background for bottom bar (for padding around facecam)
-        from moviepy.video.VideoClip import ColorClip
         black_bg = ColorClip(
             size=(target_w, facecam_h),
             color=(0, 0, 0),
@@ -486,7 +493,6 @@ class GamingTemplate(TemplateBase):
         )
 
         # Create black background for bottom bar (for padding around facecam)
-        from moviepy.video.VideoClip import ColorClip
         black_bg = ColorClip(
             size=(target_w, facecam_h),
             color=(0, 0, 0),
