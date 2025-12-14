@@ -140,17 +140,15 @@ def main():
         segments = segments[:args.limit]
         print(f"   ✓ Limited to {len(segments)} segments")
 
-    # Initialize face detector if needed
+    # Initialize face detector - let gaming.py create it with proper settings
+    # (Don't override with hardcoded values here)
     face_detector = None
     if args.template == "gaming" and not args.no_face_detection:
-        print("\n🔍 Initializing face detector...")
-        face_detector = FaceDetector(
-            confidence_threshold=0.5,
-            consensus_threshold=0.3,
-            num_samples=6
-        )
-        print("   ✓ MediaPipe FaceDetector ready")
-        print("   ✓ 6-zone grid (left/right edges, ignoring center)")
+        print("\n🔍 Face detection enabled")
+        print("   ✓ Template will auto-configure MediaPipe detector")
+        print("   ✓ 9-zone grid (all zones except center_middle)")
+        print("   ✓ Low thresholds for maximum detection")
+        # face_detector stays None - gaming.py will create its own with optimal settings
 
     # Initialize generator
     print("\n🎨 Initializing ShortsGenerator...")
