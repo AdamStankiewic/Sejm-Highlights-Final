@@ -4,19 +4,20 @@ This module provides a clean abstraction for detecting webcam/facecam regions
 in video files using MediaPipe Face Detection with multi-frame consensus.
 
 DETECTION STRATEGY:
-    The detector ONLY looks at the LEFT and RIGHT edges of the frame (33% each side),
-    IGNORING the center column (middle 33%) where gameplay typically appears.
+    The detector uses a 3x3 grid covering all areas of the frame.
+    Only center_middle is ignored (main gameplay area).
+    Facecams can appear anywhere: corners, edges, center_top, center_bottom, etc.
 
     Visual layout (16:9 video):
     ┌──────────┬──────────┬──────────┐
     │   LEFT   │  CENTER  │  RIGHT   │
-    │   TOP    │(IGNORED) │   TOP    │
-    ├──────────┤          ├──────────┤
-    │   LEFT   │ GAMEPLAY │  RIGHT   │
-    │  MIDDLE  │   AREA   │  MIDDLE  │
-    ├──────────┤          ├──────────┤
-    │   LEFT   │          │  RIGHT   │
-    │  BOTTOM  │          │  BOTTOM  │
+    │   TOP    │   TOP    │   TOP    │
+    ├──────────┼──────────┼──────────┤
+    │   LEFT   │ CENTER   │  RIGHT   │
+    │  MIDDLE  │(GAMEPLAY)│  MIDDLE  │
+    ├──────────┼──────────┼──────────┤
+    │   LEFT   │  CENTER  │  RIGHT   │
+    │  BOTTOM  │  BOTTOM  │  BOTTOM  │
     └──────────┴──────────┴──────────┘
 
     This prevents false positives from faces in gameplay content.
@@ -269,8 +270,8 @@ class FaceDetector:
 
             # Classify to zone
             zone = self._classify_to_zone(main_face, w, h)
-            if zone == "center_ignored":
-                return None  # Ignore center faces (usually gameplay UI)
+            if zone == "center_middle":
+                return None  # Ignore center_middle faces (main gameplay area)
 
             return {
                 'zone': zone,
@@ -292,14 +293,14 @@ class FaceDetector:
         frame_w: int,
         frame_h: int
     ) -> str:
-        """Classify face center to one of 6 side zones (3x3 grid, ignore center column)
+        """Classify face center to one of 9 zones (3x3 grid).
 
         Grid layout:
             Horizontal: LEFT (0-33%) | CENTER (33-67%) | RIGHT (67-100%)
             Vertical:   TOP (0-33%)  | MIDDLE (33-67%) | BOTTOM (67-100%)
 
-        Only LEFT and RIGHT columns are valid detection zones.
-        CENTER column is ignored (reserved for gameplay).
+        All 9 zones are valid except center_middle (gameplay area).
+        Facecams can appear in center_top, center_bottom, left/right edges, etc.
 
         Args:
             face_bbox: Dict with {x, y, w, h}
@@ -307,7 +308,7 @@ class FaceDetector:
             frame_h: Frame height in pixels
 
         Returns:
-            Zone name (e.g., "left_bottom", "right_top") or "center_ignored"
+            Zone name (e.g., "left_bottom", "center_top", "right_middle") or "center_middle" (ignored)
         """
         # Calculate face center point
         center_x = face_bbox['x'] + face_bbox['w'] / 2
@@ -317,17 +318,13 @@ class FaceDetector:
         col_ratio = center_x / frame_w
         row_ratio = center_y / frame_h
 
-        # CRITICAL: Ignore center column - this is where gameplay appears
-        # If face is detected in middle 33% of width, return "center_ignored"
-        if 1/3 <= col_ratio <= 2/3:
-            logger.debug(
-                "Face detected in center column (%.2f) - ignored (gameplay area)",
-                col_ratio
-            )
-            return "center_ignored"
-
-        # Determine column (left or right edge)
-        col = "left" if col_ratio < 1/3 else "right"
+        # Determine column (left, center, or right)
+        if col_ratio < 1/3:
+            col = "left"
+        elif col_ratio <= 2/3:
+            col = "center"
+        else:
+            col = "right"
 
         # Determine row (top, middle, or bottom)
         if row_ratio < 1/3:
@@ -338,6 +335,15 @@ class FaceDetector:
             row = "bottom"
 
         zone_name = f"{col}_{row}"
+
+        # Only ignore center_middle (main gameplay area)
+        if zone_name == "center_middle":
+            logger.debug(
+                "Face detected in center_middle (%.2f, %.2f) - ignored (gameplay area)",
+                col_ratio, row_ratio
+            )
+            return "center_middle"
+
         logger.debug(
             "Face classified to zone: %s (col_ratio=%.2f, row_ratio=%.2f)",
             zone_name, col_ratio, row_ratio

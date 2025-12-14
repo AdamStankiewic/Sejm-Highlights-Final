@@ -135,9 +135,9 @@ class GamingTemplate(TemplateBase):
             face_detector: Optional pre-configured FaceDetector instance
         """
         self.face_detector = face_detector or FaceDetector(
-            confidence_threshold=0.3,  # Lower threshold for smaller facecams
-            consensus_threshold=0.2,   # Lower consensus needed
-            num_samples=15             # More samples for better detection
+            confidence_threshold=0.1,  # Very low threshold to catch all faces
+            consensus_threshold=0.1,   # Very low consensus (1 out of 20 samples)
+            num_samples=20             # Many samples for thorough detection
         )
 
     def apply(
@@ -303,12 +303,20 @@ class GamingTemplate(TemplateBase):
         facecam_w = int(src_w * facecam_w_percent)
         facecam_h_src = int(src_h * facecam_h_percent)
 
-        # Define fixed regions for each zone
+        # Define fixed regions for each zone (9-zone grid)
+        center_x = (src_w - facecam_w) // 2  # Center horizontally
         regions = {
-            "right_top": (src_w - facecam_w, 0, src_w, facecam_h_src),
-            "right_bottom": (src_w - facecam_w, src_h - facecam_h_src, src_w, src_h),
+            # Left edge
             "left_top": (0, 0, facecam_w, facecam_h_src),
+            "left_middle": (0, (src_h - facecam_h_src) // 2, facecam_w, (src_h + facecam_h_src) // 2),
             "left_bottom": (0, src_h - facecam_h_src, facecam_w, src_h),
+            # Center column
+            "center_top": (center_x, 0, center_x + facecam_w, facecam_h_src),
+            "center_bottom": (center_x, src_h - facecam_h_src, center_x + facecam_w, src_h),
+            # Right edge
+            "right_top": (src_w - facecam_w, 0, src_w, facecam_h_src),
+            "right_middle": (src_w - facecam_w, (src_h - facecam_h_src) // 2, src_w, (src_h + facecam_h_src) // 2),
+            "right_bottom": (src_w - facecam_w, src_h - facecam_h_src, src_w, src_h),
         }
 
         # Get detected zone and use its fixed region
@@ -424,11 +432,19 @@ class GamingTemplate(TemplateBase):
         logger.info("[GamingTemplate] Using fixed right_top region (35%x35%) for facecam")
 
         best_region = "right_top"
+        center_x = (src_w - facecam_w) // 2  # Center horizontally
         regions = {
-            "right_top": (src_w - facecam_w, 0, src_w, facecam_h_src),
-            "right_bottom": (src_w - facecam_w, src_h - facecam_h_src, src_w, src_h),
+            # Left edge
             "left_top": (0, 0, facecam_w, facecam_h_src),
+            "left_middle": (0, (src_h - facecam_h_src) // 2, facecam_w, (src_h + facecam_h_src) // 2),
             "left_bottom": (0, src_h - facecam_h_src, facecam_w, src_h),
+            # Center column
+            "center_top": (center_x, 0, center_x + facecam_w, facecam_h_src),
+            "center_bottom": (center_x, src_h - facecam_h_src, center_x + facecam_w, src_h),
+            # Right edge
+            "right_top": (src_w - facecam_w, 0, src_w, facecam_h_src),
+            "right_middle": (src_w - facecam_w, (src_h - facecam_h_src) // 2, src_w, (src_h + facecam_h_src) // 2),
+            "right_bottom": (src_w - facecam_w, src_h - facecam_h_src, src_w, src_h),
         }
 
         x1, y1, x2, y2 = regions[best_region]
