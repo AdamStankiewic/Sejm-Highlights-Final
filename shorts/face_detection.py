@@ -139,6 +139,11 @@ class FaceDetector:
             duration = end - start
             sample_times = np.linspace(start, end, self.num_samples)
 
+            logger.info(
+                "Face detection: sampling %d frames from %.2f-%.2fs (duration=%.1fs)",
+                self.num_samples, start, end, duration
+            )
+
             detections: List[dict] = []
             all_zones: List[str] = []
 
@@ -149,8 +154,16 @@ class FaceDetector:
                     all_zones.append(frame_detection['zone'])
 
             if not all_zones:
-                logger.debug("No faces detected in any sampled frames")
+                logger.info(
+                    "No faces detected in any of %d sampled frames (%.2f-%.2fs)",
+                    self.num_samples, start, end
+                )
                 return None
+
+            logger.info(
+                "Detected faces in %d/%d frames - zones: %s",
+                len(all_zones), self.num_samples, dict(Counter(all_zones))
+            )
 
             # Find dominant zone through voting
             zone_counts = Counter(all_zones)
@@ -240,6 +253,7 @@ class FaceDetector:
             # Detect faces
             results = self.face_detector.process(frame_rgb)
             if not results or not results.detections:
+                logger.debug("No faces detected at t=%.2fs", timestamp)
                 return None
 
             # Extract all face bboxes
@@ -271,7 +285,16 @@ class FaceDetector:
             # Classify to zone
             zone = self._classify_to_zone(main_face, w, h)
             if zone == "center_middle":
+                logger.debug(
+                    "Face at t=%.2fs in center_middle (ignored) - conf=%.2f",
+                    timestamp, main_face['confidence']
+                )
                 return None  # Ignore center_middle faces (main gameplay area)
+
+            logger.info(
+                "Face detected at t=%.2fs in zone '%s' (conf=%.2f, size=%dx%d)",
+                timestamp, zone, main_face['confidence'], main_face['w'], main_face['h']
+            )
 
             return {
                 'zone': zone,
