@@ -268,16 +268,32 @@ class PipelineProcessor:
                 self._report_progress("Stage 1/7", 14, f"✅ Audio extraction zakończony [RUN_ID: {self.run_id}]")
                 
                 # === SMART SPLITTER: Analiza strategii podziału ===
-                split_strategy = None
+                split_plan = None
                 if self.smart_splitter and source_duration >= self.config.splitter.min_duration_for_split:
                     print("\n🤖 Wykryto długi materiał - uruchamiam Smart Splitter...")
-                    split_strategy = self.smart_splitter.calculate_split_strategy(source_duration)
-                    self.smart_splitter.print_split_summary(split_strategy, [])
-                    
-                    # Dostosuj parametry selection do strategii
+
+                    # Pobierz opcjonalne overrides z config (jeśli są)
+                    override_parts = getattr(self.config.splitter, 'force_num_parts', None)
+                    override_target_mins = getattr(self.config.splitter, 'target_part_minutes', None)
+
+                    # Wylicz plan RAZ (single source of truth!)
+                    split_plan = self.smart_splitter.calculate_split_strategy(
+                        source_duration,
+                        override_parts=override_parts,
+                        override_target_minutes=override_target_mins
+                    )
+
+                    # Dostosuj config selection do planu (z wyjaśnieniem DLACZEGO)
                     original_target = self.config.selection.target_total_duration
-                    self.config.selection.target_total_duration = split_strategy['total_target_duration']
-                    print(f"📊 Dostosowano target duration: {original_target}s → {split_strategy['total_target_duration']}s")
+                    if split_plan.total_target_duration != original_target:
+                        change_reason = (
+                            f"Smart Splitter dostosował target duration: {original_target}s → {split_plan.total_target_duration}s\n"
+                            f"   Powód: Materiał {source_duration/3600:.1f}h wymaga {split_plan.num_parts} części "
+                            f"po ~{split_plan.target_duration_per_part/60:.0f}min każda dla optymalnej retencji"
+                        )
+                        print(f"\n⚙️  {change_reason}")
+                        split_plan._config_change_reason = change_reason  # Zapisz do późniejszego wyświetlenia
+                        self.config.selection.target_total_duration = split_plan.total_target_duration
                 
                 # === ETAP 2: VAD (Voice Activity Detection) ===
                 self._check_cancelled()
@@ -343,8 +359,8 @@ class PipelineProcessor:
                 print(f"\n📌 STAGE 6/7 - Selection [RUN_ID: {self.run_id}]")
                 self._report_progress("Stage 6/7", 77, f"Selekcja najlepszych klipów... [RUN_ID: {self.run_id}]")
 
-                # Jeśli jest split_strategy, użyj wyższego threshold
-                min_score = split_strategy['min_score_threshold'] if split_strategy else 0.0  # Bez filtrowania gdy brak strategii
+                # Użyj threshold z planu (jeśli istnieje)
+                min_score = split_plan.min_score_threshold if split_plan else 0.0  # Bez filtrowania gdy brak planu
 
                 selection_result = self.stages['selection'].process(
                     segments=scoring_result['segments'],
@@ -358,14 +374,14 @@ class PipelineProcessor:
                 
                 # === Po stage 6 (Selection): Podział na części jeśli potrzebny ===
                 parts_metadata = None
-                if split_strategy:
-                    print("\n✂️ Dzielę klipy na części...")
+                if split_plan:
+                    print("\n✂️ Dzielę klipy na części według planu...")
                     parts = self.smart_splitter.split_clips_into_parts(
                         selection_result['clips'],
-                        split_strategy['num_parts'],
-                        split_strategy['target_duration_per_part']
+                        split_plan.num_parts,
+                        split_plan.target_duration_per_part
                     )
-                    
+
                     # Generuj metadata dla każdej części
                     base_date = datetime.now() + timedelta(days=self.config.splitter.first_premiere_days_offset)
                     parts_metadata = self.smart_splitter.generate_part_metadata(
@@ -373,8 +389,12 @@ class PipelineProcessor:
                         "Gorące Momenty Sejmu",
                         base_date=base_date
                     )
-                    
-                    self.smart_splitter.print_split_summary(split_strategy, parts_metadata)
+
+                    # Wypełnij plan częściami (single source of truth!)
+                    split_plan.parts_metadata = parts_metadata
+
+                    # Pokaż FINALNY plan (RAZ, z pełnymi danymi!)
+                    self.smart_splitter.print_split_summary(split_plan)
                 
                 # === ETAP 7: Export (dla każdej części lub pojedynczy) ===
                 print(f"\n📌 STAGE 7/7 - Export [RUN_ID: {self.run_id}]")
@@ -543,7 +563,7 @@ class PipelineProcessor:
                     'export_results': export_results,
                     'youtube_results': youtube_results,
                     'shorts_results': shorts_results,
-                    'split_strategy': split_strategy,
+                    'split_plan': split_plan,
                     'parts_metadata': parts_metadata,
                     'timing': self.timing_stats
                 }

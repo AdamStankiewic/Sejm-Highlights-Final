@@ -188,6 +188,10 @@ class SmartSplitterConfig:
     use_politicians_in_titles: bool = True
     first_premiere_days_offset: int = 1
 
+    # Manual overrides (opcjonalne parametry CLI/GUI)
+    force_num_parts: Optional[int] = None  # Wymuszenie liczby części (np. --parts 3)
+    target_part_minutes: Optional[int] = None  # Wymuszenie długości części (np. --target-part-minutes 20)
+
 
 @dataclass
 class YouTubeConfig:
