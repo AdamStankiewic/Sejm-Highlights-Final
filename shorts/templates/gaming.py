@@ -316,15 +316,18 @@ class GamingTemplate(TemplateBase):
         face_center_x = face_x + face_w // 2
         face_center_y = face_y + face_h // 2
 
-        # Use larger dimension for square crop, add generous padding (3.5x face size)
+        # Create rectangular crop (wider than tall) for natural widescreen aspect ratio
+        # Bottom bar is 1080×576 (1.875:1 ratio), so crop should be similar
         face_size = max(face_w, face_h)
-        crop_size = int(face_size * 3.5)  # 3.5x padding for wider view with less zoom
+        crop_width = int(face_size * 5.5)   # Wide horizontal view
+        crop_height = int(face_size * 3.0)  # Less vertical space
+        # Aspect ratio: ~1.83 (close to bottom bar's 1.875)
 
-        # Create square crop centered on face
-        x1 = face_center_x - crop_size // 2
-        y1 = face_center_y - crop_size // 2
-        x2 = x1 + crop_size
-        y2 = y1 + crop_size
+        # Create rectangular crop centered on face
+        x1 = face_center_x - crop_width // 2
+        y1 = face_center_y - crop_height // 2
+        x2 = x1 + crop_width
+        y2 = y1 + crop_height
 
         # Ensure crop stays within frame boundaries
         if x1 < 0:
@@ -355,7 +358,7 @@ class GamingTemplate(TemplateBase):
             face_region.zone, facecam_w_actual, facecam_h_actual, aspect_ratio, x1, y1
         )
         logger.info(
-            "[GamingTemplate] Original face bbox: %dx%d at (%d,%d), crop padding: 3.5x",
+            "[GamingTemplate] Original face bbox: %dx%d at (%d,%d), crop: 5.5x wide × 3.0x tall",
             face_w, face_h, face_x, face_y
         )
 
@@ -363,22 +366,27 @@ class GamingTemplate(TemplateBase):
         face_clip = source_clip.crop(x1=x1, y1=y1, x2=x2, y2=y2)
         face_clip = ensure_fps(face_clip.set_duration(source_clip.duration))
 
-        # Resize to fill 100% of bottom bar (full width and height, stretch if needed)
-        # This ensures no black bars on sides and facecam fills entire bottom section
-        new_facecam_w = target_w  # Full width (1080px)
-        new_facecam_h = facecam_h  # Full bottom bar height (30% of 1920 = 576px)
+        # Scale to fill bottom bar height while preserving aspect ratio
+        # With wider crop (1.83:1), this should fill most of the width naturally
+        new_facecam_h = facecam_h  # Full bottom bar height (576px)
+        new_facecam_w = int(new_facecam_h * aspect_ratio)  # Scale width proportionally
+
+        # If width exceeds target, scale down to fit width instead
+        if new_facecam_w > target_w:
+            new_facecam_w = target_w
+            new_facecam_h = int(new_facecam_w / aspect_ratio)
 
         face_clip = face_clip.resize((new_facecam_w, new_facecam_h))
 
-        # Position at top-left of bottom bar (no centering, aligned to top edge)
-        facecam_x = 0
+        # Center horizontally, align to top of bottom bar
+        facecam_x = (target_w - new_facecam_w) // 2
         facecam_y = gameplay_h  # Aligned to top of bottom section
 
         face_clip = face_clip.set_position((facecam_x, facecam_y))
         logger.debug("Clip FPS after facecam crop: %s", face_clip.fps)
         logger.info(
-            "[GamingTemplate] Facecam positioned: %dx%d at (%d, %d) - stretched to fill bottom bar",
-            new_facecam_w, new_facecam_h, facecam_x, facecam_y
+            "[GamingTemplate] Facecam positioned: %dx%d at (%d, %d) - natural aspect ratio %.2f",
+            new_facecam_w, new_facecam_h, facecam_x, facecam_y, aspect_ratio
         )
 
         # Create black background for bottom bar (for padding around facecam)
