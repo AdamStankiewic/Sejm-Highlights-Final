@@ -363,26 +363,21 @@ class GamingTemplate(TemplateBase):
         face_clip = source_clip.crop(x1=x1, y1=y1, x2=x2, y2=y2)
         face_clip = ensure_fps(face_clip.set_duration(source_clip.duration))
 
-        # Resize to fill 100% of bottom bar width, preserving aspect ratio
-        target_facecam_w = int(target_w * 1.0)  # 100% of 1080px = full width
-        new_facecam_w = target_facecam_w
-        new_facecam_h = int(target_facecam_w / aspect_ratio)
-
-        # If height exceeds bottom bar, scale down to fit
-        if new_facecam_h > facecam_h:
-            new_facecam_h = facecam_h
-            new_facecam_w = int(facecam_h * aspect_ratio)
+        # Resize to fill 100% of bottom bar (full width and height, stretch if needed)
+        # This ensures no black bars on sides and facecam fills entire bottom section
+        new_facecam_w = target_w  # Full width (1080px)
+        new_facecam_h = facecam_h  # Full bottom bar height (30% of 1920 = 576px)
 
         face_clip = face_clip.resize((new_facecam_w, new_facecam_h))
 
-        # Center facecam horizontally in the bottom bar
-        facecam_x = (target_w - new_facecam_w) // 2
-        facecam_y = gameplay_h + (facecam_h - new_facecam_h) // 2  # Center vertically in bar too
+        # Position at top-left of bottom bar (no centering, aligned to top edge)
+        facecam_x = 0
+        facecam_y = gameplay_h  # Aligned to top of bottom section
 
         face_clip = face_clip.set_position((facecam_x, facecam_y))
-        logger.debug("Clip FPS after smart facecam crop: %s", face_clip.fps)
+        logger.debug("Clip FPS after facecam crop: %s", face_clip.fps)
         logger.info(
-            "[GamingTemplate] Facecam positioned: %dx%d at (%d, %d) - aspect ratio preserved!",
+            "[GamingTemplate] Facecam positioned: %dx%d at (%d, %d) - stretched to fill bottom bar",
             new_facecam_w, new_facecam_h, facecam_x, facecam_y
         )
 
