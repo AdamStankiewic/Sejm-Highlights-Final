@@ -13,7 +13,7 @@ from typing import Callable, Optional, Dict, Any
 from datetime import datetime, timedelta
 
 from .config import Config
-from .smart_splitter import SmartSplitter
+from .highlight_packer import HighlightPacker
 from .stage_01_ingest import IngestStage
 from .stage_02_vad import VADStage
 from .stage_03_transcribe import TranscribeStage
@@ -68,15 +68,13 @@ class PipelineProcessor:
         # Initialize thumbnail stage
         self.thumbnail_stage = ThumbnailStage(config)
 
-
-                # Smart Splitter
-        self.smart_splitter = None
-        if hasattr(config, 'splitter') and config.splitter.enabled:
-            self.smart_splitter = SmartSplitter(
-                premiere_hour=config.splitter.premiere_hour,
-                premiere_minute=config.splitter.premiere_minute
+        # Highlight Packer (pakowanie selected_clips do części z premierami)
+        self.highlight_packer = None
+        if hasattr(config, 'packer') and config.packer.enabled:
+            self.highlight_packer = HighlightPacker(
+                premiere_hour=config.packer.premiere_hour,
+                premiere_minute=config.packer.premiere_minute
             )
-
 
         self.session_dir: Optional[Path] = None
 
@@ -266,18 +264,19 @@ class PipelineProcessor:
                 source_duration = ingest_result['metadata']['duration']
                 self.timing_stats['ingest'] = self._format_duration(time.time() - stage_start)
                 self._report_progress("Stage 1/7", 14, f"✅ Audio extraction zakończony [RUN_ID: {self.run_id}]")
-                
-                # === SMART SPLITTER: Analiza strategii podziału ===
-                split_plan = None
-                if self.smart_splitter and source_duration >= self.config.splitter.min_duration_for_split:
-                    print("\n🤖 Wykryto długi materiał - uruchamiam Smart Splitter...")
+
+                # === HIGHLIGHT PACKER: Wstępna analiza strategii pakowania ===
+                # (Faktyczne pakowanie nastąpi PO Stage 6 - Selection)
+                packing_plan = None
+                if self.highlight_packer and source_duration >= self.config.packer.min_duration_for_split:
+                    print("\n📦 Materiał kwalifikuje się do pakowania w części - analiza strategii...")
 
                     # Pobierz opcjonalne overrides z config (jeśli są)
-                    override_parts = getattr(self.config.splitter, 'force_num_parts', None)
-                    override_target_mins = getattr(self.config.splitter, 'target_part_minutes', None)
+                    override_parts = getattr(self.config.packer, 'force_num_parts', None)
+                    override_target_mins = getattr(self.config.packer, 'target_part_minutes', None)
 
-                    # Wylicz plan RAZ (single source of truth!)
-                    split_plan = self.smart_splitter.calculate_split_strategy(
+                    # Wylicz plan pakowania RAZ (single source of truth!)
+                    packing_plan = self.highlight_packer.calculate_packing_strategy(
                         source_duration,
                         override_parts=override_parts,
                         override_target_minutes=override_target_mins
@@ -285,15 +284,15 @@ class PipelineProcessor:
 
                     # Dostosuj config selection do planu (z wyjaśnieniem DLACZEGO)
                     original_target = self.config.selection.target_total_duration
-                    if split_plan.total_target_duration != original_target:
+                    if packing_plan.total_target_duration != original_target:
                         change_reason = (
-                            f"Smart Splitter dostosował target duration: {original_target}s → {split_plan.total_target_duration}s\n"
-                            f"   Powód: Materiał {source_duration/3600:.1f}h wymaga {split_plan.num_parts} części "
-                            f"po ~{split_plan.target_duration_per_part/60:.0f}min każda dla optymalnej retencji"
+                            f"HighlightPacker dostosował target duration: {original_target}s → {packing_plan.total_target_duration}s\n"
+                            f"   Powód: Materiał {source_duration/3600:.1f}h wymaga {packing_plan.num_parts} części "
+                            f"po ~{packing_plan.target_duration_per_part/60:.0f}min każda dla optymalnej retencji"
                         )
                         print(f"\n⚙️  {change_reason}")
-                        split_plan._config_change_reason = change_reason  # Zapisz do późniejszego wyświetlenia
-                        self.config.selection.target_total_duration = split_plan.total_target_duration
+                        packing_plan._config_change_reason = change_reason  # Zapisz do późniejszego wyświetlenia
+                        self.config.selection.target_total_duration = packing_plan.total_target_duration
                 
                 # === ETAP 2: VAD (Voice Activity Detection) ===
                 self._check_cancelled()
@@ -359,8 +358,8 @@ class PipelineProcessor:
                 print(f"\n📌 STAGE 6/7 - Selection [RUN_ID: {self.run_id}]")
                 self._report_progress("Stage 6/7", 77, f"Selekcja najlepszych klipów... [RUN_ID: {self.run_id}]")
 
-                # Użyj threshold z planu (jeśli istnieje)
-                min_score = split_plan.min_score_threshold if split_plan else 0.0  # Bez filtrowania gdy brak planu
+                # Użyj threshold z planu pakowania (jeśli istnieje)
+                min_score = packing_plan.min_score_threshold if packing_plan else 0.0  # Bez filtrowania gdy brak planu
 
                 selection_result = self.stages['selection'].process(
                     segments=scoring_result['segments'],
@@ -371,30 +370,31 @@ class PipelineProcessor:
 
                 self.timing_stats['selection'] = self._format_duration(time.time() - stage_start)
                 self._report_progress("Stage 6/7", 85, f"✅ Wybrano {len(selection_result['clips'])} klipów [RUN_ID: {self.run_id}]")
-                
-                # === Po stage 6 (Selection): Podział na części jeśli potrzebny ===
+
+                # === HIGHLIGHT PACKER: Pakowanie selected_clips do części ===
+                # (FLOW: Stage 6 selected_clips → HighlightPacker → Stage 7 Export per part)
                 parts_metadata = None
-                if split_plan:
-                    print("\n✂️ Dzielę klipy na części według planu...")
-                    parts = self.smart_splitter.split_clips_into_parts(
+                if packing_plan:
+                    print(f"\n📦 Pakowanie {len(selection_result['clips'])} klipów do {packing_plan.num_parts} części...")
+                    parts = self.highlight_packer.split_clips_into_parts(
                         selection_result['clips'],
-                        split_plan.num_parts,
-                        split_plan.target_duration_per_part
+                        packing_plan.num_parts,
+                        packing_plan.target_duration_per_part
                     )
 
-                    # Generuj metadata dla każdej części
-                    base_date = datetime.now() + timedelta(days=self.config.splitter.first_premiere_days_offset)
-                    parts_metadata = self.smart_splitter.generate_part_metadata(
+                    # Generuj metadata premier dla każdej części
+                    base_date = datetime.now() + timedelta(days=self.config.packer.first_premiere_days_offset)
+                    parts_metadata = self.highlight_packer.generate_part_metadata(
                         parts,
                         "Gorące Momenty Sejmu",
                         base_date=base_date
                     )
 
-                    # Wypełnij plan częściami (single source of truth!)
-                    split_plan.parts_metadata = parts_metadata
+                    # Wypełnij plan pakowania metadata (single source of truth!)
+                    packing_plan.parts_metadata = parts_metadata
 
-                    # Pokaż FINALNY plan (RAZ, z pełnymi danymi!)
-                    self.smart_splitter.print_split_summary(split_plan)
+                    # Pokaż FINALNY plan pakowania (RAZ, z harmonogramem premier!)
+                    self.highlight_packer.print_packing_summary(packing_plan)
                 
                 # === ETAP 7: Export (dla każdej części lub pojedynczy) ===
                 print(f"\n📌 STAGE 7/7 - Export [RUN_ID: {self.run_id}]")
@@ -455,10 +455,10 @@ class PipelineProcessor:
                             print(f"\n📤 Upload części {part_meta['part_number']}/{part_meta['total_parts']}...")
                             
                             # Generuj enhanced title
-                            video_title = self.smart_splitter.generate_enhanced_title(
+                            video_title = self.highlight_packer.generate_enhanced_title(
                                 part_meta,
                                 part_meta['clips'],
-                                use_politicians=self.config.splitter.use_politicians_in_titles
+                                use_politicians=self.config.packer.use_politicians_in_titles
                             )
                             
                             # Determine privacy/premiere status
@@ -563,7 +563,7 @@ class PipelineProcessor:
                     'export_results': export_results,
                     'youtube_results': youtube_results,
                     'shorts_results': shorts_results,
-                    'split_plan': split_plan,
+                    'packing_plan': packing_plan,  # Renamed from 'split_plan'
                     'parts_metadata': parts_metadata,
                     'timing': self.timing_stats
                 }

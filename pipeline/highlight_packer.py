@@ -1,6 +1,9 @@
 """
-Smart Content Splitter
-Inteligentnie dzieli długie materiały na części i scheduluje premiery YouTube
+Highlight Packer
+Pakuje wybrane highlighty (Stage 6 selected_clips) do części z harmonogramem premier YouTube
+
+UWAGA: To NIE jest techniczny podział materiału (chunking dla VAD/Whisper).
+       To jest biznesowy podział WYBRANYCH klipów na części do publikacji.
 """
 
 from typing import List, Dict, Any, Tuple, Optional
@@ -10,10 +13,12 @@ import math
 
 
 @dataclass
-class SplitPlan:
+class PackingPlan:
     """
-    Single source of truth dla strategii podziału.
-    Wyliczany RAZ i używany przez cały pipeline.
+    Single source of truth dla strategii pakowania highlightów.
+    Wyliczany RAZ po Stage 6 (Selection) i używany przez Stage 7-9.
+
+    FLOW: Stage 6 (selected_clips) → PackingPlan → Stage 7 (Export per part)
     """
     # Input
     source_duration: float  # Długość źródła w sekundach
@@ -46,9 +51,12 @@ class SplitPlan:
         return len(self.parts_metadata) > 0
 
 
-class SmartSplitter:
+class HighlightPacker:
     """
-    Inteligentny podział treści na części z auto-schedulingiem premier
+    Pakuje wybrane highlighty do części z auto-schedulingiem premier YouTube.
+
+    Używany MIĘDZY Stage 6 (Selection) a Stage 7 (Export).
+    NIE dotyczy technicznego podziału materiału źródłowego.
     """
     
     # Progi czasowe dla podziału (w sekundach)
@@ -76,22 +84,22 @@ class SmartSplitter:
         self.premiere_hour = premiere_hour
         self.premiere_minute = premiere_minute
     
-    def calculate_split_strategy(
+    def calculate_packing_strategy(
         self,
         source_duration: float,
         override_parts: Optional[int] = None,
         override_target_minutes: Optional[int] = None
-    ) -> SplitPlan:
+    ) -> PackingPlan:
         """
-        Oblicz optymalną strategię podziału (wyliczana RAZ!)
+        Oblicz optymalną strategię pakowania highlightów (wyliczana RAZ po Stage 6!)
 
         Args:
-            source_duration: Długość źródła w sekundach
+            source_duration: Długość źródła w sekundach (do kalkulacji compression ratio)
             override_parts: Wymuszenie liczby części (opcjonalne)
             override_target_minutes: Wymuszenie długości części w minutach (opcjonalne)
 
         Returns:
-            SplitPlan - single source of truth dla strategii
+            PackingPlan - single source of truth dla strategii pakowania
         """
         # Określ liczbę części
         if override_parts:
@@ -116,7 +124,7 @@ class SmartSplitter:
 
         compression_ratio = total_target_duration / source_duration
 
-        return SplitPlan(
+        return PackingPlan(
             source_duration=source_duration,
             num_parts=num_parts,
             target_duration_per_part=target_duration_per_part,
@@ -439,15 +447,15 @@ class SmartSplitter:
         else:
             return f"{secs}s"
     
-    def print_split_summary(self, plan: SplitPlan):
+    def print_packing_summary(self, plan: PackingPlan):
         """
-        Wydrukuj podsumowanie planu podziału (single source of truth!)
+        Wydrukuj podsumowanie planu pakowania highlightów (single source of truth!)
 
         Args:
-            plan: SplitPlan z pełną strategią i (opcjonalnie) wygenerowanymi częściami
+            plan: PackingPlan z pełną strategią i (opcjonalnie) wygenerowanymi częściami
         """
         print("\n" + "="*80)
-        print("📊 SMART SPLITTER - PLAN PODZIAŁU")
+        print("📦 HIGHLIGHT PACKER - PLAN PAKOWANIA")
         print("="*80)
 
         # Podstawowe info
@@ -488,19 +496,19 @@ class SmartSplitter:
 
 if __name__ == "__main__":
     # Test
-    splitter = SmartSplitter(premiere_hour=18, premiere_minute=0)
+    packer = HighlightPacker(premiere_hour=18, premiere_minute=0)
 
-    # Test case: 5h live z Sejmu
+    # Test case: 5h live z Sejmu (źródło)
     test_duration = 5 * 3600  # 5 godzin
 
-    # Wylicz plan (nowe API - zwraca SplitPlan)
-    split_plan = splitter.calculate_split_strategy(test_duration)
+    # Wylicz plan pakowania (nowe API - zwraca PackingPlan)
+    packing_plan = packer.calculate_packing_strategy(test_duration)
 
-    print(f"\nStrategia dla {test_duration/3600:.1f}h materiału:")
-    print(f"  - Części: {split_plan.num_parts}")
-    print(f"  - Czas na część: {split_plan.target_duration_per_part}s (~{split_plan.target_duration_per_part/60:.1f} min)")
-    print(f"  - Threshold: {split_plan.min_score_threshold:.2f}")
-    print(f"  - Powód: {split_plan.reason}")
+    print(f"\nStrategia pakowania dla {test_duration/3600:.1f}h materiału źródłowego:")
+    print(f"  - Części: {packing_plan.num_parts}")
+    print(f"  - Czas na część: {packing_plan.target_duration_per_part}s (~{packing_plan.target_duration_per_part/60:.1f} min)")
+    print(f"  - Threshold: {packing_plan.min_score_threshold:.2f}")
+    print(f"  - Powód: {packing_plan.reason}")
 
     # Mock clips dla testu
     mock_clips = [
@@ -508,27 +516,27 @@ if __name__ == "__main__":
         for i in range(30)
     ]
 
-    # Podziel na części
-    parts = splitter.split_clips_into_parts(
+    # Podziel klipy na części (pakowanie)
+    parts = packer.split_clips_into_parts(
         mock_clips,
-        split_plan.num_parts,
-        split_plan.target_duration_per_part
+        packing_plan.num_parts,
+        packing_plan.target_duration_per_part
     )
 
-    print(f"\nPodzielono {len(mock_clips)} klipów na {len(parts)} części:")
+    print(f"\nSpakowano {len(mock_clips)} klipów do {len(parts)} części:")
     for i, part in enumerate(parts, 1):
         total_dur = sum(c['duration'] for c in part)
         print(f"  Część {i}: {len(part)} klipów, {total_dur/60:.1f} min")
 
-    # Generuj metadata dla każdej części
-    parts_metadata = splitter.generate_part_metadata(
+    # Generuj metadata premier dla każdej części
+    parts_metadata = packer.generate_part_metadata(
         parts,
         "Gorące Momenty Sejmu",
         base_date=datetime.now() + timedelta(days=1)
     )
 
     # Wypełnij plan metadata (single source of truth!)
-    split_plan.parts_metadata = parts_metadata
+    packing_plan.parts_metadata = parts_metadata
 
-    # Wyświetl FINALNY plan (z pełnymi danymi)
-    splitter.print_split_summary(split_plan)
+    # Wyświetl FINALNY plan pakowania (z harmonogramem premier)
+    packer.print_packing_summary(packing_plan)

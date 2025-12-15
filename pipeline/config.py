@@ -180,11 +180,17 @@ class ExportConfig:
     movflags: str = "+faststart"
 
 @dataclass
-class SmartSplitterConfig:
+class HighlightPackerConfig:
+    """
+    Konfiguracja pakowania highlightów do części z harmonogramem premier.
+
+    UWAGA: To NIE jest chunking materiału źródłowego.
+           To jest pakowanie WYBRANYCH klipów (Stage 6) do części dla YouTube.
+    """
     enabled: bool = True
     premiere_hour: int = 18
     premiere_minute: int = 0
-    min_duration_for_split: float = 3600.0
+    min_duration_for_split: float = 3600.0  # Min długość źródła aby pakować do części
     use_politicians_in_titles: bool = True
     first_premiere_days_offset: int = 1
 
@@ -305,7 +311,7 @@ class Config:
     scoring: ScoringConfig = None
     selection: SelectionConfig = None
     export: ExportConfig = None
-    splitter: SmartSplitterConfig = None
+    packer: HighlightPackerConfig = None  # Renamed from 'splitter'
     youtube: YouTubeConfig = None
     shorts: ShortsConfig = None
     
@@ -339,8 +345,8 @@ class Config:
             self.selection = SelectionConfig()
         if self.export is None:
             self.export = ExportConfig()
-        if self.splitter is None:  # ← TO POWINNO BYĆ TUTAJ
-            self.splitter = SmartSplitterConfig()  # ← TO POWINNO BYĆ TUTAJ
+        if self.packer is None:  # Renamed from 'splitter'
+            self.packer = HighlightPackerConfig()
         if self.youtube is None:
             self.youtube = YouTubeConfig()
         if self.shorts is None:
@@ -369,7 +375,8 @@ class Config:
         selection = SelectionConfig(**data.get('selection', {}))
         export = ExportConfig(**data.get('export', {}))
         youtube = YouTubeConfig(**data.get('youtube', {}))
-        splitter = SmartSplitterConfig(**data.get('splitter', {}))
+        # Support both old 'splitter' and new 'packer' keys for backward compatibility
+        packer = HighlightPackerConfig(**data.get('packer', data.get('splitter', {})))
         shorts = ShortsConfig(**data.get('shorts', {}))
         
         # General settings
@@ -384,7 +391,7 @@ class Config:
             selection=selection,
             export=export,
             youtube=youtube,
-            splitter=splitter,
+            packer=packer,  # Renamed from 'splitter'
             shorts=shorts,
             **general
         )
