@@ -316,9 +316,9 @@ class GamingTemplate(TemplateBase):
         face_center_x = face_x + face_w // 2
         face_center_y = face_y + face_h // 2
 
-        # Use larger dimension for square crop, add generous padding (2x face size)
+        # Use larger dimension for square crop, add generous padding (3.5x face size)
         face_size = max(face_w, face_h)
-        crop_size = int(face_size * 2.0)  # 2x padding for good framing
+        crop_size = int(face_size * 3.5)  # 3.5x padding for wider view with less zoom
 
         # Create square crop centered on face
         x1 = face_center_x - crop_size // 2
@@ -355,7 +355,7 @@ class GamingTemplate(TemplateBase):
             face_region.zone, facecam_w_actual, facecam_h_actual, aspect_ratio, x1, y1
         )
         logger.info(
-            "[GamingTemplate] Original face bbox: %dx%d at (%d,%d), crop padding: 2.0x",
+            "[GamingTemplate] Original face bbox: %dx%d at (%d,%d), crop padding: 3.5x",
             face_w, face_h, face_x, face_y
         )
 
@@ -363,8 +363,8 @@ class GamingTemplate(TemplateBase):
         face_clip = source_clip.crop(x1=x1, y1=y1, x2=x2, y2=y2)
         face_clip = ensure_fps(face_clip.set_duration(source_clip.duration))
 
-        # Resize to fill 90% of bottom bar width, preserving aspect ratio
-        target_facecam_w = int(target_w * 0.90)  # 90% of 1080px = 972px
+        # Resize to fill 100% of bottom bar width, preserving aspect ratio
+        target_facecam_w = int(target_w * 1.0)  # 100% of 1080px = full width
         new_facecam_w = target_facecam_w
         new_facecam_h = int(target_facecam_w / aspect_ratio)
 
@@ -482,8 +482,8 @@ class GamingTemplate(TemplateBase):
         facecam_h_actual = y2 - y1
         aspect_ratio = facecam_w_actual / facecam_h_actual
 
-        # Resize to fill 90% of bottom bar width, preserving aspect ratio
-        target_facecam_w = int(target_w * 0.90)  # 90% of 1080px = 972px
+        # Resize to fill 100% of bottom bar width, preserving aspect ratio
+        target_facecam_w = int(target_w * 1.0)  # 100% of 1080px = full width
         new_facecam_w = target_facecam_w
         new_facecam_h = int(target_facecam_w / aspect_ratio)
 
