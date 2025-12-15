@@ -5,6 +5,9 @@ Orchestruje wszystkie etapy przetwarzania (7 głównych + opcjonalnie YouTube)
 
 import time
 import json
+import threading
+import random
+import string
 from pathlib import Path
 from typing import Callable, Optional, Dict, Any
 from datetime import datetime, timedelta
@@ -26,21 +29,31 @@ from .stage_08_thumbnail import ThumbnailStage
 class PipelineProcessor:
     """
     Główny processor zarządzający całym pipeline'em
+
+    Implementuje mechanizm "single flight" - tylko jedna instancja może działać jednocześnie.
     """
-    
+
+    # Class-level lock dla single-flight mechanism (współdzielony między wszystkie instancje)
+    _global_lock = threading.Lock()
+    _is_running = False
+    _current_run_id: Optional[str] = None
+
     def __init__(self, config: Config):
         self.config = config
         self.config.validate()
-        
+
         # Progress callback
         self.progress_callback: Optional[Callable] = None
-        
+
         # Cancellation flag
         self._cancelled = False
-        
+
         # Timing stats
         self.timing_stats = {}
-        
+
+        # RUN_ID dla tej sesji (będzie wygenerowany w process())
+        self.run_id: Optional[str] = None
+
         # Initialize stages
         self.stages = {
             'ingest': IngestStage(config),
@@ -51,10 +64,10 @@ class PipelineProcessor:
             'selection': SelectionStage(config),
             'export': ExportStage(config)
         }
-        
+
         # Initialize thumbnail stage
         self.thumbnail_stage = ThumbnailStage(config)
-        
+
 
                 # Smart Splitter
         self.smart_splitter = None
@@ -66,6 +79,17 @@ class PipelineProcessor:
 
 
         self.session_dir: Optional[Path] = None
+
+    @staticmethod
+    def _generate_run_id() -> str:
+        """
+        Generuj unikalny RUN_ID w formacie: YYYYMMDD_HHMMSS_RANDOM
+
+        Przykład: 20250115_143052_a7f3
+        """
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
+        return f"{timestamp}_{random_suffix}"
     
     
     def _get_audio_file_from_ingest(self, ingest_result: Dict) -> str:
@@ -105,14 +129,31 @@ class PipelineProcessor:
             self.progress_callback(stage, percent, message)
     
     def _create_session_directory(self, input_file: str) -> Path:
-        """Utwórz katalog dla tej sesji przetwarzania"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        """
+        DEPRECATED - używaj _create_session_directory_with_run_id()
+        Zachowane dla backward compatibility
+        """
+        return self._create_session_directory_with_run_id(input_file)
+
+    def _create_session_directory_with_run_id(self, input_file: str) -> Path:
+        """
+        Utwórz katalog dla tej sesji przetwarzania z RUN_ID
+
+        Format: temp/{RUN_ID}_{input_name}/
+
+        Przykład: temp/20250115_143052_a7f3_sejm_2025_01_12/
+        """
+        if not self.run_id:
+            raise RuntimeError("RUN_ID not initialized - call _generate_run_id() first")
+
         input_name = Path(input_file).stem
-        
-        session_name = f"{input_name}_{timestamp}"
+
+        session_name = f"{self.run_id}_{input_name}"
         session_dir = self.config.temp_dir / session_name
         session_dir.mkdir(parents=True, exist_ok=True)
-        
+
+        print(f"📁 Session directory: {session_dir}")
+
         return session_dir
     
     def _generate_youtube_title(self, selection_result: Dict) -> str:
@@ -168,37 +209,63 @@ class PipelineProcessor:
     
     def process(self, input_file: str) -> Dict[str, Any]:
             """
-            Główna metoda przetwarzania
-            
+            Główna metoda przetwarzania z mechanizmem single-flight
+
             Returns:
                 Dict z wynikami i metadanymi
+
+            Raises:
+                RuntimeError: Jeśli pipeline już działa (single-flight violation)
             """
+            # === SINGLE-FLIGHT CHECK ===
+            with PipelineProcessor._global_lock:
+                if PipelineProcessor._is_running:
+                    error_msg = (
+                        f"⚠️ PIPELINE ALREADY RUNNING!\n"
+                        f"Current RUN_ID: {PipelineProcessor._current_run_id}\n"
+                        f"Ignoring duplicate start request to prevent conflicts."
+                    )
+                    print(error_msg)
+                    raise RuntimeError("Pipeline already running - duplicate start prevented")
+
+                # Mark jako running
+                PipelineProcessor._is_running = True
+
+                # Generuj unikalny RUN_ID dla tej sesji
+                self.run_id = self._generate_run_id()
+                PipelineProcessor._current_run_id = self.run_id
+
+                print(f"\n{'='*80}")
+                print(f"🚀 PIPELINE START - RUN_ID: {self.run_id}")
+                print(f"{'='*80}\n")
+
             start_time = time.time()
-            
+
             try:
                 # Validate input
                 input_path = Path(input_file)
                 if not input_path.exists():
                     raise FileNotFoundError(f"Plik nie istnieje: {input_file}")
-                
-                # Create session directory
-                self.session_dir = self._create_session_directory(input_file)
-                
-                self._report_progress("Initialize", 0, "Inicjalizacja...")
+
+                # Create session directory z RUN_ID
+                self.session_dir = self._create_session_directory_with_run_id(input_file)
+
+                self._report_progress("Initialize", 0, f"Inicjalizacja... [RUN_ID: {self.run_id}]")
                 
                 # === ETAP 1: Ingest & Preprocessing ===
                 self._check_cancelled()
                 stage_start = time.time()
-                self._report_progress("Stage 1/7", 5, "Audio extraction i normalizacja...")
-                
+                print(f"\n📌 STAGE 1/7 - Ingest [RUN_ID: {self.run_id}]")
+                self._report_progress("Stage 1/7", 5, f"Audio extraction i normalizacja... [RUN_ID: {self.run_id}]")
+
                 ingest_result = self.stages['ingest'].process(
                     input_file=input_file,
                     output_dir=self.session_dir
                 )
-                
+
                 source_duration = ingest_result['metadata']['duration']
                 self.timing_stats['ingest'] = self._format_duration(time.time() - stage_start)
-                self._report_progress("Stage 1/7", 14, "✅ Audio extraction zakończony")
+                self._report_progress("Stage 1/7", 14, f"✅ Audio extraction zakończony [RUN_ID: {self.run_id}]")
                 
                 # === SMART SPLITTER: Analiza strategii podziału ===
                 split_strategy = None
@@ -215,56 +282,60 @@ class PipelineProcessor:
                 # === ETAP 2: VAD (Voice Activity Detection) ===
                 self._check_cancelled()
                 stage_start = time.time()
-                self._report_progress("Stage 2/7", 20, "Voice Activity Detection...")
-                
+                print(f"\n📌 STAGE 2/7 - VAD [RUN_ID: {self.run_id}]")
+                self._report_progress("Stage 2/7", 20, f"Voice Activity Detection... [RUN_ID: {self.run_id}]")
+
                 vad_result = self.stages['vad'].process(
                     audio_file=self._get_audio_file_from_ingest(ingest_result),
                     output_dir=self.session_dir
                 )
-                
+
                 self.timing_stats['vad'] = self._format_duration(time.time() - stage_start)
-                self._report_progress("Stage 2/7", 28, "✅ VAD zakończony")
+                self._report_progress("Stage 2/7", 28, f"✅ VAD zakończony [RUN_ID: {self.run_id}]")
                 
                 # === ETAP 3: ASR/Transcribe (Whisper) ===
                 self._check_cancelled()
                 stage_start = time.time()
-                self._report_progress("Stage 3/7", 30, "Transkrypcja audio (Whisper)...")
-                
+                print(f"\n📌 STAGE 3/7 - Transcribe [RUN_ID: {self.run_id}]")
+                self._report_progress("Stage 3/7", 30, f"Transkrypcja audio (Whisper)... [RUN_ID: {self.run_id}]")
+
                 transcribe_result = self.stages['transcribe'].process(
                     audio_file=self._get_audio_file_from_ingest(ingest_result),
                     vad_segments=vad_result['segments'],
                     output_dir=self.session_dir
                 )
-                
+
                 self.timing_stats['transcribe'] = self._format_duration(time.time() - stage_start)
-                self._report_progress("Stage 3/7", 50, "✅ Transkrypcja zakończona")
+                self._report_progress("Stage 3/7", 50, f"✅ Transkrypcja zakończona [RUN_ID: {self.run_id}]")
                 
                 # === ETAP 4: Feature Extraction ===
                 self._check_cancelled()
                 stage_start = time.time()
-                self._report_progress("Stage 4/7", 52, "Ekstrakcja features...")
-                
+                print(f"\n📌 STAGE 4/7 - Features [RUN_ID: {self.run_id}]")
+                self._report_progress("Stage 4/7", 52, f"Ekstrakcja features... [RUN_ID: {self.run_id}]")
+
                 features_result = self.stages['features'].process(
                     audio_file=self._get_audio_file_from_ingest(ingest_result),
                     segments=transcribe_result['segments'],
                     output_dir=self.session_dir
                 )
-                
+
                 self.timing_stats['features'] = self._format_duration(time.time() - stage_start)
-                self._report_progress("Stage 4/7", 60, "✅ Features ekstrahowane")
+                self._report_progress("Stage 4/7", 60, f"✅ Features ekstrahowane [RUN_ID: {self.run_id}]")
                 
                 # === ETAP 5: Scoring (GPT) ===
                 self._check_cancelled()
                 stage_start = time.time()
-                self._report_progress("Stage 5/7", 62, "Scoring segmentów (GPT-4)...")
-                
+                print(f"\n📌 STAGE 5/7 - Scoring [RUN_ID: {self.run_id}]")
+                self._report_progress("Stage 5/7", 62, f"Scoring segmentów (GPT-4)... [RUN_ID: {self.run_id}]")
+
                 scoring_result = self.stages['scoring'].process(
                     segments=features_result['segments'],
                     output_dir=self.session_dir
                 )
-                
+
                 self.timing_stats['scoring'] = self._format_duration(time.time() - stage_start)
-                self._report_progress("Stage 5/7", 75, "✅ Scoring zakończony")
+                self._report_progress("Stage 5/7", 75, f"✅ Scoring zakończony [RUN_ID: {self.run_id}]")
                 
                 # === ETAP 6: Selection (wybór top klipów) ===
                 self._check_cancelled()
@@ -316,13 +387,14 @@ class PipelineProcessor:
                     self.smart_splitter.print_split_summary(split_strategy, parts_metadata)
                 
                 # === ETAP 7: Export (dla każdej części lub pojedynczy) ===
+                print(f"\n📌 STAGE 7/7 - Export [RUN_ID: {self.run_id}]")
                 export_results = []
                 thumbnail_results = []
-                
+
                 if parts_metadata:
                     # Multi-part export
                     for part_meta in parts_metadata:
-                        print(f"\n🎬 Eksport części {part_meta['part_number']}/{part_meta['total_parts']}...")
+                        print(f"\n🎬 Eksport części {part_meta['part_number']}/{part_meta['total_parts']}... [RUN_ID: {self.run_id}]")
                         
                         # Export video
                         part_export = self.stages['export'].process(
@@ -345,6 +417,7 @@ class PipelineProcessor:
                             thumbnail_results.append(part_thumbnail)
                 else:
                     # Single export (standardowy)
+                    print(f"🎬 Eksport pojedynczego filmu... [RUN_ID: {self.run_id}]")
                     export_result = self.stages['export'].process(
                         input_file=input_file,
                         clips=selection_result['clips'],
@@ -475,6 +548,7 @@ class PipelineProcessor:
                 # === Finalize result ===
                 result = {
                     'success': True,
+                    'run_id': self.run_id,
                     'input_file': input_file,
                     'export_results': export_results,
                     'youtube_results': youtube_results,
@@ -483,15 +557,26 @@ class PipelineProcessor:
                     'parts_metadata': parts_metadata,
                     'timing': self.timing_stats
                 }
-                
+
+                print(f"\n{'='*80}")
+                print(f"✅ PIPELINE COMPLETE - RUN_ID: {self.run_id}")
+                print(f"Total time: {self._format_duration(time.time() - start_time)}")
+                print(f"{'='*80}\n")
+
                 return result
-                
+
             except InterruptedError:
-                self._report_progress("Cancelled", 0, "Anulowano przez użytkownika")
+                self._report_progress("Cancelled", 0, f"Anulowano przez użytkownika [RUN_ID: {self.run_id}]")
                 raise
             except Exception as e:
-                self._report_progress("Error", 0, f"Błąd: {str(e)}")
+                self._report_progress("Error", 0, f"Błąd: {str(e)} [RUN_ID: {self.run_id}]")
                 raise
+            finally:
+                # === ZWOLNIJ LOCK - KONIEC SINGLE-FLIGHT ===
+                with PipelineProcessor._global_lock:
+                    PipelineProcessor._is_running = False
+                    PipelineProcessor._current_run_id = None
+                    print(f"🔓 Pipeline lock released [RUN_ID: {self.run_id}]")
     
     def _cleanup_temp_files(self):
         """Usuń pliki tymczasowe"""

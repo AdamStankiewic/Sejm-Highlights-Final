@@ -1428,9 +1428,19 @@ class SejmHighlightsApp(QMainWindow):
     
     def start_processing(self):
         """Rozpocznij przetwarzanie"""
+        # === OCHRONA PRZED WIELOKROTNYM URUCHOMIENIEM ===
+        if self.processing_thread and self.processing_thread.isRunning():
+            self.log("⚠️ Pipeline już działa! Ignoruję kolejne kliknięcie Start.", "WARNING")
+            QMessageBox.warning(
+                self,
+                "Pipeline już działa",
+                "Przetwarzanie jest już w toku.\n\nProszę poczekać na zakończenie lub kliknąć Cancel."
+            )
+            return
+
         # CRITICAL: Aktualizuj config z GUI PRZED startem
         self.update_config_from_gui()
-        
+
         # Log config values
         self.log(f"Config - Whisper model: {self.config.asr.model}", "INFO")
         self.log(
@@ -1438,24 +1448,26 @@ class SejmHighlightsApp(QMainWindow):
             "INFO",
         )
         self.log(f"Config - Smart Splitter: {self.config.splitter.enabled}", "INFO")
-        
+
         # Disable controls
         self.start_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
         self.results_widget.setVisible(False)
-        
+
         # Reset progress
         self.progress_bar.setValue(0)
         self.stats_list.clear()
-        
+
         # Start thread
         if self.downloaded_file_path:
             input_file = self.downloaded_file_path
         else:
             input_file = self.file_path_label.text()
-        
+
         if not input_file or input_file == "Nie wybrano pliku":
             QMessageBox.warning(self, "Błąd", "Proszę wybrać plik wejściowy lub pobrać video z URL!")
+            self.start_btn.setEnabled(True)
+            self.cancel_btn.setEnabled(False)
             return
 
         if self.config.mode.lower() == "stream":
@@ -1465,16 +1477,16 @@ class SejmHighlightsApp(QMainWindow):
                 self.log("Tryb Stream bez chat.json → chat_burst_score będzie 0.0", "WARNING")
 
         self.processing_thread = ProcessingThread(input_file, self.config)
-        
+
         # Connect signals
         self.processing_thread.progress_updated.connect(self.on_progress_update)
         self.processing_thread.stage_completed.connect(self.on_stage_completed)
         self.processing_thread.log_message.connect(self.log)
         self.processing_thread.processing_completed.connect(self.on_processing_completed)
         self.processing_thread.processing_failed.connect(self.on_processing_failed)
-        
+
         self.processing_thread.start()
-        self.log("Rozpoczęto przetwarzanie...", "INFO")
+        self.log("🚀 Rozpoczęto przetwarzanie...", "INFO")
     
     def cancel_processing(self):
         """Anuluj przetwarzanie"""
