@@ -378,17 +378,15 @@ class GamingTemplate(TemplateBase):
 
         face_clip = face_clip.resize((new_facecam_w, new_facecam_h))
 
-        # Center horizontally in bottom bar
+        # Center horizontally in bottom bar, align to top
         facecam_x = (target_w - new_facecam_w) // 2  # Center horizontally
-        # Position higher up in bottom section (not at very top)
-        padding_top = int(facecam_h * 0.15)  # 15% padding from top for better positioning
-        facecam_y = gameplay_h + padding_top  # Higher up in bottom section
+        facecam_y = gameplay_h  # Align to top of bottom section (no padding)
 
         face_clip = face_clip.set_position((facecam_x, facecam_y))
         logger.debug("Clip FPS after facecam crop: %s", face_clip.fps)
         logger.info(
-            "[GamingTemplate] Facecam positioned: %dx%d at (%d, %d) with padding_top=%d - natural aspect ratio %.2f",
-            new_facecam_w, new_facecam_h, facecam_x, facecam_y, padding_top, aspect_ratio
+            "[GamingTemplate] Facecam positioned: %dx%d at (%d, %d) - natural aspect ratio %.2f",
+            new_facecam_w, new_facecam_h, facecam_x, facecam_y, aspect_ratio
         )
 
         # Create black background for bottom bar (for padding around facecam)
