@@ -3,6 +3,7 @@ Stage 8: AI Thumbnail Generation
 Generuje clickbaitową miniaturkę z napisami do YouTube
 """
 
+import os
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
@@ -200,6 +201,17 @@ class ThumbnailStage:
         # Ostateczny fallback - default font
         print(f"⚠️ Nie można załadować fontu {font_type}, używam domyślnego")
         return ImageFont.load_default()
+
+    def _fallback_mid_timestamp(self, video_file: str) -> float:
+        """Wylicz środkowy timestamp jako awaryjny wybór klatki."""
+        cap = cv2.VideoCapture(video_file)
+        if not cap.isOpened():
+            return 0.0
+        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT) or fps * 60
+        cap.release()
+        duration = total_frames / max(fps, 1.0)
+        return max(0.0, duration / 2)
     
     def _wrap_text(
         self, 
@@ -503,10 +515,18 @@ class ThumbnailStage:
             old_path = Path(result['thumbnail_path'])
             new_filename = f"thumbnail_part{part_number}.jpg"
             new_path = old_path.parent / new_filename
-            
+
             # Przenieś plik
             if old_path.exists():
-                old_path.rename(new_path)
+                if new_path.exists():
+                    new_path.unlink()
+                try:
+                    os.replace(old_path, new_path)
+                except OSError:
+                    # Windows potrafi blokować rename gdy plik istnieje – usuń i spróbuj ponownie
+                    if new_path.exists():
+                        new_path.unlink()
+                    os.replace(old_path, new_path)
                 result['thumbnail_path'] = str(new_path)
                 print(f"   ✅ Miniaturka części {part_number}: {new_path.name}")
         
@@ -540,15 +560,14 @@ class ThumbnailStage:
         try:
             # Wybierz najlepszy klip (najwyższy score)
             if not clips:
-                raise ValueError("Brak klipów do wygenerowania miniaturki")
-            
-            best_clip = max(clips, key=lambda c: c.get('score', 0))
-            
-            # Timestamp środka najlepszego klipu
-            mid_timestamp = (best_clip['t0'] + best_clip['t1']) / 2
-            
-            print(f"📸 Wybieram klatkę z {mid_timestamp:.1f}s")
-            print(f"   Score klipu: {best_clip.get('score', 0):.2f}")
+                print("⚠️ Brak klipów – używam losowej klatki z video")
+                mid_timestamp = self._fallback_mid_timestamp(video_file)
+                best_clip = {'id': 'fallback', 'score': 0}
+            else:
+                best_clip = max(clips, key=lambda c: c.get('score', 0))
+                mid_timestamp = (best_clip['t0'] + best_clip['t1']) / 2
+                print(f"📸 Wybieram klatkę z {mid_timestamp:.1f}s")
+                print(f"   Score klipu: {best_clip.get('score', 0):.2f}")
             
             # Extract best frame
             frame = self._extract_best_frame(
@@ -569,7 +588,7 @@ class ThumbnailStage:
             if custom_title:
                 top_text = custom_title
             else:
-                top_text = self._generate_title_from_clip(best_clip)
+                top_text = self._generate_title_from_clip(best_clip) if clips else "Highlight"
             
             if custom_bottom_text:
                 bottom_text = custom_bottom_text
@@ -594,6 +613,8 @@ class ThumbnailStage:
             # Save
             thumbnail_filename = "thumbnail.jpg"
             thumbnail_path = output_dir / thumbnail_filename
+            if thumbnail_path.exists():
+                thumbnail_path.unlink()
             thumbnail.save(thumbnail_path, 'JPEG', quality=95, optimize=True)
             
             print(f"💾 Miniaturka zapisana: {thumbnail_path}")
