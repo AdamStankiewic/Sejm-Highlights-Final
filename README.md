@@ -320,3 +320,50 @@ Stary układ side_left/side_right został usunięty; nowe szablony zastępują p
 - **Rollback:** w razie krytycznych problemów użyj brancha `backup-before-vertical-templates` lub revertuj merge; kluczowe zmiany są odseparowane w `stage_10_shorts.py` i `config.yml`.
 - **Komunikacja:** poinformuj zespół o zmianach, podeprzyj się README/MIGRATION; upewnij się, że MediaPipe jest doinstalowane w środowiskach buildowych.
 
+## 🎥 YouTube upload (OAuth + native schedule)
+
+1. **Sekrety i tokeny**
+   - Umieść plik OAuth w `secrets/youtube_client_secret.json` (gitignored).
+   - Pierwsze logowanie pobiera token do `secrets/youtube_token_<profile>.json` (również gitignored).
+
+2. **Konta/ustawienia kanałów**
+   - Skonfiguruj `accounts.yml` obok repo i wskaż *konkretny kanał* (Brand Account) poprzez `expected_channel_id`:
+
+     ```yaml
+     youtube:
+       channel_main:
+         credential_profile: yt_main
+         expected_channel_id: "UCxxxxxxxxxxxx"
+         default_privacy: unlisted
+         category_id: 22
+       channel_secondary:
+         credential_profile: yt_secondary
+         expected_channel_id: "UCyyyyyyyyyyyy"
+         default_privacy: private
+         category_id: 22
+     ```
+
+   - `account_id` z `UploadTarget` **musi** mieć sekcję w `accounts.yml`. Uploader weryfikuje, że token jest zalogowany na oczekiwany `expected_channel_id`; przy mismatch target kończy się błędem non-retryable, aby nie publikować na złym koncie. Jeśli `expected_channel_id` jest pominięty, zostanie zalogowane ostrzeżenie (mniej bezpieczne).
+
+3. **Uruchomienie uploadu testowego**
+   - Dodaj w kolejce plik MP4 (GUI lub `UploadManager.enqueue`).
+   - Dla `mode=NATIVE_SCHEDULE` uploader ustawia `publishAt` w YouTube, a lokalny scheduler odpala upload o czasie targetu.
+
+4. **Przykładowy log (due + native schedule)**
+
+   ```text
+   [scheduler] Target due -> youtube/channel_main @ 2024-05-01T12:00:00+00:00
+   [youtube] YouTube upload progress: 35%
+   [youtube] YouTube upload finished video_id=abc123
+   [youtube] Uploaded video_id=abc123 with publishAt=2024-05-02T10:00:00+00:00
+   ```
+
+   Przykładowy log blokujący zły kanał (mismatch):
+
+   ```text
+   [youtube] Uploading to YouTube account_id=channel_main expected_channel_id=UC_expected profile=yt_main
+   [youtube] ERROR YouTube channel mismatch: current=UC_other expected=UC_expected. Re-auth with the credential_profile bound to the expected channel.
+   ```
+
+
+
