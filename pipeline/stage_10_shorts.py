@@ -309,20 +309,29 @@ class ShortsStage:
         print(f"\n🎬 YouTube Shorts Generator (PROFESSIONAL TEMPLATES)")
         print(f"📱 Generowanie {len(shorts_clips)} Shorts...")
 
+        # Validation: Check if shorts_clips is empty
+        if not shorts_clips:
+            print("   ⚠️ Brak kandydatów na Shorts (pusta lista)")
+            print("   → Shorts generation skipped")
+            return {
+                'shorts': [],
+                'shorts_dir': '',
+                'count': 0
+            }
+
+        # Validation: Check if clips have scores
+        clips_with_scores = [c for c in shorts_clips if c.get('final_score', 0) > 0]
+        if len(clips_with_scores) < len(shorts_clips):
+            missing = len(shorts_clips) - len(clips_with_scores)
+            print(f"   ⚠️ WARNING: {missing}/{len(shorts_clips)} clips have score=0.00!")
+            print(f"   → Check if scored_segments were properly passed to selection stage")
+
         # Backward compatibility: None = simple (dla Sejmu)
         if template is None:
             template = "simple"
             print(f"   ℹ️ Template: simple (backward compatibility)")
         else:
             print(f"   🎨 Template: {template}")
-
-        if not shorts_clips:
-            print("   ⚠️ Brak kandydatów na Shorts")
-            return {
-                'shorts': [],
-                'shorts_dir': '',
-                'count': 0
-            }
 
         input_path = Path(input_file)
 
@@ -341,7 +350,9 @@ class ShortsStage:
         generated_shorts = []
 
         for i, clip in enumerate(shorts_clips, 1):
-            print(f"\n   📱 Short {i}/{len(shorts_clips)}")
+            clip_score = clip.get('final_score', 0)
+            clip_id = clip.get('id', 'unknown')
+            print(f"\n   📱 Short {i}/{len(shorts_clips)} (score={clip_score:.2f}, id={clip_id})")
 
             try:
                 short_result = self._generate_single_short(
@@ -358,6 +369,7 @@ class ShortsStage:
                 print(f"      ✅ Zapisano: {short_result['filename']}")
                 print(f"      📝 Tytuł: {short_result['title']}")
                 print(f"      🎨 Szablon: {short_result['template']}")
+                print(f"      ⭐ Score: {short_result['score']:.2f}")
 
             except Exception as e:
                 print(f"      ❌ Błąd: {e}")

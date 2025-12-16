@@ -565,56 +565,72 @@ class PipelineProcessor:
                 
                 # === ETAP 10: YouTube Shorts Generation (optional) ===
                 shorts_results = []
-                if self.config.shorts.enabled and selection_result.get('shorts_clips'):
-                    self._check_cancelled()
-                    stage_start = time.time()
-                    self._report_progress("Stage 8/8", 95, "Generowanie YouTube Shorts...")
-                    
-                    from .stage_10_shorts import ShortsStage
-                    shorts_stage = ShortsStage(self.config)
-                    
-                    shorts_result = shorts_stage.process(
-                        input_file=input_file,
-                        shorts_clips=selection_result['shorts_clips'],
-                        segments=scoring_result['segments'],
-                        output_dir=self.config.output_dir,
-                        session_dir=self.session_dir,
-                        template=self.config.shorts.default_template  # Przekaż wybrany szablon
-                    )
-                    
-                    shorts_results = shorts_result.get('shorts', [])
-                    self.timing_stats['shorts'] = self._format_duration(time.time() - stage_start)
-                    self._report_progress("Stage 8/8", 98, f"✅ Wygenerowano {len(shorts_results)} Shorts")
-                    
-                    # Optional: Upload Shorts to YouTube
-                    if self.config.shorts.upload_to_youtube and self.config.youtube.enabled:
-                        print("\n📤 Upload Shorts na YouTube...")
-                        from .stage_09_youtube import YouTubeStage
-                        youtube_stage = YouTubeStage(self.config)
-                        youtube_stage.authorize()
-                        
-                        for short_meta in shorts_results:
-                            try:
-                                # Upload as Short (dodaj #Shorts w tytule)
-                                short_title = short_meta['title']
-                                if self.config.shorts.add_hashtags and '#Shorts' not in short_title:
-                                    short_title += " #Shorts"
-                                
-                                upload_result = youtube_stage.upload_video(
-                                    video_file=short_meta['file'],
-                                    title=short_title,
-                                    description=short_meta['description'],
-                                    tags=short_meta['tags'],
-                                    category_id=self.config.shorts.shorts_category_id,
-                                    privacy_status='unlisted'  # lub 'public'
-                                )
-                                
-                                if upload_result.get('success'):
-                                    short_meta['youtube_url'] = upload_result['video_url']
-                                    print(f"   ✅ Short uploaded: {upload_result['video_url']}")
-                                
-                            except Exception as e:
-                                print(f"   ⚠️ Błąd uploadu Short: {e}")
+                shorts_clips_list = selection_result.get('shorts_clips', [])
+
+                # Validation: prevent double invocation and empty list processing
+                if self.config.shorts.enabled and shorts_clips_list:
+                    # Check if shorts already generated (prevent double run)
+                    if hasattr(self, '_shorts_generated') and self._shorts_generated:
+                        print("\n⚠️ Shorts already generated, skipping duplicate generation")
+                    else:
+                        self._check_cancelled()
+                        stage_start = time.time()
+                        self._report_progress("Stage 8/8", 95, "Generowanie YouTube Shorts...")
+
+                        print(f"\n🎬 Starting Shorts generation with {len(shorts_clips_list)} candidates...")
+
+                        from .stage_10_shorts import ShortsStage
+                        shorts_stage = ShortsStage(self.config)
+
+                        shorts_result = shorts_stage.process(
+                            input_file=input_file,
+                            shorts_clips=shorts_clips_list,
+                            segments=scoring_result['segments'],
+                            output_dir=self.config.output_dir,
+                            session_dir=self.session_dir,
+                            template=self.config.shorts.default_template  # Przekaż wybrany szablon
+                        )
+
+                        shorts_results = shorts_result.get('shorts', [])
+                        self.timing_stats['shorts'] = self._format_duration(time.time() - stage_start)
+                        self._report_progress("Stage 8/8", 98, f"✅ Wygenerowano {len(shorts_results)} Shorts")
+
+                        # Mark as generated to prevent double run
+                        self._shorts_generated = True
+
+                        # Optional: Upload Shorts to YouTube
+                        if self.config.shorts.upload_to_youtube and self.config.youtube.enabled and shorts_results:
+                            print("\n📤 Upload Shorts na YouTube...")
+                            from .stage_09_youtube import YouTubeStage
+                            youtube_stage = YouTubeStage(self.config)
+                            youtube_stage.authorize()
+
+                            for short_meta in shorts_results:
+                                try:
+                                    # Upload as Short (dodaj #Shorts w tytule)
+                                    short_title = short_meta['title']
+                                    if self.config.shorts.add_hashtags and '#Shorts' not in short_title:
+                                        short_title += " #Shorts"
+
+                                    upload_result = youtube_stage.upload_video(
+                                        video_file=short_meta['file'],
+                                        title=short_title,
+                                        description=short_meta['description'],
+                                        tags=short_meta['tags'],
+                                        category_id=self.config.shorts.shorts_category_id,
+                                        privacy_status='unlisted'  # lub 'public'
+                                    )
+
+                                    if upload_result.get('success'):
+                                        short_meta['youtube_url'] = upload_result['video_url']
+                                        print(f"   ✅ Short uploaded: {upload_result['video_url']}")
+
+                                except Exception as e:
+                                    print(f"   ⚠️ Błąd uploadu Short: {e}")
+
+                elif self.config.shorts.enabled and not shorts_clips_list:
+                    print("\n⚠️ Shorts enabled but no clips available (selection returned empty list)")
+                    print("   → Check if scored segments have sufficient scores for shorts")
                 
                 # === Finalize result ===
                 result = {
