@@ -40,16 +40,47 @@ class SelectionStage:
                 - total_duration: Suma czasu klipów
         """
         print(f"🎯 Selekcja klipów z {len(segments)} segmentów...")
-        
-        # STEP 0: Filter by minimum score if specified
-        if min_score > 0:
-            segments = [seg for seg in segments if seg.get('final_score', 0) >= min_score]
-            print(f"   Po filtrze score (>= {min_score}): {len(segments)} segmentów")
-        
-        # STEP 1: Filter by minimum duration
-        candidates = self._filter_by_duration(segments)
-        print(f"   Po filtrze duration: {len(candidates)} kandydatów")
-        
+
+        # Pre-merge bardzo krótkie bursty, aby nie odpaść na filtrze długości
+        merged_segments = self._merge_short_bursts(list(segments))
+        segments = merged_segments
+
+        # STEP 0: Filter by minimum score if specified (with fallback to top 20%)
+        base_threshold = max(
+            min_score,
+            getattr(self.config.selection, 'min_score_threshold', 0.35) or 0.35,
+        )
+        segments = self._filter_by_score_with_fallback(segments, base_threshold)
+        print(f"   Po filtrze score (>= {base_threshold:.2f} lub top20): {len(segments)} segmentów")
+
+        # STEP 1: Filter by duration bounds (>=8s, <= configured max)
+        min_dur = 8
+        if getattr(self.config, "mode", "stream") == "stream":
+            min_dur = 8
+        else:
+            min_dur = max(min_dur, int(self.config.selection.min_clip_duration))
+        min_dur = max(min_dur, 8)
+        max_dur = int(self.config.selection.max_clip_duration)
+        candidates = [
+            seg for seg in segments if min_dur <= seg['duration'] <= max_dur
+        ]
+        print(f"   Po filtrze duration [{min_dur}s-{max_dur}s]: {len(candidates)} kandydatów")
+
+        # Dynamic lowering if coverage is too low
+        if len(candidates) < 30 or sum(c['duration'] for c in candidates) < self.config.selection.target_total_duration * 0.5:
+            relaxed_threshold = max(0.25, base_threshold - 0.10)
+            relaxed_segments = self._filter_by_score_with_fallback(merged_segments, relaxed_threshold)
+            relaxed_candidates = [
+                seg for seg in relaxed_segments if min_dur <= seg['duration'] <= max_dur
+            ]
+            if len(relaxed_candidates) > len(candidates):
+                print(
+                    f"   ⚠️ Za mało materiału ({len(candidates)} klipów) → obniżam próg do {relaxed_threshold:.2f}"
+                )
+                segments = relaxed_segments
+                candidates = relaxed_candidates
+                base_threshold = relaxed_threshold
+
         # STEP 2: Greedy selection + NMS
         selected = self._greedy_selection_with_nms(candidates)
         print(f"   Po greedy selection: {len(selected)} klipów")
@@ -61,11 +92,13 @@ class SelectionStage:
         # STEP 4: Temporal coverage optimization (DYNAMICZNE dla długich materiałów!)
         balanced = self._optimize_temporal_coverage(merged, total_duration)
         print(f"   Po balance coverage: {len(balanced)} klipów")
-        
+
         # STEP 5: Duration adjustment (trim if needed)
         final_clips = self._adjust_duration(balanced)
         print(f"   Final: {len(final_clips)} klipów")
-        
+
+        final_clips = self._top_up_if_needed(final_clips, segments, merged_segments, min_dur)
+
         # Calculate stats
         total_clip_duration = sum(clip['duration'] for clip in final_clips)
         
@@ -77,6 +110,10 @@ class SelectionStage:
             clip['clip_id'] = f"clip_{i+1:03d}"
             clip['title'] = self._generate_title(clip)
         
+        # Debug plot if not enough clips
+        if len(final_clips) < 10:
+            self._save_debug_plot(final_clips or segments, segments, output_dir)
+
         # Save
         output_file = output_dir / "selected_clips.json"
         self._save_clips(final_clips, output_file)
@@ -110,6 +147,89 @@ class SelectionStage:
         """Filter segmenty po minimalnej długości"""
         min_dur = self.config.selection.min_clip_duration
         return [seg for seg in segments if seg['duration'] >= min_dur]
+
+    def _merge_short_bursts(self, segments: List[Dict]) -> List[Dict]:
+        """
+        Połącz bardzo krótkie bursty (<8s) z sąsiadami, żeby nie odpaść na filtrze długości.
+        Prosty greedy w czasie, łączy gdy gap <= smart_merge_gap i średni score pozostaje wiarygodny.
+        """
+        if not segments:
+            return []
+
+        sorted_segments = sorted(segments, key=lambda s: s['t0'])
+        merged: List[Dict] = []
+        idx = 0
+        min_target = 8
+        gap_limit = getattr(self.config.selection, 'smart_merge_gap', 10.0)
+
+        while idx < len(sorted_segments):
+            current = sorted_segments[idx]
+            if current.get('duration', 0) >= min_target:
+                merged.append(current)
+                idx += 1
+                continue
+
+            # próbuj dołączyć kolejne segmenty aż osiągniesz min_target lub brak sąsiada
+            start = current['t0']
+            end = current['t1']
+            collected = [current]
+            j = idx + 1
+            while j < len(sorted_segments):
+                nxt = sorted_segments[j]
+                gap = nxt['t0'] - end
+                if gap > gap_limit:
+                    break
+                end = nxt['t1']
+                collected.append(nxt)
+                if end - start >= min_target:
+                    break
+                j += 1
+
+            new_duration = end - start
+            if new_duration >= min_target:
+                merged_clip = {
+                    'id': '+'.join(seg['id'] for seg in collected),
+                    't0': start,
+                    't1': end,
+                    'duration': new_duration,
+                    'final_score': float(np.mean([seg.get('final_score', 0) for seg in collected])),
+                    'merged_from': [seg['id'] for seg in collected],
+                    'transcript': ' '.join(seg.get('transcript', '') for seg in collected),
+                    'features': collected[0].get('features', {}),
+                    'subscores': collected[0].get('subscores', {}),
+                }
+                merged.append(merged_clip)
+                idx = j + 1
+            else:
+                merged.append(current)
+                idx += 1
+
+        return merged
+
+    def _filter_by_score_with_fallback(self, segments: List[Dict], min_score: float) -> List[Dict]:
+        """Filter by score, fallback to top 20% percentile when empty."""
+
+        if min_score <= 0:
+            return segments
+
+        filtered = [seg for seg in segments if seg.get('final_score', 0) >= min_score]
+        if filtered:
+            return filtered
+
+        scores = [seg.get('final_score', 0) for seg in segments]
+        if not scores:
+            return []
+
+        percentile = getattr(self.config.scoring, 'dynamic_threshold_percentile', 80)
+        dynamic_threshold = float(np.percentile(scores, percentile))
+        fallback = [seg for seg in segments if seg.get('final_score', 0) >= dynamic_threshold]
+        if not fallback and segments:
+            fallback = [max(segments, key=lambda s: s.get('final_score', 0))]
+
+        print(
+            f"   ⚠️ Brak klipów dla progu {min_score:.2f} → fallback top {percentile}% (>= {dynamic_threshold:.2f})"
+        )
+        return fallback
     
     def _greedy_selection_with_nms(self, candidates: List[Dict]) -> List[Dict]:
         """
@@ -236,6 +356,43 @@ class SelectionStage:
             merged.append(current)
             i += 1
         
+        # Fallback merge if coverage is too low
+        total_duration = sum(c['duration'] for c in merged)
+        target = self.config.selection.target_total_duration
+        if merged and total_duration < target * 0.7:
+            merged = self._force_merge_for_coverage(merged)
+        return merged
+
+    def _force_merge_for_coverage(self, clips: List[Dict]) -> List[Dict]:
+        """Dodatkowe łączenie sąsiadów gdy łączny czas <70% targetu."""
+        if len(clips) < 2:
+            return clips
+
+        merged: List[Dict] = []
+        idx = 0
+        while idx < len(clips):
+            current = clips[idx]
+            if idx + 1 < len(clips):
+                nxt = clips[idx + 1]
+                gap = nxt['t0'] - current['t1']
+                combined_duration = current['duration'] + gap + nxt['duration']
+                if gap <= self.config.selection.smart_merge_gap and combined_duration <= self.config.selection.max_clip_duration * 1.1:
+                    merged_clip = {
+                        'id': f"{current['id']}+{nxt['id']}",
+                        't0': current['t0'],
+                        't1': nxt['t1'],
+                        'duration': combined_duration,
+                        'final_score': (current['final_score'] + nxt['final_score']) / 2,
+                        'merged_from': [current.get('id'), nxt.get('id')],
+                        'transcript': current.get('transcript', '') + ' ' + nxt.get('transcript', ''),
+                        'features': current.get('features', {}),
+                        'subscores': current.get('subscores', {})
+                    }
+                    merged.append(merged_clip)
+                    idx += 2
+                    continue
+            merged.append(current)
+            idx += 1
         return merged
     
     def _optimize_temporal_coverage(
@@ -311,43 +468,125 @@ class SelectionStage:
         """
         if not clips:
             return []
-        
+
         target = self.config.selection.target_total_duration
         tolerance = self.config.selection.duration_tolerance
-        
+
         total = sum(clip.get('duration', 0) for clip in clips)
-        
+
         if total <= target * tolerance:
             return clips  # OK, within tolerance
-        
-        # Need to trim
+
+        overshoot = total - target
+        slight_overshoot_limit = target * 0.05
+        if overshoot <= slight_overshoot_limit:
+            # Minimalny overshoot - nie tnij agresywnie
+            return clips
+
         print(f"   ⚠️ Total {total:.1f}s przekracza target {target:.1f}s, trimming...")
-        
-        # Strategy: trim longest clips first
+
+        max_trim_fraction = 0.15
+        min_duration_guard = max(6, int(self.config.selection.min_clip_duration))
+
+        # Strategy: trim longest clips first, z limitem per klip
         clips_sorted = sorted(clips, key=lambda x: x.get('duration', 0), reverse=True)
-        
+
         for clip in clips_sorted:
-            if total <= target:
+            if overshoot <= 0:
                 break
-            
-            # Trim percentage from end
+
             current_duration = clip.get('duration', 0)
-            if current_duration <= 0:
+            if current_duration <= min_duration_guard:
                 continue
-            
-            trim_amount = min(
-                current_duration * self.config.selection.trim_percentage,
-                total - target
-            )
-            
+
+            allowed_trim = current_duration * max_trim_fraction
+            max_possible_trim = current_duration - min_duration_guard
+            trim_amount = min(allowed_trim, max_possible_trim, overshoot)
+
+            if trim_amount <= 0:
+                continue
+
             clip['t1'] = clip.get('t1', 0) - trim_amount
             clip['duration'] = clip.get('t1', 0) - clip.get('t0', 0)
-            total -= trim_amount
-        
-        # SAFETY: Remove clips with invalid duration
-        valid_clips = [c for c in clips if c.get('duration', 0) > 10]
-        
+            overshoot -= trim_amount
+
+        valid_clips = [c for c in clips if c.get('duration', 0) >= min_duration_guard]
+
         return valid_clips
+
+    def _top_up_if_needed(
+        self,
+        clips: List[Dict],
+        scored_segments: List[Dict],
+        all_segments: List[Dict],
+        min_duration: int,
+    ) -> List[Dict]:
+        """Jeśli łączny czas jest poniżej targetu, dobierz dodatkowe klipy (max 40)."""
+
+        target = self.config.selection.target_total_duration
+        total = sum(c.get('duration', 0) for c in clips)
+
+        if (total >= target or len(clips) >= 40) and total >= target * 0.5:
+            return clips
+
+        # Prefer segmenty już przefiltrowane po score, ale jeśli coverage <50% targetu, bierz pełen zbiór
+        pool = scored_segments if total >= target * 0.5 else all_segments
+        relaxed_min = max(4, int(min_duration * 0.6))
+
+        used_ids = {c.get('id') for c in clips}
+        remaining = [
+            seg
+            for seg in pool
+            if seg.get('id') not in used_ids and seg.get('duration', 0) >= relaxed_min
+        ]
+        remaining.sort(key=lambda x: x.get('final_score', 0), reverse=True)
+
+        for seg in remaining:
+            if len(clips) >= 40 or total >= target:
+                break
+            if self._has_overlap(seg, clips, self.config.selection.min_time_gap):
+                continue
+            if total + seg.get('duration', 0) > target * 1.15:
+                continue
+            clips.append(seg)
+            total += seg.get('duration', 0)
+
+        return clips
+
+    def _save_debug_plot(
+        self,
+        clips: List[Dict],
+        all_segments: List[Dict],
+        output_dir: Path,
+    ) -> None:
+        """Zapisz debugowy wykres score/burst, gdy klipów jest mało."""
+
+        try:
+            import matplotlib.pyplot as plt
+
+            scores = [c.get("final_score", 0) for c in all_segments]
+            burst_scores = [
+                (c.get("subscores", {}) or {}).get("chat_burst_score", 0.0)
+                for c in all_segments
+            ]
+
+            fig, ax1 = plt.subplots(figsize=(6, 4))
+            ax1.hist(scores, bins=20, color="#3f51b5", alpha=0.7)
+            ax1.set_xlabel("final_score")
+            ax1.set_ylabel("Liczba segmentów")
+            ax1.set_title("Debug score/burst (klipy <10)")
+
+            ax2 = ax1.twinx()
+            ax2.plot(sorted(burst_scores), color="#ff9800", linewidth=1.2)
+            ax2.set_ylabel("chat_burst_score (posortowane)")
+
+            fig.tight_layout()
+            debug_path = output_dir / "debug_selection.png"
+            fig.savefig(debug_path)
+            plt.close(fig)
+            print(f"   💾 Debug plot zapisany: {debug_path}")
+        except Exception as exc:  # pragma: no cover
+            print(f"   ⚠️ Nie udało się zapisać debug plot: {exc}")
     
     def _generate_title(self, clip: Dict) -> str:
         """Generuj tytuł klipu z AI categories lub keywords"""
@@ -407,7 +646,7 @@ class SelectionStage:
         shorts_candidates.sort(key=lambda x: x.get('final_score', 0), reverse=True)
 
         # Take top N
-        max_shorts = self.config.shorts.max_shorts_count
+        max_shorts = getattr(self.config.shorts, 'count', 10)
         selected_shorts = shorts_candidates[:max_shorts]
 
         # Sort chronologically

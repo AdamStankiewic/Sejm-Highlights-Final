@@ -1,0 +1,32 @@
+[
+  {
+    "t0": 60.0,
+    "t1": 90.0,
+    "final_score": 0.85,
+    "subtitles": null
+  },
+  {
+    "t0": 180.0,
+    "t1": 220.0,
+    "final_score": 0.92,
+    "subtitles": null
+  },
+  {
+    "t0": 350.0,
+    "t1": 400.0,
+    "final_score": 0.78,
+    "subtitles": null
+  },
+  {
+    "t0": 500.0,
+    "t1": 545.0,
+    "final_score": 0.88,
+    "subtitles": null
+  },
+  {
+    "t0": 720.0,
+    "t1": 770.0,
+    "final_score": 0.81,
+    "subtitles": null
+  }
+]
