@@ -320,3 +320,131 @@ Stary układ side_left/side_right został usunięty; nowe szablony zastępują p
 - **Rollback:** w razie krytycznych problemów użyj brancha `backup-before-vertical-templates` lub revertuj merge; kluczowe zmiany są odseparowane w `stage_10_shorts.py` i `config.yml`.
 - **Komunikacja:** poinformuj zespół o zmianach, podeprzyj się README/MIGRATION; upewnij się, że MediaPipe jest doinstalowane w środowiskach buildowych.
 
+## 🎥 YouTube upload (OAuth + native schedule)
+
+1. **Sekrety i tokeny**
+   - Umieść plik OAuth w `secrets/youtube_client_secret.json` (gitignored).
+   - Pierwsze logowanie pobiera token do `secrets/youtube_token_<profile>.json` (również gitignored).
+
+2. **Konta/ustawienia kanałów**
+   - Skonfiguruj `accounts.yml` obok repo i wskaż *konkretny kanał* (Brand Account) poprzez `expected_channel_id`:
+
+     ```yaml
+     youtube:
+       channel_main:
+         credential_profile: yt_main
+         expected_channel_id: "UCxxxxxxxxxxxx"
+         default_privacy: unlisted
+         category_id: 22
+       channel_secondary:
+         credential_profile: yt_secondary
+         expected_channel_id: "UCyyyyyyyyyyyy"
+         default_privacy: private
+         category_id: 22
+     ```
+
+   - `account_id` z `UploadTarget` **musi** mieć sekcję w `accounts.yml`. Uploader weryfikuje, że token jest zalogowany na oczekiwany `expected_channel_id`; przy mismatch target kończy się błędem non-retryable, aby nie publikować na złym koncie. Jeśli `expected_channel_id` jest pominięty, zostanie zalogowane ostrzeżenie (mniej bezpieczne).
+
+3. **Uruchomienie uploadu testowego**
+   - Dodaj w kolejce plik MP4 (GUI lub `UploadManager.enqueue`).
+   - Dla `mode=NATIVE_SCHEDULE` uploader ustawia `publishAt` w YouTube, a lokalny scheduler odpala upload o czasie targetu.
+
+4. **Przykładowy log (due + native schedule)**
+
+   ```text
+   [scheduler] Target due -> youtube/channel_main @ 2024-05-01T12:00:00+00:00
+   [youtube] YouTube upload progress: 35%
+   [youtube] YouTube upload finished video_id=abc123
+   [youtube] Uploaded video_id=abc123 with publishAt=2024-05-02T10:00:00+00:00
+   ```
+
+   Przykładowy log blokujący zły kanał (mismatch):
+
+   ```text
+   [youtube] Uploading to YouTube account_id=channel_main expected_channel_id=UC_expected profile=yt_main
+   [youtube] ERROR YouTube channel mismatch: current=UC_other expected=UC_expected. Re-auth with the credential_profile bound to the expected channel.
+   ```
+
+## 📱 Meta upload (Instagram/Facebook Reels)
+
+1. **Konta i tokeny**
+   - Nie zapisuj tokenów w repo. W `accounts.yml` zmapuj `account_id` na ustawienia i nazwę zmiennej środowiskowej z tokenem:
+
+     ```yaml
+     meta:
+       ig_main:
+         platform: instagram
+         ig_user_id: "1784xxxxxxxxxxxx"
+         page_id: "1234567890"
+         access_token_env: "META_TOKEN_IG_MAIN"
+       fb_page_main:
+         platform: facebook
+         page_id: "1234567890"
+         access_token_env: "META_TOKEN_FB_PAGE_MAIN"
+     ```
+
+   - Ustaw zmienne środowiskowe z ważnymi tokenami Graph API (wymagane scope do publikacji reels/stron). Brak tokena kończy target stanem `MANUAL_REQUIRED` z instrukcją.
+
+2. **Walidacja i fallback**
+   - Jeśli konto nie ma wymaganych uprawnień (np. IG Business/Creator niepowiązany z Page, brak scope), uploader ustawia `MANUAL_REQUIRED` bez retry i zapisuje wskazówki w `last_error`.
+   - Scheduler nie retry’uje `MANUAL_REQUIRED`; inne błędy 429/5xx korzystają z istniejącego backoff.
+
+3. **Flow publikacji**
+   - Instagram: utworzenie kontenera reels, polling statusu (do ~10 min), a następnie `media_publish` → `media_id` zapisany jako `result_id`.
+   - Facebook: upload na Page video endpoint → `video_id` zapisany jako `result_id`.
+
+4. **Przykładowe logi**
+
+   ```text
+   [meta] Uploading Instagram reel account_id=ig_main ig_user_id=1784...
+   [meta] Instagram reel published media_id=1784_999
+   [meta] Uploading Facebook reel account_id=fb_page_main page_id=1234567890
+   [meta] Retryable error for facebook|fb_page_main: status 429
+   ```
+
+   Manual fallback, gdy brak uprawnień:
+
+  ```text
+  [meta] Meta API error status=403 message=permissions missing instagram_content_publish (permissions required: ensure IG Business/Creator is linked to a Page and token has instagram_content_publish/Page access)
+  [meta] Manual action required for /path/video.mp4|instagram|ig_main|...: permissions missing instagram_content_publish (...)
+  ```
+
+## 🎵 TikTok upload (Official API vs Manual)
+
+* Konfiguracja kont w `accounts.yml` (tokeny tylko w ENV):
+
+  ```yaml
+  tiktok:
+    tiktok_main:
+      mode: "OFFICIAL_API"        # lub "MANUAL_ONLY" gdy API niedostępne
+      access_token_env: "TIKTOK_ACCESS_TOKEN"
+      advertiser_id: "123456"     # opcjonalnie, jeśli wymagane przez API
+      default_caption: "#sejm #polityka"
+  ```
+
+* `UploadTarget.account_id` musi wskazywać wpis w sekcji `tiktok`. Brak konta lub tokena → stan `MANUAL_REQUIRED` z instrukcją ręcznego wgrania.
+* Tryb `MANUAL_ONLY` zawsze kończy się `MANUAL_REQUIRED` (bez retry) – scheduler nie będzie próbował kolejnych uploadów.
+* Tryb `OFFICIAL_API` używa oficjalnego endpointu (`/v2/post/publish/video/`). Błędy 429/5xx → retry/backoff; 400/401/403 → non-retryable (chyba że komunikat sugeruje brak dostępu → `MANUAL_REQUIRED`).
+* Przykładowe logi:
+
+  ```text
+  [tiktok] Uploading TikTok video via official API (advertiser_id=123456, caption_len=22)
+  [tiktok] TikTok upload succeeded video_id=abc123
+  ```
+
+  Manual fallback (np. brak tokena lub brak wsparcia API):
+
+  ```text
+  [tiktok] TikTok upload not available via official API for this setup → MANUAL_REQUIRED (Missing TikTok access token in env TIKTOK_ACCESS_TOKEN; upload manually or set the token env var)
+  ```
+
+## 📅 Kalendarz per target i bulk scheduling w GUI
+
+* Tabela w zakładce Upload pokazuje każdy `UploadTarget` jako osobny wiersz (plik, platforma, konto, termin, tryb, status, result_id, last_error).
+* Konta/kanały są pobierane z `accounts.yml`; brak konta → ostrzeżenie i blokada dodania targetu danej platformy.
+* Edytuj termin (QDateTimeEdit), konto (dropdown) i tryb bez tworzenia duplikatów — aktualizacje są zapisywane w SQLite przez `UploadStore` i używane przez scheduler.
+* Panel **Bulk schedule** pozwala rozdać terminy wielu targetom na raz (start datetime, lista godzin, odstęp dni, strefa czasowa) oraz wczytać preset z `config.yml` → sekcja `scheduling_presets`.
+* Po restarcie aplikacja wysyła callback `jobs_restored`, a UI od razu renderuje przywrócone joby/targety z harmonogramem zapisanym w `data/uploader.db`.
+
+
+
