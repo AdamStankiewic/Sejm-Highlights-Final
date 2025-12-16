@@ -404,10 +404,18 @@ Stary układ side_left/side_right został usunięty; nowe szablony zastępują p
 
    Manual fallback, gdy brak uprawnień:
 
-   ```text
-   [meta] Meta API error status=403 message=permissions missing instagram_content_publish (permissions required: ensure IG Business/Creator is linked to a Page and token has instagram_content_publish/Page access)
-   [meta] Manual action required for /path/video.mp4|instagram|ig_main|...: permissions missing instagram_content_publish (...)
-   ```
+  ```text
+  [meta] Meta API error status=403 message=permissions missing instagram_content_publish (permissions required: ensure IG Business/Creator is linked to a Page and token has instagram_content_publish/Page access)
+  [meta] Manual action required for /path/video.mp4|instagram|ig_main|...: permissions missing instagram_content_publish (...)
+  ```
+
+## 📅 Kalendarz per target i bulk scheduling w GUI
+
+* Tabela w zakładce Upload pokazuje każdy `UploadTarget` jako osobny wiersz (plik, platforma, konto, termin, tryb, status, result_id, last_error).
+* Konta/kanały są pobierane z `accounts.yml`; brak konta → ostrzeżenie i blokada dodania targetu danej platformy.
+* Edytuj termin (QDateTimeEdit), konto (dropdown) i tryb bez tworzenia duplikatów — aktualizacje są zapisywane w SQLite przez `UploadStore` i używane przez scheduler.
+* Panel **Bulk schedule** pozwala rozdać terminy wielu targetom na raz (start datetime, lista godzin, odstęp dni, strefa czasowa) oraz wczytać preset z `config.yml` → sekcja `scheduling_presets`.
+* Po restarcie aplikacja wysyła callback `jobs_restored`, a UI od razu renderuje przywrócone joby/targety z harmonogramem zapisanym w `data/uploader.db`.
 
 
 

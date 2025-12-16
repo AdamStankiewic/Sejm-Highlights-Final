@@ -150,6 +150,36 @@ class UploadStore:
             )
         return target_id
 
+    def update_target_details(
+        self,
+        target_id: str,
+        *,
+        account_id: Optional[str] = None,
+        scheduled_at: datetime | None = None,
+        mode: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+    ):
+        with self._lock, self.conn:
+            self.conn.execute(
+                """
+                UPDATE upload_targets
+                SET account_id=COALESCE(?, account_id),
+                    scheduled_at=COALESCE(?, scheduled_at),
+                    mode=COALESCE(?, mode),
+                    fingerprint=COALESCE(?, fingerprint),
+                    updated_at=?
+                WHERE target_id=?
+                """,
+                (
+                    account_id,
+                    self._serialize_dt(scheduled_at),
+                    mode,
+                    fingerprint,
+                    self._serialize_dt(datetime.now(tz=ZoneInfo("UTC"))),
+                    target_id,
+                ),
+            )
+
     def update_target_state(
         self,
         target_id: str,

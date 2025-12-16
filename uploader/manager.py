@@ -73,6 +73,36 @@ class UploadManager:
         self.jobs.append(job)
         self._ensure_worker()
 
+    def update_target_configuration(
+        self,
+        job: UploadJob,
+        target: UploadTarget,
+        *,
+        account_id: str | None = None,
+        scheduled_at: datetime | None = None,
+        mode: str | None = None,
+    ):
+        """Persist target field edits from the UI without creating duplicates."""
+
+        if scheduled_at and scheduled_at.tzinfo is None:
+            scheduled_at = scheduled_at.replace(tzinfo=ZoneInfo("Europe/Warsaw"))
+        if account_id:
+            target.account_id = account_id
+        if scheduled_at:
+            target.scheduled_at = scheduled_at
+        if mode:
+            target.mode = mode
+        self._compute_target_fingerprint(job, target)
+        self.store.update_target_details(
+            target.target_id,
+            account_id=target.account_id,
+            scheduled_at=target.scheduled_at,
+            mode=target.mode,
+            fingerprint=target.fingerprint,
+        )
+        job.state = job.aggregate_state
+        self._notify("target_updated", job, target)
+
     def start(self):
         if self.jobs:
             self._ensure_worker()
@@ -235,12 +265,15 @@ class UploadManager:
         raise ValueError(f"Unsupported platform: {target.platform}")
 
     def _compute_fingerprints(self, job: UploadJob):
-        base = job.file_path.resolve().as_posix()
         for target in job.targets:
-            sched_str = target.scheduled_at.isoformat() if target.scheduled_at else "immediate"
-            target.fingerprint = f"{base}|{target.platform}|{target.account_id}|{sched_str}|{job.title}"
-            if not target.target_id:
-                target.target_id = target.fingerprint
+            self._compute_target_fingerprint(job, target)
+
+    def _compute_target_fingerprint(self, job: UploadJob, target: UploadTarget):
+        base = job.file_path.resolve().as_posix()
+        sched_str = target.scheduled_at.isoformat() if target.scheduled_at else "immediate"
+        target.fingerprint = f"{base}|{target.platform}|{target.account_id}|{sched_str}|{job.title}"
+        if not target.target_id:
+            target.target_id = target.fingerprint
 
     def _validate_job(self, job: UploadJob):
         if job.created_at.tzinfo is None:
