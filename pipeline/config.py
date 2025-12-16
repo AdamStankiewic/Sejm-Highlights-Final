@@ -342,6 +342,8 @@ class Config:
     selection: SelectionConfig = None
     export: ExportConfig = None
     packer: HighlightPackerConfig = None  # Renamed from 'splitter'
+    # Backward-compat alias for legacy configs/UI still referencing `config.splitter`
+    splitter: HighlightPackerConfig = None
     youtube: YouTubeConfig = None
     shorts: ShortsConfig = None
     cache: CacheConfig = None  # Cache configuration
@@ -388,8 +390,15 @@ class Config:
             self.selection = SelectionConfig()
         if self.export is None:
             self.export = ExportConfig()
-        if self.packer is None:  # Renamed from 'splitter'
-            self.packer = HighlightPackerConfig()
+        # Backward compatibility: allow both packer and splitter to point to the same object
+        if self.packer is None and self.splitter is None:
+            self.packer = self.splitter = HighlightPackerConfig()
+        elif self.packer is None and self.splitter is not None:
+            self.packer = self.splitter
+        elif self.packer is not None and self.splitter is None:
+            self.splitter = self.packer
+        if self.packer is None:  # Safety net
+            self.packer = self.splitter = HighlightPackerConfig()
         if self.youtube is None:
             self.youtube = YouTubeConfig()
         if self.shorts is None:
@@ -468,6 +477,7 @@ class Config:
             export=export,
             youtube=youtube,
             packer=packer,  # Renamed from 'splitter'
+            splitter=packer,
             shorts=shorts,
             cache=cache,  # Cache configuration
             uploader=uploader_cfg,
@@ -498,6 +508,8 @@ class Config:
             'selection': asdict(self.selection),
             'export': asdict(self.export),
             'youtube': asdict(self.youtube),
+            'packer': asdict(self.packer),
+            'splitter': asdict(self.splitter),
             'shorts': asdict(self.shorts),
             'uploader': asdict(self.uploader),
             'copyright': asdict(self.copyright),
@@ -534,6 +546,8 @@ class Config:
             'selection': asdict(self.selection),
             'export': asdict(self.export),
             'youtube': asdict(self.youtube),
+            'packer': asdict(self.packer),
+            'splitter': asdict(self.splitter),
             'shorts': asdict(self.shorts),
             'uploader': asdict(self.uploader),
             'copyright': asdict(self.copyright),
