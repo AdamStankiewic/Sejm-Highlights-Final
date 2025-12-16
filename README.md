@@ -409,6 +409,35 @@ Stary układ side_left/side_right został usunięty; nowe szablony zastępują p
   [meta] Manual action required for /path/video.mp4|instagram|ig_main|...: permissions missing instagram_content_publish (...)
   ```
 
+## 🎵 TikTok upload (Official API vs Manual)
+
+* Konfiguracja kont w `accounts.yml` (tokeny tylko w ENV):
+
+  ```yaml
+  tiktok:
+    tiktok_main:
+      mode: "OFFICIAL_API"        # lub "MANUAL_ONLY" gdy API niedostępne
+      access_token_env: "TIKTOK_ACCESS_TOKEN"
+      advertiser_id: "123456"     # opcjonalnie, jeśli wymagane przez API
+      default_caption: "#sejm #polityka"
+  ```
+
+* `UploadTarget.account_id` musi wskazywać wpis w sekcji `tiktok`. Brak konta lub tokena → stan `MANUAL_REQUIRED` z instrukcją ręcznego wgrania.
+* Tryb `MANUAL_ONLY` zawsze kończy się `MANUAL_REQUIRED` (bez retry) – scheduler nie będzie próbował kolejnych uploadów.
+* Tryb `OFFICIAL_API` używa oficjalnego endpointu (`/v2/post/publish/video/`). Błędy 429/5xx → retry/backoff; 400/401/403 → non-retryable (chyba że komunikat sugeruje brak dostępu → `MANUAL_REQUIRED`).
+* Przykładowe logi:
+
+  ```text
+  [tiktok] Uploading TikTok video via official API (advertiser_id=123456, caption_len=22)
+  [tiktok] TikTok upload succeeded video_id=abc123
+  ```
+
+  Manual fallback (np. brak tokena lub brak wsparcia API):
+
+  ```text
+  [tiktok] TikTok upload not available via official API for this setup → MANUAL_REQUIRED (Missing TikTok access token in env TIKTOK_ACCESS_TOKEN; upload manually or set the token env var)
+  ```
+
 ## 📅 Kalendarz per target i bulk scheduling w GUI
 
 * Tabela w zakładce Upload pokazuje każdy `UploadTarget` jako osobny wiersz (plik, platforma, konto, termin, tryb, status, result_id, last_error).

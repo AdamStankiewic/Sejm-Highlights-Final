@@ -19,7 +19,7 @@ from .meta import (
 )
 from .models import UploadJob, UploadTarget
 from .store import UploadStore
-from .tiktok import upload_tiktok
+from .tiktok import upload_tiktok_target
 from .youtube import upload_target as upload_youtube_target
 
 logger = logging.getLogger(__name__)
@@ -261,7 +261,7 @@ class UploadManager:
         if target.platform in ("facebook", "instagram"):
             return upload_meta_target(job, target, accounts_config=self.accounts_config)
         if target.platform == "tiktok":
-            return upload_tiktok(job.file_path, job.title, job.description, schedule)
+            return upload_tiktok_target(job, target, accounts_config=self.accounts_config)
         raise ValueError(f"Unsupported platform: {target.platform}")
 
     def _compute_fingerprints(self, job: UploadJob):
