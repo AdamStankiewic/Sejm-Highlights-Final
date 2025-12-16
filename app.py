@@ -749,7 +749,22 @@ class SejmHighlightsApp(QMainWindow):
         threshold_layout.addWidget(QLabel("🎚️ Próg score (0.10-0.80):"))
         self.score_threshold_slider = QSlider(Qt.Orientation.Horizontal)
         self.score_threshold_slider.setRange(10, 80)
-        default_threshold = int(getattr(self.config.selection, "min_score_threshold", 0.3) * 100)
+        default_threshold = int(
+            max(
+                0.1,
+                min(
+                    0.8,
+                    float(
+                        getattr(
+                            getattr(self.config, "scoring", None) or self.config.selection,
+                            "min_score_slider",
+                            getattr(self.config.selection, "min_score_threshold", 0.3),
+                        )
+                    ),
+                ),
+            )
+            * 100
+        )
         self.score_threshold_slider.setValue(max(10, min(80, default_threshold)))
         self.score_threshold_slider.setSingleStep(5)
         threshold_layout.addWidget(self.score_threshold_slider)
