@@ -1,16 +1,62 @@
 """
-Smart Content Splitter
-Inteligentnie dzieli długie materiały na części i scheduluje premiery YouTube
+Highlight Packer
+Pakuje wybrane highlighty (Stage 6 selected_clips) do części z harmonogramem premier YouTube
+
+UWAGA: To NIE jest techniczny podział materiału (chunking dla VAD/Whisper).
+       To jest biznesowy podział WYBRANYCH klipów na części do publikacji.
 """
 
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime, timedelta
+from dataclasses import dataclass, field
 import math
 
 
-class SmartSplitter:
+@dataclass
+class PackingPlan:
     """
-    Inteligentny podział treści na części z auto-schedulingiem premier
+    Single source of truth dla strategii pakowania highlightów.
+    Wyliczany RAZ po Stage 6 (Selection) i używany przez Stage 7-9.
+
+    FLOW: Stage 6 (selected_clips) → PackingPlan → Stage 7 (Export per part)
+    """
+    # Input
+    source_duration: float  # Długość źródła w sekundach
+
+    # Strategy (computed once)
+    num_parts: int
+    target_duration_per_part: int  # sekundy
+    total_target_duration: int  # sekundy
+    min_score_threshold: float
+    compression_ratio: float
+
+    # Reasoning (why this strategy)
+    reason: str = ""
+
+    # Computed parts (filled after selection)
+    parts_metadata: List[Dict[str, Any]] = field(default_factory=list)
+
+    def __str__(self) -> str:
+        """Human-readable opis planu"""
+        hours = self.source_duration / 3600
+        mins_per_part = self.target_duration_per_part / 60
+
+        if self.num_parts == 1:
+            return f"Pojedynczy film ({hours:.1f}h → ~{mins_per_part:.0f}min)"
+        else:
+            return f"Podział na {self.num_parts} części ({hours:.1f}h → {self.num_parts}x ~{mins_per_part:.0f}min)"
+
+    def has_parts(self) -> bool:
+        """Czy plan ma wygenerowane części (po selection)"""
+        return len(self.parts_metadata) > 0
+
+
+class HighlightPacker:
+    """
+    Pakuje wybrane highlighty do części z auto-schedulingiem premier YouTube.
+
+    Używany MIĘDZY Stage 6 (Selection) a Stage 7 (Export).
+    NIE dotyczy technicznego podziału materiału źródłowego.
     """
     
     # Progi czasowe dla podziału (w sekundach)
@@ -29,42 +75,79 @@ class SmartSplitter:
         'max': 1200   # 20 min (maximum przed spadkiem retencji)
     }
     
-    def __init__(self, premiere_hour: int = 18, premiere_minute: int = 0):
+    def __init__(self, premiere_hour: int = 18, premiere_minute: int = 0, language: str = "pl"):
         """
         Args:
             premiere_hour: Godzina premier (domyślnie 18:00)
             premiere_minute: Minuta premier (domyślnie :00)
+            language: Język interfejsu ("pl" lub "en")
         """
         self.premiere_hour = premiere_hour
         self.premiere_minute = premiere_minute
+        self.language = language
+
+    def _translate(self, key: str) -> str:
+        """Get translated text based on language"""
+        translations = {
+            "part": {"pl": "Część", "en": "Part"},
+            "premiere": {"pl": "Premiera", "en": "Premiere"},
+            "duration": {"pl": "Długość", "en": "Duration"},
+            "clips": {"pl": "Klipy", "en": "Clips"},
+            "avg_score": {"pl": "Średni score", "en": "Avg score"},
+            "keywords": {"pl": "Keywords", "en": "Keywords"},
+            "title": {"pl": "Tytuł", "en": "Title"},
+        }
+        return translations.get(key, {}).get(self.language, key)
     
-    def calculate_split_strategy(self, source_duration: float) -> Dict[str, Any]:
+    def calculate_packing_strategy(
+        self,
+        source_duration: float,
+        override_parts: Optional[int] = None,
+        override_target_minutes: Optional[int] = None
+    ) -> PackingPlan:
         """
-        Oblicz optymalną strategię podziału
-        
+        Oblicz optymalną strategię pakowania highlightów (wyliczana RAZ po Stage 6!)
+
         Args:
-            source_duration: Długość źródła w sekundach
-            
+            source_duration: Długość źródła w sekundach (do kalkulacji compression ratio)
+            override_parts: Wymuszenie liczby części (opcjonalne)
+            override_target_minutes: Wymuszenie długości części w minutach (opcjonalne)
+
         Returns:
-            Dict ze strategią podziału
+            PackingPlan - single source of truth dla strategii pakowania
         """
         # Określ liczbę części
-        num_parts = self._calculate_num_parts(source_duration)
-        
+        if override_parts:
+            num_parts = override_parts
+            reason = f"Manual override: {override_parts} części wymuszonych przez użytkownika"
+        else:
+            num_parts = self._calculate_num_parts(source_duration)
+            hours = source_duration / 3600
+            reason = self._explain_num_parts_decision(source_duration, num_parts)
+
         # Oblicz docelową długość każdej części
-        target_duration_per_part = self._calculate_target_duration(source_duration, num_parts)
-        
+        if override_target_minutes:
+            target_duration_per_part = override_target_minutes * 60
+            reason += f" | Target duration: {override_target_minutes}min (manual override)"
+        else:
+            target_duration_per_part = self._calculate_target_duration(source_duration, num_parts)
+
+        total_target_duration = target_duration_per_part * num_parts
+
         # Oblicz score threshold (wyższy dla dłuższych materiałów)
         min_score_threshold = self._calculate_score_threshold(source_duration, num_parts)
-        
-        return {
-            'num_parts': num_parts,
-            'target_duration_per_part': target_duration_per_part,
-            'total_target_duration': target_duration_per_part * num_parts,
-            'min_score_threshold': min_score_threshold,
-            'compression_ratio': (target_duration_per_part * num_parts) / source_duration,
-            'strategy': self._describe_strategy(source_duration, num_parts)
-        }
+
+        compression_ratio = total_target_duration / source_duration
+
+        return PackingPlan(
+            source_duration=source_duration,
+            num_parts=num_parts,
+            target_duration_per_part=target_duration_per_part,
+            total_target_duration=total_target_duration,
+            min_score_threshold=min_score_threshold,
+            compression_ratio=compression_ratio,
+            reason=reason
+        )
     
     def _calculate_num_parts(self, duration: float) -> int:
         """Oblicz optymalną liczbę części"""
@@ -79,6 +162,21 @@ class SmartSplitter:
         else:
             # Dla bardzo długich: ceil(duration / 4h) z max 6 części
             return min(6, math.ceil(duration / 14400))
+
+    def _explain_num_parts_decision(self, duration: float, num_parts: int) -> str:
+        """Wyjaśnij dlaczego wybrano daną liczbę części"""
+        hours = duration / 3600
+
+        if num_parts == 1:
+            return f"Material {hours:.1f}h < 1h → pojedynczy film (optymalna retencja)"
+        elif num_parts == 2:
+            return f"Material {hours:.1f}h = 1-2h → 2 części (dobra dla daily schedule)"
+        elif num_parts == 3:
+            return f"Material {hours:.1f}h = 2-4h → 3 części (optimal split dla retencji)"
+        elif num_parts == 4:
+            return f"Material {hours:.1f}h = 4-6h → 4 części (długi live, premium content)"
+        else:
+            return f"Material {hours:.1f}h > 6h → {num_parts} części (bardzo długi live, serialized content)"
     
     def _calculate_target_duration(self, source_duration: float, num_parts: int) -> int:
         """Oblicz docelową długość jednej części"""
@@ -213,9 +311,10 @@ class SmartSplitter:
             # Oblicz premiere datetime
             premiere_datetime = self._calculate_premiere_datetime(base_date, i - 1)
             
-            # Generuj tytuł z numerem
+            # Generuj tytuł z numerem (language-aware)
             if num_parts > 1:
-                part_title = f"{base_title} - Część {i}/{num_parts}"
+                part_word = self._translate("part")
+                part_title = f"{base_title} - {part_word} {i}/{num_parts}"
             else:
                 part_title = base_title
             
@@ -323,24 +422,31 @@ class SmartSplitter:
                 elif kw not in regular_keywords:
                     regular_keywords.append(kw)
         
-        # Buduj tytuł bazując na dostępnych danych
+        # Buduj tytuł bazując na dostępnych danych (language-aware, generic)
         if use_politicians and len(politician_names) >= 2:
-            # Starcie nazwisk
-            title = f"🔥 {politician_names[0]} VS {politician_names[1]} - Posiedzenie Sejmu"
+            # Two personalities/speakers - generic format
+            title = f"🔥 {politician_names[0]} VS {politician_names[1]}"
         elif use_politicians and len(politician_names) == 1:
-            # Jedno nazwisko
-            title = f"💥 {politician_names[0]} w Sejmie - Najgorętsze Momenty"
+            # One personality - generic format
+            if self.language == "pl":
+                title = f"💥 {politician_names[0]} - Najgorętsze Momenty"
+            else:
+                title = f"💥 {politician_names[0]} - Best Moments"
         elif len(regular_keywords) >= 2:
-            # Keywords bez nazwisk
-            title = f"⚡ Sejm: {regular_keywords[0].title()} vs {regular_keywords[1].title()}"
+            # Keywords/topics
+            title = f"⚡ {regular_keywords[0].title()} vs {regular_keywords[1].title()}"
         else:
-            # Fallback - ogólny
-            title = f"🎯 Posiedzenie Sejmu - Gorące Momenty"
-        
-        # Dodaj numer części jeśli > 1
+            # Fallback - generic highlights
+            if self.language == "pl":
+                title = f"🎯 Najlepsze Momenty"
+            else:
+                title = f"🎯 Best Moments"
+
+        # Dodaj numer części jeśli > 1 (language-aware)
         if total_parts > 1:
-            title += f" | CZ. {part_num}/{total_parts}"
-        
+            part_word = self._translate("part").upper()
+            title += f" | {part_word} {part_num}/{total_parts}"
+
         # Dodaj datę
         title += f" | {date_str}"
         
@@ -364,70 +470,105 @@ class SmartSplitter:
         else:
             return f"{secs}s"
     
-    def print_split_summary(self, strategy: Dict, parts_metadata: List[Dict]):
-        """Wydrukuj podsumowanie strategii podziału"""
-        print("\n" + "="*70)
-        print("📊 STRATEGIA INTELIGENTNEGO PODZIAŁU")
-        print("="*70)
-        
-        print(f"\n🎯 Strategia: {strategy['strategy']}")
-        print(f"📦 Liczba części: {strategy['num_parts']}")
-        print(f"⏱️  Czas na część: ~{self.format_duration_readable(strategy['target_duration_per_part'])}")
-        print(f"📊 Score threshold: {strategy['min_score_threshold']}")
-        print(f"🎬 Kompresja: {strategy['compression_ratio']:.1%}")
-        
-        print(f"\n📅 HARMONOGRAM PREMIER:")
-        print("-" * 70)
-        
-        for part_meta in parts_metadata:
-            premiere_dt = datetime.fromisoformat(part_meta['premiere_datetime'])
-            print(f"\n  Część {part_meta['part_number']}/{part_meta['total_parts']}:")
-            print(f"  📺 Tytuł: {part_meta['title']}")
-            print(f"  🗓️  Premiera: {premiere_dt.strftime('%d.%m.%Y o %H:%M')}")
-            print(f"  ⏱️  Długość: {self.format_duration_readable(part_meta['duration'])}")
-            print(f"  🎬 Klipy: {part_meta['num_clips']}")
-            print(f"  ⭐ Średni score: {part_meta['avg_score']:.2f}")
-            if part_meta['keywords']:
-                print(f"  🔑 Keywords: {', '.join(part_meta['keywords'][:5])}")
-        
-        print("\n" + "="*70)
+    def print_packing_summary(self, plan: PackingPlan):
+        """
+        Wydrukuj podsumowanie planu pakowania highlightów (single source of truth!)
+
+        Args:
+            plan: PackingPlan z pełną strategią i (opcjonalnie) wygenerowanymi częściami
+        """
+        print("\n" + "="*80)
+        print("📦 HIGHLIGHT PACKER - PLAN PAKOWANIA")
+        print("="*80)
+
+        # Podstawowe info
+        print(f"\n🎯 Strategia: {plan}")
+        print(f"📦 Liczba części: {plan.num_parts}")
+        print(f"⏱️  Czas na część: ~{self.format_duration_readable(plan.target_duration_per_part)}")
+        print(f"📊 Score threshold: {plan.min_score_threshold:.2f}")
+        print(f"🎬 Kompresja: {plan.compression_ratio:.1%}")
+
+        # Wyjaśnienie "dlaczego"
+        if plan.reason:
+            print(f"\n💡 Powód:\n   {plan.reason}")
+
+        # Jeśli target duration został zmieniony - wyjaśnij
+        if hasattr(plan, '_config_change_reason'):
+            print(f"\n⚙️  Config adjustment: {plan._config_change_reason}")
+
+        # Jeśli są już wygenerowane części - pokaż szczegóły
+        if plan.has_parts():
+            print(f"\n📅 HARMONOGRAM PREMIER ({len(plan.parts_metadata)} części):")
+            print("-" * 80)
+
+            for part_meta in plan.parts_metadata:
+                premiere_dt = datetime.fromisoformat(part_meta['premiere_datetime'])
+                part_word = self._translate("part")
+                title_word = self._translate("title")
+                premiere_word = self._translate("premiere")
+                duration_word = self._translate("duration")
+
+                clips_word = self._translate("clips")
+                avg_score_word = self._translate("avg_score")
+                keywords_word = self._translate("keywords")
+
+                print(f"\n  {part_word} {part_meta['part_number']}/{part_meta['total_parts']}:")
+                print(f"  📺 {title_word}: {part_meta['title']}")
+                print(f"  🗓️  {premiere_word}: {premiere_dt.strftime('%d.%m.%Y o %H:%M')}")
+                print(f"  ⏱️  {duration_word}: {self.format_duration_readable(part_meta['duration'])}")
+                print(f"  🎬 {clips_word}: {part_meta['num_clips']}")
+                print(f"  ⭐ {avg_score_word}: {part_meta['avg_score']:.2f}")
+                if part_meta['keywords']:
+                    print(f"  🔑 {keywords_word}: {', '.join(part_meta['keywords'][:5])}")
+        else:
+            print(f"\n⏳ Części będą wygenerowane po Selection Stage...")
+
+        print("\n" + "="*80)
 
 
 if __name__ == "__main__":
     # Test
-    splitter = SmartSplitter(premiere_hour=18, premiere_minute=0)
-    
-    # Test case: 5h live z Sejmu
+    packer = HighlightPacker(premiere_hour=18, premiere_minute=0)
+
+    # Test case: 5h live z Sejmu (źródło)
     test_duration = 5 * 3600  # 5 godzin
-    
-    strategy = splitter.calculate_split_strategy(test_duration)
-    print(f"Strategia dla {test_duration/3600:.1f}h materiału:")
-    print(f"  - Części: {strategy['num_parts']}")
-    print(f"  - Czas na część: {strategy['target_duration_per_part']}s (~{strategy['target_duration_per_part']/60:.1f} min)")
-    print(f"  - Strategy: {strategy['strategy']}")
-    
+
+    # Wylicz plan pakowania (nowe API - zwraca PackingPlan)
+    packing_plan = packer.calculate_packing_strategy(test_duration)
+
+    print(f"\nStrategia pakowania dla {test_duration/3600:.1f}h materiału źródłowego:")
+    print(f"  - Części: {packing_plan.num_parts}")
+    print(f"  - Czas na część: {packing_plan.target_duration_per_part}s (~{packing_plan.target_duration_per_part/60:.1f} min)")
+    print(f"  - Threshold: {packing_plan.min_score_threshold:.2f}")
+    print(f"  - Powód: {packing_plan.reason}")
+
     # Mock clips dla testu
     mock_clips = [
         {'id': f'clip_{i}', 't0': i*100, 't1': i*100+150, 'duration': 150, 'final_score': 0.8 - i*0.05}
         for i in range(30)
     ]
-    
-    parts = splitter.split_clips_into_parts(
+
+    # Podziel klipy na części (pakowanie)
+    parts = packer.split_clips_into_parts(
         mock_clips,
-        strategy['num_parts'],
-        strategy['target_duration_per_part']
+        packing_plan.num_parts,
+        packing_plan.target_duration_per_part
     )
-    
-    print(f"\nPodzielono {len(mock_clips)} klipów na {len(parts)} części:")
+
+    print(f"\nSpakowano {len(mock_clips)} klipów do {len(parts)} części:")
     for i, part in enumerate(parts, 1):
         total_dur = sum(c['duration'] for c in part)
         print(f"  Część {i}: {len(part)} klipów, {total_dur/60:.1f} min")
-    
-    # Test metadata
-    parts_meta = splitter.generate_part_metadata(
+
+    # Generuj metadata premier dla każdej części
+    parts_metadata = packer.generate_part_metadata(
         parts,
         "Gorące Momenty Sejmu",
         base_date=datetime.now() + timedelta(days=1)
     )
-    
-    splitter.print_split_summary(strategy, parts_meta)
+
+    # Wypełnij plan metadata (single source of truth!)
+    packing_plan.parts_metadata = parts_metadata
+
+    # Wyświetl FINALNY plan pakowania (z harmonogramem premier)
+    packer.print_packing_summary(packing_plan)

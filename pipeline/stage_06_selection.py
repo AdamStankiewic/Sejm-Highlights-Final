@@ -615,21 +615,26 @@ class SelectionStage:
     ) -> List[Dict]:
         """
         Wybierz najlepsze segmenty dla YouTube Shorts
-        
+
         Kryteria:
         - Długość: 15-60s (idealne dla Shorts)
         - Wysokie score
         - Różnorodność
-        
+
         Returns:
             Lista klipów optymalnych dla Shorts
         """
+        # Validation: check if segments have scores
+        missing_score_count = sum(1 for seg in segments if 'final_score' not in seg)
+        if missing_score_count > 0:
+            print(f"   ⚠️ WARNING: {missing_score_count}/{len(segments)} segments missing final_score!")
+
         # Filter by Shorts duration constraints
         shorts_candidates = [
             seg for seg in segments
             if self.config.shorts.min_duration <= seg['duration'] <= self.config.shorts.max_duration
         ]
-        
+
         # Filter by score if specified
         if min_score > 0:
             shorts_candidates = [
@@ -637,34 +642,26 @@ class SelectionStage:
                 if seg.get('final_score', 0) >= min_score
             ]
 
-            if not shorts_candidates and segments:
-                percentile = getattr(self.config.scoring, 'dynamic_threshold_percentile', 80)
-                dynamic_threshold = float(np.percentile([s.get('final_score', 0) for s in segments], percentile))
-                shorts_candidates = [
-                    seg for seg in segments
-                    if self.config.shorts.min_duration <= seg['duration'] <= self.config.shorts.max_duration
-                    and seg.get('final_score', 0) >= dynamic_threshold
-                ]
-                print(
-                    f"   ⚠️ Shorts fallback: brak kandydatów dla progu {min_score:.2f} → top {percentile}% (>= {dynamic_threshold:.2f})"
-                )
-        
         # Sort by score (descending)
         shorts_candidates.sort(key=lambda x: x.get('final_score', 0), reverse=True)
-        
+
         # Take top N
         max_shorts = getattr(self.config.shorts, 'count', 10)
         selected_shorts = shorts_candidates[:max_shorts]
-        
+
         # Sort chronologically
         selected_shorts.sort(key=lambda x: x['t0'])
-        
-        # Add shorts-specific metadata
+
+        # Add shorts-specific metadata and validate scores
         for i, clip in enumerate(selected_shorts, 1):
             clip['shorts_id'] = f"short_{i:02d}"
             clip['shorts_title'] = self._generate_shorts_title(clip)
             clip['is_shorts_candidate'] = True
-        
+
+            # Log score for debugging
+            score = clip.get('final_score', 0)
+            print(f"   📱 Short {i}: score={score:.2f}, duration={clip['duration']:.1f}s, id={clip.get('id', 'unknown')}")
+
         return selected_shorts
     
     def _generate_shorts_title(self, clip: Dict) -> str:
@@ -716,33 +713,38 @@ class SelectionStage:
         """Zapisz selected clips"""
         # Prepare serializable
         serializable = []
-        
+
         for clip in clips:
+            # Defensively get final_score with fallback
+            final_score = clip.get('final_score', 0.0)
+            if final_score == 0.0 and 'final_score' not in clip:
+                print(f"   ⚠️ WARNING: Clip {clip.get('id', 'unknown')} missing final_score, using 0.0")
+
             clip_copy = {
                 'clip_id': clip.get('clip_id', ''),
                 'id': clip['id'],
                 't0': float(clip['t0']),
                 't1': float(clip['t1']),
                 'duration': float(clip['duration']),
-                'final_score': float(clip['final_score']),
+                'final_score': float(final_score),
                 'title': clip.get('title', ''),
                 'transcript_preview': clip.get('transcript', '')[:200] + '...' if clip.get('transcript') else '',
                 'keywords': [kw['token'] for kw in clip.get('features', {}).get('matched_keywords', [])[:5]],
                 'ai_category': clip.get('ai_categories', [{}])[0].get('label', 'N/A') if clip.get('ai_categories') else 'N/A',
                 'merged_from': clip.get('merged_from', [])
             }
-            
+
             # Add Shorts-specific fields
             if is_shorts:
                 clip_copy['shorts_id'] = clip.get('shorts_id', '')
                 clip_copy['shorts_title'] = clip.get('shorts_title', '')
                 clip_copy['is_shorts_candidate'] = True
-            
+
             serializable.append(clip_copy)
-        
+
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(serializable, f, indent=2, ensure_ascii=False)
-        
+
         file_type = "Shorts candidates" if is_shorts else "Selected clips"
         print(f"   💾 {file_type} zapisane: {output_file.name}")
     

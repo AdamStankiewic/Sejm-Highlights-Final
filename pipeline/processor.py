@@ -13,7 +13,8 @@ from typing import Callable, Optional, Dict, Any
 from datetime import datetime, timedelta
 
 from .config import Config
-from .smart_splitter import SmartSplitter
+from .cache_manager import CacheManager
+from .highlight_packer import HighlightPacker
 from .stage_01_ingest import IngestStage
 from .stage_02_vad import VADStage
 from .stage_03_transcribe import TranscribeStage
@@ -68,15 +69,21 @@ class PipelineProcessor:
         # Initialize thumbnail stage
         self.thumbnail_stage = ThumbnailStage(config)
 
-
-                # Smart Splitter
-        self.smart_splitter = None
-        if hasattr(config, 'splitter') and config.splitter.enabled:
-            self.smart_splitter = SmartSplitter(
-                premiere_hour=config.splitter.premiere_hour,
-                premiere_minute=config.splitter.premiere_minute
+        # Highlight Packer (pakowanie selected_clips do części z premierami)
+        self.highlight_packer = None
+        if hasattr(config, 'packer') and config.packer.enabled:
+            self.highlight_packer = HighlightPacker(
+                premiere_hour=config.packer.premiere_hour,
+                premiere_minute=config.packer.premiere_minute,
+                language=config.language
             )
 
+        # Cache Manager (cache dla kosztownych stages: VAD, Transcribe, Scoring)
+        self.cache_manager = CacheManager(
+            cache_dir=config.cache.cache_dir,
+            enabled=config.cache.enabled,
+            force_recompute=config.cache.force_recompute
+        )
 
         self.session_dir: Optional[Path] = None
 
@@ -187,19 +194,25 @@ class PipelineProcessor:
                 elif kw not in all_keywords:
                     all_keywords.append(kw)
         
-        # Buduj tytuł
+        # Buduj tytuł (language-aware and generic)
         if len(politician_names) >= 2:
-            # Starcie nazwisk
-            title = f"🔥 {politician_names[0]} VS {politician_names[1]} - Posiedzenie Sejmu {date_str}"
+            # Two personalities/speakers - generic format
+            title = f"🔥 {politician_names[0]} VS {politician_names[1]} - {date_str}"
         elif len(politician_names) == 1:
-            # Jedno nazwisko
-            title = f"💥 {politician_names[0]} w Sejmie - Najgorętsze Momenty {date_str}"
+            # One personality - generic format
+            if self.config.language == "pl":
+                title = f"💥 {politician_names[0]} - Najgorętsze Momenty | {date_str}"
+            else:
+                title = f"💥 {politician_names[0]} - Best Moments | {date_str}"
         elif len(all_keywords) >= 2:
-            # Keywords bez nazwisk
-            title = f"⚡ Sejm: {all_keywords[0]} vs {all_keywords[1]} | {date_str}"
+            # Keywords (topics)
+            title = f"⚡ {all_keywords[0].title()} vs {all_keywords[1].title()} | {date_str}"
         else:
-            # Fallback - ogólny
-            title = f"🎯 Posiedzenie Sejmu - Gorące Momenty {date_str}"
+            # Fallback - generic highlights
+            if self.config.language == "pl":
+                title = f"🎯 Najlepsze Momenty | {date_str}"
+            else:
+                title = f"🎯 Best Moments | {date_str}"
         
         # YouTube limit
         if len(title) > 100:
@@ -266,47 +279,91 @@ class PipelineProcessor:
                 source_duration = ingest_result['metadata']['duration']
                 self.timing_stats['ingest'] = self._format_duration(time.time() - stage_start)
                 self._report_progress("Stage 1/7", 14, f"✅ Audio extraction zakończony [RUN_ID: {self.run_id}]")
-                
-                # === SMART SPLITTER: Analiza strategii podziału ===
-                split_strategy = None
-                if self.smart_splitter and source_duration >= self.config.splitter.min_duration_for_split:
-                    print("\n🤖 Wykryto długi materiał - uruchamiam Smart Splitter...")
-                    split_strategy = self.smart_splitter.calculate_split_strategy(source_duration)
-                    self.smart_splitter.print_split_summary(split_strategy, [])
-                    
-                    # Dostosuj parametry selection do strategii
+
+                # === CACHE: Inicjalizacja cache key ===
+                self.cache_manager.initialize_cache_key(input_file, self.config)
+
+                # === HIGHLIGHT PACKER: Wstępna analiza strategii pakowania ===
+                # (Faktyczne pakowanie nastąpi PO Stage 6 - Selection)
+                packing_plan = None
+                if self.highlight_packer and source_duration >= self.config.packer.min_duration_for_split:
+                    print("\n📦 Materiał kwalifikuje się do pakowania w części - analiza strategii...")
+
+                    # Pobierz opcjonalne overrides z config (jeśli są)
+                    override_parts = getattr(self.config.packer, 'force_num_parts', None)
+                    override_target_mins = getattr(self.config.packer, 'target_part_minutes', None)
+
+                    # Wylicz plan pakowania RAZ (single source of truth!)
+                    packing_plan = self.highlight_packer.calculate_packing_strategy(
+                        source_duration,
+                        override_parts=override_parts,
+                        override_target_minutes=override_target_mins
+                    )
+
+                    # Dostosuj config selection do planu (z wyjaśnieniem DLACZEGO)
                     original_target = self.config.selection.target_total_duration
-                    self.config.selection.target_total_duration = split_strategy['total_target_duration']
-                    print(f"📊 Dostosowano target duration: {original_target}s → {split_strategy['total_target_duration']}s")
+                    if packing_plan.total_target_duration != original_target:
+                        change_reason = (
+                            f"HighlightPacker dostosował target duration: {original_target}s → {packing_plan.total_target_duration}s\n"
+                            f"   Powód: Materiał {source_duration/3600:.1f}h wymaga {packing_plan.num_parts} części "
+                            f"po ~{packing_plan.target_duration_per_part/60:.0f}min każda dla optymalnej retencji"
+                        )
+                        print(f"\n⚙️  {change_reason}")
+                        packing_plan._config_change_reason = change_reason  # Zapisz do późniejszego wyświetlenia
+                        self.config.selection.target_total_duration = packing_plan.total_target_duration
                 
                 # === ETAP 2: VAD (Voice Activity Detection) ===
                 self._check_cancelled()
                 stage_start = time.time()
                 print(f"\n📌 STAGE 2/7 - VAD [RUN_ID: {self.run_id}]")
-                self._report_progress("Stage 2/7", 20, f"Voice Activity Detection... [RUN_ID: {self.run_id}]")
 
-                vad_result = self.stages['vad'].process(
-                    audio_file=self._get_audio_file_from_ingest(ingest_result),
-                    output_dir=self.session_dir
-                )
+                # Check cache
+                if self.cache_manager.is_cache_valid('vad'):
+                    print("✅ Cache hit: VAD - ładowanie z cache...")
+                    vad_result = self.cache_manager.load_from_cache('vad')
+                    self.timing_stats['vad'] = "0s (cache)"
+                    self._report_progress("Stage 2/7", 28, f"✅ VAD załadowany z cache [RUN_ID: {self.run_id}]")
+                else:
+                    print("⚠️ Cache miss: VAD - wykonywanie stage...")
+                    self._report_progress("Stage 2/7", 20, f"Voice Activity Detection... [RUN_ID: {self.run_id}]")
 
-                self.timing_stats['vad'] = self._format_duration(time.time() - stage_start)
-                self._report_progress("Stage 2/7", 28, f"✅ VAD zakończony [RUN_ID: {self.run_id}]")
+                    vad_result = self.stages['vad'].process(
+                        audio_file=self._get_audio_file_from_ingest(ingest_result),
+                        output_dir=self.session_dir
+                    )
+
+                    # Save to cache
+                    self.cache_manager.save_to_cache(vad_result, 'vad')
+
+                    self.timing_stats['vad'] = self._format_duration(time.time() - stage_start)
+                    self._report_progress("Stage 2/7", 28, f"✅ VAD zakończony [RUN_ID: {self.run_id}]")
                 
                 # === ETAP 3: ASR/Transcribe (Whisper) ===
                 self._check_cancelled()
                 stage_start = time.time()
                 print(f"\n📌 STAGE 3/7 - Transcribe [RUN_ID: {self.run_id}]")
-                self._report_progress("Stage 3/7", 30, f"Transkrypcja audio (Whisper)... [RUN_ID: {self.run_id}]")
 
-                transcribe_result = self.stages['transcribe'].process(
-                    audio_file=self._get_audio_file_from_ingest(ingest_result),
-                    vad_segments=vad_result['segments'],
-                    output_dir=self.session_dir
-                )
+                # Check cache
+                if self.cache_manager.is_cache_valid('transcribe'):
+                    print("✅ Cache hit: Transcribe - ładowanie z cache...")
+                    transcribe_result = self.cache_manager.load_from_cache('transcribe')
+                    self.timing_stats['transcribe'] = "0s (cache)"
+                    self._report_progress("Stage 3/7", 50, f"✅ Transkrypcja załadowana z cache [RUN_ID: {self.run_id}]")
+                else:
+                    print("⚠️ Cache miss: Transcribe - wykonywanie stage...")
+                    self._report_progress("Stage 3/7", 30, f"Transkrypcja audio (Whisper)... [RUN_ID: {self.run_id}]")
 
-                self.timing_stats['transcribe'] = self._format_duration(time.time() - stage_start)
-                self._report_progress("Stage 3/7", 50, f"✅ Transkrypcja zakończona [RUN_ID: {self.run_id}]")
+                    transcribe_result = self.stages['transcribe'].process(
+                        audio_file=self._get_audio_file_from_ingest(ingest_result),
+                        vad_segments=vad_result['segments'],
+                        output_dir=self.session_dir
+                    )
+
+                    # Save to cache
+                    self.cache_manager.save_to_cache(transcribe_result, 'transcribe')
+
+                    self.timing_stats['transcribe'] = self._format_duration(time.time() - stage_start)
+                    self._report_progress("Stage 3/7", 50, f"✅ Transkrypcja zakończona [RUN_ID: {self.run_id}]")
                 
                 # === ETAP 4: Feature Extraction ===
                 self._check_cancelled()
@@ -327,25 +384,37 @@ class PipelineProcessor:
                 self._check_cancelled()
                 stage_start = time.time()
                 print(f"\n📌 STAGE 5/7 - Scoring [RUN_ID: {self.run_id}]")
-                self._report_progress("Stage 5/7", 62, f"Scoring segmentów (GPT-4)... [RUN_ID: {self.run_id}]")
 
-                scoring_result = self.stages['scoring'].process(
-                    segments=features_result['segments'],
-                    output_dir=self.session_dir
-                )
+                # Check cache
+                if self.cache_manager.is_cache_valid('scoring'):
+                    print("✅ Cache hit: Scoring - ładowanie z cache...")
+                    scoring_result = self.cache_manager.load_from_cache('scoring')
+                    self.timing_stats['scoring'] = "0s (cache)"
+                    self._report_progress("Stage 5/7", 75, f"✅ Scoring załadowany z cache [RUN_ID: {self.run_id}]")
+                else:
+                    print("⚠️ Cache miss: Scoring - wykonywanie stage...")
+                    self._report_progress("Stage 5/7", 62, f"Scoring segmentów (GPT-4)... [RUN_ID: {self.run_id}]")
 
-                self.timing_stats['scoring'] = self._format_duration(time.time() - stage_start)
-                self._report_progress("Stage 5/7", 75, f"✅ Scoring zakończony [RUN_ID: {self.run_id}]")
+                    scoring_result = self.stages['scoring'].process(
+                        segments=features_result['segments'],
+                        output_dir=self.session_dir
+                    )
+
+                    # Save to cache
+                    self.cache_manager.save_to_cache(scoring_result, 'scoring')
+
+                    self.timing_stats['scoring'] = self._format_duration(time.time() - stage_start)
+                    self._report_progress("Stage 5/7", 75, f"✅ Scoring zakończony [RUN_ID: {self.run_id}]")
                 
                 # === ETAP 6: Selection (wybór top klipów) ===
                 self._check_cancelled()
                 stage_start = time.time()
-                self._report_progress("Stage 6/7", 77, "Selekcja najlepszych klipów...")
-                
-                # Jeśli jest split_strategy lub slider threshold, użyj najwyższego progu
-                gui_threshold = getattr(self.config.selection, 'min_score_threshold', 0.0)
-                min_score = max(split_strategy['min_score_threshold'] if split_strategy else 0.0, gui_threshold)
-                
+                print(f"\n📌 STAGE 6/7 - Selection [RUN_ID: {self.run_id}]")
+                self._report_progress("Stage 6/7", 77, f"Selekcja najlepszych klipów... [RUN_ID: {self.run_id}]")
+
+                # Użyj threshold z planu pakowania (jeśli istnieje)
+                min_score = packing_plan.min_score_threshold if packing_plan else 0.0  # Bez filtrowania gdy brak planu
+
                 selection_result = self.stages['selection'].process(
                     segments=scoring_result['segments'],
                     total_duration=source_duration,
@@ -354,37 +423,39 @@ class PipelineProcessor:
                 )
 
                 self.timing_stats['selection'] = self._format_duration(time.time() - stage_start)
-                self._report_progress("Stage 6/7", 85, f"✅ Wybrano {len(selection_result['clips'])} klipów")
+                self._report_progress("Stage 6/7", 85, f"✅ Wybrano {len(selection_result['clips'])} klipów [RUN_ID: {self.run_id}]")
 
-                if not selection_result['clips']:
-                    warning_msg = "Brak klipów – obniż próg lub podłącz chat.json."
-                    print(f"⚠️ {warning_msg}")
-                    return {
-                        'clips': [],
-                        'shorts_clips': selection_result.get('shorts_clips', []),
-                        'message': warning_msg,
-                        'export_results': [],
-                    }
-                
-                # === Po stage 6 (Selection): Podział na części jeśli potrzebny ===
+                # === HIGHLIGHT PACKER: Pakowanie selected_clips do części ===
+                # (FLOW: Stage 6 selected_clips → HighlightPacker → Stage 7 Export per part)
                 parts_metadata = None
-                if split_strategy:
-                    print("\n✂️ Dzielę klipy na części...")
-                    parts = self.smart_splitter.split_clips_into_parts(
+                if packing_plan:
+                    print(f"\n📦 Pakowanie {len(selection_result['clips'])} klipów do {packing_plan.num_parts} części...")
+                    parts = self.highlight_packer.split_clips_into_parts(
                         selection_result['clips'],
-                        split_strategy['num_parts'],
-                        split_strategy['target_duration_per_part']
+                        packing_plan.num_parts,
+                        packing_plan.target_duration_per_part
                     )
-                    
-                    # Generuj metadata dla każdej części
-                    base_date = datetime.now() + timedelta(days=self.config.splitter.first_premiere_days_offset)
-                    parts_metadata = self.smart_splitter.generate_part_metadata(
+
+                    # Generuj metadata premier dla każdej części (generic, language-aware base title)
+                    base_date = datetime.now() + timedelta(days=self.config.packer.first_premiere_days_offset)
+
+                    # Generic base title (language-aware, no hardcoded parliamentary content)
+                    if self.config.language == "pl":
+                        base_title = "Najlepsze Momenty"
+                    else:
+                        base_title = "Best Moments"
+
+                    parts_metadata = self.highlight_packer.generate_part_metadata(
                         parts,
-                        "Gorące Momenty Sejmu",
+                        base_title,
                         base_date=base_date
                     )
-                    
-                    self.smart_splitter.print_split_summary(split_strategy, parts_metadata)
+
+                    # Wypełnij plan pakowania metadata (single source of truth!)
+                    packing_plan.parts_metadata = parts_metadata
+
+                    # Pokaż FINALNY plan pakowania (RAZ, z harmonogramem premier!)
+                    self.highlight_packer.print_packing_summary(packing_plan)
                 
                 # === ETAP 7: Export (dla każdej części lub pojedynczy) ===
                 print(f"\n📌 STAGE 7/7 - Export [RUN_ID: {self.run_id}]")
@@ -445,10 +516,10 @@ class PipelineProcessor:
                             print(f"\n📤 Upload części {part_meta['part_number']}/{part_meta['total_parts']}...")
                             
                             # Generuj enhanced title
-                            video_title = self.smart_splitter.generate_enhanced_title(
+                            video_title = self.highlight_packer.generate_enhanced_title(
                                 part_meta,
                                 part_meta['clips'],
-                                use_politicians=self.config.splitter.use_politicians_in_titles
+                                use_politicians=self.config.packer.use_politicians_in_titles
                             )
                             
                             # Determine privacy/premiere status
@@ -494,56 +565,72 @@ class PipelineProcessor:
                 
                 # === ETAP 10: YouTube Shorts Generation (optional) ===
                 shorts_results = []
-                if self.config.shorts.enabled and selection_result.get('shorts_clips'):
-                    self._check_cancelled()
-                    stage_start = time.time()
-                    self._report_progress("Stage 8/8", 95, "Generowanie YouTube Shorts...")
-                    
-                    from .stage_10_shorts import ShortsStage
-                    shorts_stage = ShortsStage(self.config)
+                shorts_clips_list = selection_result.get('shorts_clips', [])
 
-                    shorts_result = shorts_stage.process(
-                        input_file=input_file,
-                        shorts_clips=selection_result['shorts_clips'],
-                        segments=scoring_result['segments'],
-                        output_dir=self.config.output_dir,
-                        session_dir=self.session_dir,
-                        template=getattr(self.config.shorts, 'template', 'gaming')
-                    )
-                    
-                    shorts_results = shorts_result.get('shorts', [])
-                    self.timing_stats['shorts'] = self._format_duration(time.time() - stage_start)
-                    self._report_progress("Stage 8/8", 98, f"✅ Wygenerowano {len(shorts_results)} Shorts")
-                    
-                    # Optional: Upload Shorts to YouTube
-                    if self.config.shorts.upload_to_youtube and self.config.youtube.enabled:
-                        print("\n📤 Upload Shorts na YouTube...")
-                        from .stage_09_youtube import YouTubeStage
-                        youtube_stage = YouTubeStage(self.config)
-                        youtube_stage.authorize()
-                        
-                        for short_meta in shorts_results:
-                            try:
-                                # Upload as Short (dodaj #Shorts w tytule)
-                                short_title = short_meta['title']
-                                if self.config.shorts.add_hashtags and '#Shorts' not in short_title:
-                                    short_title += " #Shorts"
-                                
-                                upload_result = youtube_stage.upload_video(
-                                    video_file=short_meta['file'],
-                                    title=short_title,
-                                    description=short_meta['description'],
-                                    tags=short_meta['tags'],
-                                    category_id=self.config.shorts.shorts_category_id,
-                                    privacy_status='unlisted'  # lub 'public'
-                                )
-                                
-                                if upload_result.get('success'):
-                                    short_meta['youtube_url'] = upload_result['video_url']
-                                    print(f"   ✅ Short uploaded: {upload_result['video_url']}")
-                                
-                            except Exception as e:
-                                print(f"   ⚠️ Błąd uploadu Short: {e}")
+                # Validation: prevent double invocation and empty list processing
+                if self.config.shorts.enabled and shorts_clips_list:
+                    # Check if shorts already generated (prevent double run)
+                    if hasattr(self, '_shorts_generated') and self._shorts_generated:
+                        print("\n⚠️ Shorts already generated, skipping duplicate generation")
+                    else:
+                        self._check_cancelled()
+                        stage_start = time.time()
+                        self._report_progress("Stage 8/8", 95, "Generowanie YouTube Shorts...")
+
+                        print(f"\n🎬 Starting Shorts generation with {len(shorts_clips_list)} candidates...")
+
+                        from .stage_10_shorts import ShortsStage
+                        shorts_stage = ShortsStage(self.config)
+
+                        shorts_result = shorts_stage.process(
+                            input_file=input_file,
+                            shorts_clips=shorts_clips_list,
+                            segments=scoring_result['segments'],
+                            output_dir=self.config.output_dir,
+                            session_dir=self.session_dir,
+                            template=self.config.shorts.default_template  # Przekaż wybrany szablon
+                        )
+
+                        shorts_results = shorts_result.get('shorts', [])
+                        self.timing_stats['shorts'] = self._format_duration(time.time() - stage_start)
+                        self._report_progress("Stage 8/8", 98, f"✅ Wygenerowano {len(shorts_results)} Shorts")
+
+                        # Mark as generated to prevent double run
+                        self._shorts_generated = True
+
+                        # Optional: Upload Shorts to YouTube
+                        if self.config.shorts.upload_to_youtube and self.config.youtube.enabled and shorts_results:
+                            print("\n📤 Upload Shorts na YouTube...")
+                            from .stage_09_youtube import YouTubeStage
+                            youtube_stage = YouTubeStage(self.config)
+                            youtube_stage.authorize()
+
+                            for short_meta in shorts_results:
+                                try:
+                                    # Upload as Short (dodaj #Shorts w tytule)
+                                    short_title = short_meta['title']
+                                    if self.config.shorts.add_hashtags and '#Shorts' not in short_title:
+                                        short_title += " #Shorts"
+
+                                    upload_result = youtube_stage.upload_video(
+                                        video_file=short_meta['file'],
+                                        title=short_title,
+                                        description=short_meta['description'],
+                                        tags=short_meta['tags'],
+                                        category_id=self.config.shorts.shorts_category_id,
+                                        privacy_status='unlisted'  # lub 'public'
+                                    )
+
+                                    if upload_result.get('success'):
+                                        short_meta['youtube_url'] = upload_result['video_url']
+                                        print(f"   ✅ Short uploaded: {upload_result['video_url']}")
+
+                                except Exception as e:
+                                    print(f"   ⚠️ Błąd uploadu Short: {e}")
+
+                elif self.config.shorts.enabled and not shorts_clips_list:
+                    print("\n⚠️ Shorts enabled but no clips available (selection returned empty list)")
+                    print("   → Check if scored segments have sufficient scores for shorts")
                 
                 # === Finalize result ===
                 result = {
@@ -553,7 +640,7 @@ class PipelineProcessor:
                     'export_results': export_results,
                     'youtube_results': youtube_results,
                     'shorts_results': shorts_results,
-                    'split_strategy': split_strategy,
+                    'packing_plan': packing_plan,  # Renamed from 'split_plan'
                     'parts_metadata': parts_metadata,
                     'timing': self.timing_stats
                 }

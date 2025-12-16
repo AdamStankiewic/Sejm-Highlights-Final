@@ -39,21 +39,32 @@ class ASRConfig:
     language: str = "pl"
     condition_on_previous_text: bool = True
     temperature: list = None
-    
-    # Initial prompt dla lepszej accuracy nazwisk
-    initial_prompt: str = """
-    Posiedzenie Sejmu Rzeczypospolitej Polskiej.
-    Posłowie: Donald Tusk, Jarosław Kaczyński, Szymon Hołownia,
-    Krzysztof Bosak, Władysław Kosiniak-Kamysz, Przemysław Czarnek,
-    Borys Budka, Bartłomiej Sienkiewicz, Radosław Fogiel.
-    Tematy: budżet państwa, polityka zagraniczna, sprawy wewnętrzne.
-    """
-    
+
+    # Initial prompt dla lepszej accuracy nazwisk (language-aware)
+    # Will be set based on language in Config.__post_init__
+    initial_prompt: Optional[str] = None
+
     batch_size: int = 10  # Liczba segmentów przetwarzanych jednocześnie
-    
+
     def __post_init__(self):
         if self.temperature is None:
             self.temperature = [0.0, 0.2]
+
+        # Set language-aware initial prompt if not explicitly set
+        if self.initial_prompt is None:
+            if self.language == "pl":
+                self.initial_prompt = """
+                Posiedzenie Sejmu Rzeczypospolitej Polskiej.
+                Posłowie: Donald Tusk, Jarosław Kaczyński, Szymon Hołownia,
+                Krzysztof Bosak, Władysław Kosiniak-Kamysz, Przemysław Czarnek,
+                Borys Budka, Bartłomiej Sienkiewicz, Radosław Fogiel.
+                Tematy: budżet państwa, polityka zagraniczna, sprawy wewnętrzne.
+                """
+            else:  # English
+                self.initial_prompt = """
+                Live streaming session.
+                Topics: gaming, commentary, discussion, entertainment.
+                """
 
 
 @dataclass
@@ -64,18 +75,20 @@ class FeatureConfig:
     compute_spectral_centroid: bool = True
     compute_spectral_flux: bool = True
     compute_zcr: bool = True
-    
+
     # Prosodic features
     compute_speech_rate: bool = True
     compute_pitch_variance: bool = True
     compute_pause_analysis: bool = True
-    
+
     # Lexical features
-    keywords_file: str = "models/keywords.csv"
+    # Will be set to keywords_pl.csv or keywords_en.csv based on language
+    keywords_file: Optional[str] = None
     compute_entity_density: bool = True
-    
+
     # NLP model dla entity recognition
-    spacy_model: str = "pl_core_news_lg"
+    # Will be set to pl_core_news_lg or en_core_web_lg based on language
+    spacy_model: Optional[str] = None
 
 
 @dataclass
@@ -100,24 +113,46 @@ class ScoringConfig:
     # Position diversity bonus
     position_diversity_bonus: float = 0.1
 
-    # Dynamic thresholds
-    dynamic_threshold_percentile: int = 80
-    min_score_slider: float = 0.25
-    
-    def __post_init__(self):
+    # Language (will be set from Config.language)
+    _language: Optional[str] = None
+
+    def set_language_aware_labels(self, language: str):
+        """Set interest labels based on language"""
+        self._language = language
         if self.interest_labels is None:
-            self.interest_labels = {
-                "ostra polemika i wymiana oskarżeń między posłami": 2.2,
-                "emocjonalna lub podniesiona wypowiedź": 1.7,
-                "kontrowersyjne stwierdzenie lub oskarżenie": 2.0,
-                "pytanie retoryczne lub zaczepka": 1.5,
-                "konkretne fakty liczby i dane": 1.3,
-                "humor sarkazm lub memiczny moment": 1.8,
-                "przerwanie przemówienia lub reakcja sali": 1.6,
-                "formalna procedura sejmowa": -2.5,
-                "podziękowania i grzecznościowe formuły": -2.0,
-                "odczytywanie regulaminu": -3.0
-            }
+            if language == "pl":
+                self.interest_labels = {
+                    "ostra polemika i wymiana oskarżeń między posłami": 2.2,
+                    "emocjonalna lub podniesiona wypowiedź": 1.7,
+                    "kontrowersyjne stwierdzenie lub oskarżenie": 2.0,
+                    "pytanie retoryczne lub zaczepka": 1.5,
+                    "konkretne fakty liczby i dane": 1.3,
+                    "humor sarkazm lub memiczny moment": 1.8,
+                    "przerwanie przemówienia lub reakcja sali": 1.6,
+                    "formalna procedura sejmowa": -2.5,
+                    "podziękowania i grzecznościowe formuły": -2.0,
+                    "odczytywanie regulaminu": -3.0
+                }
+            else:  # English
+                self.interest_labels = {
+                    "heated debate and exchange of accusations": 2.2,
+                    "emotional or raised voice": 1.7,
+                    "controversial statement or accusation": 2.0,
+                    "rhetorical question or challenge": 1.5,
+                    "concrete facts numbers and data": 1.3,
+                    "humor sarcasm or meme moment": 1.8,
+                    "interruption or audience reaction": 1.6,
+                    "exciting gameplay moment or clutch play": 2.0,
+                    "funny fail or mistake": 1.9,
+                    "formal procedure": -2.5,
+                    "thank yous and pleasantries": -2.0,
+                    "reading rules or technical details": -3.0,
+                    "dead air or waiting": -2.8
+                }
+
+    def __post_init__(self):
+        # interest_labels will be set by Config.__post_init__
+        pass
 
 
 @dataclass
@@ -210,13 +245,23 @@ class ExportConfig:
     movflags: str = "+faststart"
 
 @dataclass
-class SmartSplitterConfig:
+class HighlightPackerConfig:
+    """
+    Konfiguracja pakowania highlightów do części z harmonogramem premier.
+
+    UWAGA: To NIE jest chunking materiału źródłowego.
+           To jest pakowanie WYBRANYCH klipów (Stage 6) do części dla YouTube.
+    """
     enabled: bool = True
     premiere_hour: int = 18
     premiere_minute: int = 0
-    min_duration_for_split: float = 3600.0
+    min_duration_for_split: float = 3600.0  # Min długość źródła aby pakować do części
     use_politicians_in_titles: bool = True
     first_premiere_days_offset: int = 1
+
+    # Manual overrides (opcjonalne parametry CLI/GUI)
+    force_num_parts: Optional[int] = None  # Wymuszenie liczby części (np. --parts 3)
+    target_part_minutes: Optional[int] = None  # Wymuszenie długości części (np. --target-part-minutes 20)
 
 
 @dataclass
@@ -265,6 +310,20 @@ class UploaderConfig:
 
 
 @dataclass
+class CacheConfig:
+    """
+    Konfiguracja cache dla kosztownych etapów (VAD, Transcribe, Scoring).
+
+    Cache key = hash(input_video) + hash(config_for_stage)
+    - Jeśli input i config się nie zmieniły → cache hit → pomiń stage
+    - Jeśli coś się zmieniło → cache miss → wykonaj stage i zapisz
+    """
+    enabled: bool = True
+    cache_dir: Path = Path("cache")
+    force_recompute: bool = False  # --force flag aby wymusić pełne przeliczenie
+
+
+@dataclass
 class Config:
     """Główna konfiguracja pipeline'u"""
     # Sub-configs
@@ -275,31 +334,22 @@ class Config:
     scoring: ScoringConfig = None
     selection: SelectionConfig = None
     export: ExportConfig = None
-    scoring_weights: ModeWeights = None
-    custom_weights: Optional[CompositeWeights] = None
-    splitter: SmartSplitterConfig = None
+    packer: HighlightPackerConfig = None  # Renamed from 'splitter'
     youtube: YouTubeConfig = None
     shorts: ShortsConfig = None
-    uploader: UploaderConfig = None
-    copyright: CopyrightConfig = None
-
-    # Mode & inputs
-    mode: str = "sejm"
-    chat_json_path: Optional[Path] = None
-    prompt_text: str = ""
-    override_weights: bool = False
-    language: str = "pl"
+    cache: CacheConfig = None  # Cache configuration
     
     # General settings
     output_dir: Path = Path("output")
     temp_dir: Path = Path("temp")
     keep_intermediate: bool = False
-    
+    language: str = "pl"  # Pipeline language: "pl" or "en"
+
     # Hardware
     use_gpu: bool = True
     gpu_device: int = 0
     num_workers: int = 4
-    
+
     # Logging
     log_level: str = "INFO"
     save_logs: bool = True
@@ -322,57 +372,35 @@ class Config:
             self.selection = SelectionConfig()
         if self.export is None:
             self.export = ExportConfig()
-        if self.splitter is None:  # ← TO POWINNO BYĆ TUTAJ
-            self.splitter = SmartSplitterConfig()  # ← TO POWINNO BYĆ TUTAJ
+        if self.packer is None:  # Renamed from 'splitter'
+            self.packer = HighlightPackerConfig()
         if self.youtube is None:
             self.youtube = YouTubeConfig()
         if self.shorts is None:
             self.shorts = ShortsConfig()
-        if self.uploader is None:
-            self.uploader = UploaderConfig()
-        if self.copyright is None:
-            self.copyright = CopyrightConfig()
-        else:
-            try:
-                # Normalize royalty free folder path
-                if isinstance(self.copyright.royalty_free_folder, str):
-                    self.copyright.royalty_free_folder = Path(self.copyright.royalty_free_folder)
-            except Exception:
-                self.copyright.royalty_free_folder = Path("assets/royalty_free")
-        if self.custom_weights is None:
-            self.custom_weights = CompositeWeights(
-                chat_burst_weight=self.scoring_weights.stream_mode.chat_burst_weight,
-                acoustic_weight=self.scoring_weights.stream_mode.acoustic_weight,
-                semantic_weight=self.scoring_weights.stream_mode.semantic_weight,
-            )
-        
+        if self.cache is None:
+            self.cache = CacheConfig()
+
+        # === Language-aware defaults ===
+        # Set ASR language from global language (if not explicitly set)
+        if self.asr.language == "pl" and self.language != "pl":
+            self.asr.language = self.language
+
+        # Set spaCy model based on language
+        if self.features.spacy_model is None:
+            self.features.spacy_model = "pl_core_news_lg" if self.language == "pl" else "en_core_web_lg"
+
+        # Set keywords file based on language
+        if self.features.keywords_file is None:
+            self.features.keywords_file = f"models/keywords_{self.language}.csv"
+
+        # Set language-aware interest labels for scoring
+        self.scoring.set_language_aware_labels(self.language)
+
         # Ensure paths are Path objects
         self.output_dir = Path(self.output_dir)
         self.temp_dir = Path(self.temp_dir)
-        if self.chat_json_path is not None:
-            self.chat_json_path = Path(self.chat_json_path)
 
-        # Synchronize language flag with ASR config
-        if self.language:
-            self.asr.language = self.language
-        else:
-            self.language = self.asr.language
-
-        # Sync dynamic scoring thresholds
-        if getattr(self.scoring, 'min_score_slider', None) is not None:
-            try:
-                slider_val = float(self.scoring.min_score_slider)
-                if slider_val > 0:
-                    self.selection.min_score_threshold = slider_val
-            except Exception:
-                pass
-
-        try:
-            pct = int(getattr(self.scoring, 'dynamic_threshold_percentile', 80))
-            self.scoring.dynamic_threshold_percentile = max(1, min(99, pct))
-        except Exception:
-            self.scoring.dynamic_threshold_percentile = 80
-        
         # Create directories
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
@@ -382,7 +410,7 @@ class Config:
         """Load config z pliku YAML"""
         with open(yaml_path, 'r', encoding='utf-8') as f:
             data = yaml.safe_load(f)
-        
+
         # Parse sub-configs
         audio = AudioConfig(**data.get('audio', {}))
         vad = VADConfig(**data.get('vad', {}))
@@ -397,14 +425,14 @@ class Config:
         selection = SelectionConfig(**data.get('selection', {}))
         export = ExportConfig(**data.get('export', {}))
         youtube = YouTubeConfig(**data.get('youtube', {}))
-        splitter = SmartSplitterConfig(**data.get('splitter', {}))
+        # Support both old 'splitter' and new 'packer' keys for backward compatibility
+        packer = HighlightPackerConfig(**data.get('packer', data.get('splitter', {})))
         shorts = ShortsConfig(**data.get('shorts', {}))
-        uploader = UploaderConfig(**data.get('uploader', {}))
-        copyright_cfg = CopyrightConfig(**data.get('copyright', {}))
-        
+        cache = CacheConfig(**data.get('cache', {}))
+
         # General settings
         general = data.get('general', {})
-        
+
         return cls(
             audio=audio,
             vad=vad,
@@ -415,10 +443,9 @@ class Config:
             selection=selection,
             export=export,
             youtube=youtube,
-            splitter=splitter,
+            packer=packer,  # Renamed from 'splitter'
             shorts=shorts,
-            uploader=uploader,
-            copyright=copyright_cfg,
+            cache=cache,  # Cache configuration
             **general
         )
     
@@ -452,6 +479,7 @@ class Config:
                 'output_dir': str(self.output_dir),
                 'temp_dir': str(self.temp_dir),
                 'keep_intermediate': self.keep_intermediate,
+                'language': self.language,  # Language parameter
                 'use_gpu': self.use_gpu,
                 'gpu_device': self.gpu_device,
                 'num_workers': self.num_workers,

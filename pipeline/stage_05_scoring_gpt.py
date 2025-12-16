@@ -34,48 +34,69 @@ logger = logging.getLogger(__name__)
 
 class ScoringStage:
     """Stage 5: AI Semantic Scoring with GPT"""
-    
+
     def __init__(self, config: Config):
         self.config = config
         self.openai_client = None
         self.chat_data: Dict[int, int] = {}
         self.chat_present: bool = False
         self._load_gpt()
-        self._load_chat_data()
 
-    def _load_chat_data(self):
-        """Załaduj dane czatu jeśli dostępne."""
+    def _get_system_prompt(self) -> str:
+        """Get language-aware system prompt"""
+        if self.config.language == "pl":
+            return "Jesteś ekspertem od analizy politycznych debat i treści viralowych."
+        else:  # English
+            return "You are an expert at analyzing live streams and viral content."
 
-        chat_path = getattr(self.config, "chat_json_path", None)
-        if chat_path and Path(chat_path).exists():
-            print(f"💬 Ładuję chat.json: {chat_path}")
-            self.chat_data = load_chat_robust(str(chat_path))
-            total_msgs = sum(self.chat_data.values())
-            if total_msgs > 50:
-                self.chat_present = True
-                logger.info(
-                    "Chat załadowany prawidłowo – %d wiadomości, włączono chat burst scoring",
-                    total_msgs,
-                )
-            elif total_msgs > 0:
-                self.chat_present = False
-                logger.warning(
-                    "Chat bardzo cichy (<50 msg) – używamy fallback wag (acoustic=0.50, semantic=0.50)"
-                )
-            else:
-                self.chat_present = False
-                logger.warning(
-                    "Nie rozpoznano formatu chat.json – używamy fallback wag (acoustic=0.50, semantic=0.50)"
-                )
-        else:
-            if chat_path:
-                print(f"⚠️ Podano chat.json, ale plik nie istnieje: {chat_path}")
-            self.chat_data = {}
-            self.chat_present = False
-            if self.config.mode.lower() == "stream":
-                logger.info(
-                    "Brak chat.json → dostosowano wagi (acoustic=0.50, semantic=0.50)"
-                )
+    def _get_scoring_prompt(self, transcripts_text: str, batch_size: int) -> str:
+        """Get language-aware scoring prompt"""
+        if self.config.language == "pl":
+            return f"""Oceń te fragmenty debaty sejmowej pod kątem INTERESANTOŚCI dla widza YouTube (0.0-1.0):
+
+{transcripts_text}
+
+Kryteria WYSOKIEGO score (0.7-1.0):
+- Ostra polemika, kłótnie, wymiana oskarżeń
+- Emocje, podniesiony głos, sarkazm, ironia
+- Kontrowersje, skandale, zaskakujące stwierdzenia
+- Momenty memiczne, śmieszne, absurdalne
+- Przerwania, reakcje sali, oklaski/buczenie
+
+Kryteria NISKIEGO score (0.0-0.3):
+- Formalne procedury, regulaminy
+- Monotonne odczytywanie list, liczb
+- Podziękowania, grzeczności
+- Nudne, techniczne szczegóły
+
+Odpowiedz TYLKO w formacie JSON:
+{{"scores": [0.8, 0.3, 0.9, ...]}}
+
+Tablica ma {batch_size} elementów - po jednym score dla każdego [N]."""
+        else:  # English
+            return f"""Rate these stream/video segments for INTERESTINGNESS for YouTube viewers (0.0-1.0):
+
+{transcripts_text}
+
+HIGH score criteria (0.7-1.0):
+- Heated arguments, debates, confrontations
+- Emotional moments, raised voice, sarcasm, irony
+- Controversial, scandalous, surprising statements
+- Meme-worthy, funny, absurd moments
+- Interruptions, audience reactions, applause/booing
+- Exciting gameplay moments, clutch plays, fails
+
+LOW score criteria (0.0-0.3):
+- Formal procedures, rules reading
+- Monotonous listing, numbers, technical details
+- Thank yous, pleasantries
+- Boring, mundane content
+- Dead air, silence, waiting
+
+Reply ONLY in JSON format:
+{{"scores": [0.8, 0.3, 0.9, ...]}}
+
+Array must have {batch_size} elements - one score for each [N]."""
     
     def _load_gpt(self):
         """Załaduj GPT API"""
@@ -247,44 +268,17 @@ class ScoringStage:
             for i, seg in enumerate(batch):
                 transcript = seg.get('transcript', '')[:400]  # Max 400 chars
                 transcripts_text += f"\n[{i}] {transcript}\n"
-            
-            user_prompt = self.config.prompt_text.strip()
-            prompt_suffix = ""
-            if user_prompt:
-                prompt_suffix = (
-                    f"\nPreferuj fragmenty pasujące do opisu: '{user_prompt}'. "
-                    "Score 0-1 jak funny/engaging względem promptu i dodaj boost, jeśli segment brzmi jak funny moment."
-                )
 
-            prompt = f"""Oceń te fragmenty debaty sejmowej pod kątem INTERESANTOŚCI dla widza YouTube (0.0-1.0):
-
-{transcripts_text}
-
-Kryteria WYSOKIEGO score (0.7-1.0):
-- Ostra polemika, kłótnie, wymiana oskarżeń
-- Emocje, podniesiony głos, sarkazm, ironia
-- Kontrowersje, skandale, zaskakujące stwierdzenia
-- Momenty memiczne, śmieszne, absurdalne
-- Przerwania, reakcje sali, oklaski/buczenie
-
-Kryteria NISKIEGO score (0.0-0.3):
-- Formalne procedury, regulaminy
-- Monotonne odczytywanie list, liczb
-- Podziękowania, grzeczności
-- Nudne, techniczne szczegóły
-{prompt_suffix}
-
-Odpowiedz TYLKO w formacie JSON:
-{{"scores": [0.8, 0.3, 0.9, ...]}}
-
-Tablica ma {len(batch)} elementów - po jednym score dla każdego [N]."""
+            # Get language-aware prompts
+            system_prompt = self._get_system_prompt()
+            user_prompt = self._get_scoring_prompt(transcripts_text, len(batch))
 
             try:
                 response = self.openai_client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[
-                        {"role": "system", "content": "Jesteś ekspertem od analizy politycznych debat i treści viralowych."},
-                        {"role": "user", "content": prompt}
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
                     ],
                     response_format={"type": "json_object"},
                     max_tokens=200,

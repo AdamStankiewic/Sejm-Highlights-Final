@@ -89,36 +89,88 @@ class ShortsStage:
         logger.info("🎬 YouTube Shorts Generator")
         logger.info(f"📱 Generating {len(shorts_clips)} Shorts...")
 
-        # Validate inputs
-        input_path = Path(input_file)
-        if not input_path.exists():
-            raise FileNotFoundError(f"Video file not found: {input_file}")
-
+        # Validation: Check if shorts_clips is empty
         if not shorts_clips:
-            logger.warning("⚠️ No shorts candidates provided")
+            print("   ⚠️ Brak kandydatów na Shorts (pusta lista)")
+            print("   → Shorts generation skipped")
             return {
                 'shorts': [],
                 'shorts_dir': '',
                 'count': 0
             }
 
-        # Determine template to use
-        effective_template = template or self.config.shorts.template
-        if effective_template is None:
-            effective_template = "universal"  # Safe fallback
+        # Validation: Check if clips have scores
+        clips_with_scores = [c for c in shorts_clips if c.get('final_score', 0) > 0]
+        if len(clips_with_scores) < len(shorts_clips):
+            missing = len(shorts_clips) - len(clips_with_scores)
+            print(f"   ⚠️ WARNING: {missing}/{len(shorts_clips)} clips have score=0.00!")
+            print(f"   → Check if scored_segments were properly passed to selection stage")
 
-        logger.info(f"   🎨 Using template: {effective_template}")
+        # Backward compatibility: None = simple (dla Sejmu)
+        if template is None:
+            template = "simple"
+            print(f"   ℹ️ Template: simple (backward compatibility)")
+        else:
+            print(f"   🎨 Template: {template}")
+
+        input_path = Path(input_file)
 
         # Create output directory
         shorts_dir = session_dir / "shorts"
         shorts_dir.mkdir(exist_ok=True)
 
-        # Initialize generator with face detector
-        generator = ShortsGenerator(
-            output_dir=shorts_dir,
-            face_regions=self.config.shorts.face_regions,
-            face_detector=self.face_detector
-        )
+        # Auto-detect template if requested
+        detected_webcam = None
+        if template == "auto":
+            print(f"   🔍 Automatyczna detekcja szablonu...")
+            detected_webcam = self._detect_webcam_region(input_path, t_sample=shorts_clips[0]['t0'] + 5.0)
+            template = self._select_template(detected_webcam)
+
+        # Generate each Short
+        generated_shorts = []
+
+        for i, clip in enumerate(shorts_clips, 1):
+            clip_score = clip.get('final_score', 0)
+            clip_id = clip.get('id', 'unknown')
+            print(f"\n   📱 Short {i}/{len(shorts_clips)} (score={clip_score:.2f}, id={clip_id})")
+
+            try:
+                short_result = self._generate_single_short(
+                    input_path,
+                    clip,
+                    segments,
+                    shorts_dir,
+                    i,
+                    template=template,
+                    webcam_detection=detected_webcam
+                )
+                generated_shorts.append(short_result)
+
+                print(f"      ✅ Zapisano: {short_result['filename']}")
+                print(f"      📝 Tytuł: {short_result['title']}")
+                print(f"      🎨 Szablon: {short_result['template']}")
+                print(f"      ⭐ Score: {short_result['score']:.2f}")
+
+            except Exception as e:
+                print(f"      ❌ Błąd: {e}")
+                import traceback
+                traceback.print_exc()
+                continue
+
+        # Save metadata
+        metadata_file = shorts_dir / "shorts_metadata.json"
+        with open(metadata_file, 'w', encoding='utf-8') as f:
+            json.dump(generated_shorts, f, indent=2, ensure_ascii=False)
+
+        print(f"\n✅ Wygenerowano {len(generated_shorts)} Shorts!")
+        print(f"📁 Lokalizacja: {shorts_dir}")
+
+        return {
+            'shorts': generated_shorts,
+            'shorts_dir': str(shorts_dir),
+            'metadata_file': str(metadata_file),
+            'count': len(generated_shorts)
+        }
 
         # Convert clips to Segment objects
         clip_segments = [
