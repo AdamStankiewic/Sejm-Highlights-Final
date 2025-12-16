@@ -338,13 +338,16 @@ class Config:
     asr: ASRConfig = None
     features: FeatureConfig = None
     scoring: ScoringConfig = None
+    scoring_weights: ModeWeights = None
     selection: SelectionConfig = None
     export: ExportConfig = None
     packer: HighlightPackerConfig = None  # Renamed from 'splitter'
     youtube: YouTubeConfig = None
     shorts: ShortsConfig = None
     cache: CacheConfig = None  # Cache configuration
-    
+    uploader: UploaderConfig = None
+    copyright: CopyrightConfig = None
+
     # General settings
     output_dir: Path = Path("output")
     temp_dir: Path = Path("temp")
@@ -359,6 +362,13 @@ class Config:
     # Logging
     log_level: str = "INFO"
     save_logs: bool = True
+
+    # GUI / runtime overrides
+    mode: str = "sejm"
+    chat_json_path: Optional[Path] = None
+    prompt_text: Optional[str] = None
+    override_weights: bool = False
+    custom_weights: Optional[CompositeWeights] = None
     
     def __post_init__(self):
         # Initialize sub-configs if None
@@ -386,6 +396,10 @@ class Config:
             self.shorts = ShortsConfig()
         if self.cache is None:
             self.cache = CacheConfig()
+        if self.uploader is None:
+            self.uploader = UploaderConfig()
+        if self.copyright is None:
+            self.copyright = CopyrightConfig()
 
         # === Language-aware defaults ===
         # Set ASR language from global language (if not explicitly set)
@@ -406,6 +420,8 @@ class Config:
         # Ensure paths are Path objects
         self.output_dir = Path(self.output_dir)
         self.temp_dir = Path(self.temp_dir)
+        if isinstance(self.chat_json_path, str):
+            self.chat_json_path = Path(self.chat_json_path) if self.chat_json_path else None
 
         # Create directories
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -435,6 +451,8 @@ class Config:
         packer = HighlightPackerConfig(**data.get('packer', data.get('splitter', {})))
         shorts = ShortsConfig(**data.get('shorts', {}))
         cache = CacheConfig(**data.get('cache', {}))
+        uploader_cfg = UploaderConfig(**data.get('uploader', {}))
+        copyright_cfg = CopyrightConfig(**data.get('copyright', {}))
 
         # General settings
         general = data.get('general', {})
@@ -452,6 +470,8 @@ class Config:
             packer=packer,  # Renamed from 'splitter'
             shorts=shorts,
             cache=cache,  # Cache configuration
+            uploader=uploader_cfg,
+            copyright=copyright_cfg,
             **general
         )
     
