@@ -13,6 +13,7 @@ from typing import Callable, Optional, Dict, Any
 from datetime import datetime, timedelta
 
 from .config import Config
+from .cache_manager import CacheManager
 from .highlight_packer import HighlightPacker
 from .stage_01_ingest import IngestStage
 from .stage_02_vad import VADStage
@@ -75,6 +76,13 @@ class PipelineProcessor:
                 premiere_hour=config.packer.premiere_hour,
                 premiere_minute=config.packer.premiere_minute
             )
+
+        # Cache Manager (cache dla kosztownych stages: VAD, Transcribe, Scoring)
+        self.cache_manager = CacheManager(
+            cache_dir=config.cache.cache_dir,
+            enabled=config.cache.enabled,
+            force_recompute=config.cache.force_recompute
+        )
 
         self.session_dir: Optional[Path] = None
 
@@ -265,6 +273,9 @@ class PipelineProcessor:
                 self.timing_stats['ingest'] = self._format_duration(time.time() - stage_start)
                 self._report_progress("Stage 1/7", 14, f"✅ Audio extraction zakończony [RUN_ID: {self.run_id}]")
 
+                # === CACHE: Inicjalizacja cache key ===
+                self.cache_manager.initialize_cache_key(input_file, self.config)
+
                 # === HIGHLIGHT PACKER: Wstępna analiza strategii pakowania ===
                 # (Faktyczne pakowanie nastąpi PO Stage 6 - Selection)
                 packing_plan = None
@@ -298,30 +309,54 @@ class PipelineProcessor:
                 self._check_cancelled()
                 stage_start = time.time()
                 print(f"\n📌 STAGE 2/7 - VAD [RUN_ID: {self.run_id}]")
-                self._report_progress("Stage 2/7", 20, f"Voice Activity Detection... [RUN_ID: {self.run_id}]")
 
-                vad_result = self.stages['vad'].process(
-                    audio_file=self._get_audio_file_from_ingest(ingest_result),
-                    output_dir=self.session_dir
-                )
+                # Check cache
+                if self.cache_manager.is_cache_valid('vad'):
+                    print("✅ Cache hit: VAD - ładowanie z cache...")
+                    vad_result = self.cache_manager.load_from_cache('vad')
+                    self.timing_stats['vad'] = "0s (cache)"
+                    self._report_progress("Stage 2/7", 28, f"✅ VAD załadowany z cache [RUN_ID: {self.run_id}]")
+                else:
+                    print("⚠️ Cache miss: VAD - wykonywanie stage...")
+                    self._report_progress("Stage 2/7", 20, f"Voice Activity Detection... [RUN_ID: {self.run_id}]")
 
-                self.timing_stats['vad'] = self._format_duration(time.time() - stage_start)
-                self._report_progress("Stage 2/7", 28, f"✅ VAD zakończony [RUN_ID: {self.run_id}]")
+                    vad_result = self.stages['vad'].process(
+                        audio_file=self._get_audio_file_from_ingest(ingest_result),
+                        output_dir=self.session_dir
+                    )
+
+                    # Save to cache
+                    self.cache_manager.save_to_cache(vad_result, 'vad')
+
+                    self.timing_stats['vad'] = self._format_duration(time.time() - stage_start)
+                    self._report_progress("Stage 2/7", 28, f"✅ VAD zakończony [RUN_ID: {self.run_id}]")
                 
                 # === ETAP 3: ASR/Transcribe (Whisper) ===
                 self._check_cancelled()
                 stage_start = time.time()
                 print(f"\n📌 STAGE 3/7 - Transcribe [RUN_ID: {self.run_id}]")
-                self._report_progress("Stage 3/7", 30, f"Transkrypcja audio (Whisper)... [RUN_ID: {self.run_id}]")
 
-                transcribe_result = self.stages['transcribe'].process(
-                    audio_file=self._get_audio_file_from_ingest(ingest_result),
-                    vad_segments=vad_result['segments'],
-                    output_dir=self.session_dir
-                )
+                # Check cache
+                if self.cache_manager.is_cache_valid('transcribe'):
+                    print("✅ Cache hit: Transcribe - ładowanie z cache...")
+                    transcribe_result = self.cache_manager.load_from_cache('transcribe')
+                    self.timing_stats['transcribe'] = "0s (cache)"
+                    self._report_progress("Stage 3/7", 50, f"✅ Transkrypcja załadowana z cache [RUN_ID: {self.run_id}]")
+                else:
+                    print("⚠️ Cache miss: Transcribe - wykonywanie stage...")
+                    self._report_progress("Stage 3/7", 30, f"Transkrypcja audio (Whisper)... [RUN_ID: {self.run_id}]")
 
-                self.timing_stats['transcribe'] = self._format_duration(time.time() - stage_start)
-                self._report_progress("Stage 3/7", 50, f"✅ Transkrypcja zakończona [RUN_ID: {self.run_id}]")
+                    transcribe_result = self.stages['transcribe'].process(
+                        audio_file=self._get_audio_file_from_ingest(ingest_result),
+                        vad_segments=vad_result['segments'],
+                        output_dir=self.session_dir
+                    )
+
+                    # Save to cache
+                    self.cache_manager.save_to_cache(transcribe_result, 'transcribe')
+
+                    self.timing_stats['transcribe'] = self._format_duration(time.time() - stage_start)
+                    self._report_progress("Stage 3/7", 50, f"✅ Transkrypcja zakończona [RUN_ID: {self.run_id}]")
                 
                 # === ETAP 4: Feature Extraction ===
                 self._check_cancelled()
@@ -342,15 +377,27 @@ class PipelineProcessor:
                 self._check_cancelled()
                 stage_start = time.time()
                 print(f"\n📌 STAGE 5/7 - Scoring [RUN_ID: {self.run_id}]")
-                self._report_progress("Stage 5/7", 62, f"Scoring segmentów (GPT-4)... [RUN_ID: {self.run_id}]")
 
-                scoring_result = self.stages['scoring'].process(
-                    segments=features_result['segments'],
-                    output_dir=self.session_dir
-                )
+                # Check cache
+                if self.cache_manager.is_cache_valid('scoring'):
+                    print("✅ Cache hit: Scoring - ładowanie z cache...")
+                    scoring_result = self.cache_manager.load_from_cache('scoring')
+                    self.timing_stats['scoring'] = "0s (cache)"
+                    self._report_progress("Stage 5/7", 75, f"✅ Scoring załadowany z cache [RUN_ID: {self.run_id}]")
+                else:
+                    print("⚠️ Cache miss: Scoring - wykonywanie stage...")
+                    self._report_progress("Stage 5/7", 62, f"Scoring segmentów (GPT-4)... [RUN_ID: {self.run_id}]")
 
-                self.timing_stats['scoring'] = self._format_duration(time.time() - stage_start)
-                self._report_progress("Stage 5/7", 75, f"✅ Scoring zakończony [RUN_ID: {self.run_id}]")
+                    scoring_result = self.stages['scoring'].process(
+                        segments=features_result['segments'],
+                        output_dir=self.session_dir
+                    )
+
+                    # Save to cache
+                    self.cache_manager.save_to_cache(scoring_result, 'scoring')
+
+                    self.timing_stats['scoring'] = self._format_duration(time.time() - stage_start)
+                    self._report_progress("Stage 5/7", 75, f"✅ Scoring zakończony [RUN_ID: {self.run_id}]")
                 
                 # === ETAP 6: Selection (wybór top klipów) ===
                 self._check_cancelled()

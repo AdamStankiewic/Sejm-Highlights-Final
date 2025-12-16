@@ -301,6 +301,20 @@ class ShortsConfig:
 
 
 @dataclass
+class CacheConfig:
+    """
+    Konfiguracja cache dla kosztownych etapów (VAD, Transcribe, Scoring).
+
+    Cache key = hash(input_video) + hash(config_for_stage)
+    - Jeśli input i config się nie zmieniły → cache hit → pomiń stage
+    - Jeśli coś się zmieniło → cache miss → wykonaj stage i zapisz
+    """
+    enabled: bool = True
+    cache_dir: Path = Path("cache")
+    force_recompute: bool = False  # --force flag aby wymusić pełne przeliczenie
+
+
+@dataclass
 class Config:
     """Główna konfiguracja pipeline'u"""
     # Sub-configs
@@ -314,6 +328,7 @@ class Config:
     packer: HighlightPackerConfig = None  # Renamed from 'splitter'
     youtube: YouTubeConfig = None
     shorts: ShortsConfig = None
+    cache: CacheConfig = None  # Cache configuration
     
     # General settings
     output_dir: Path = Path("output")
@@ -351,6 +366,8 @@ class Config:
             self.youtube = YouTubeConfig()
         if self.shorts is None:
             self.shorts = ShortsConfig()
+        if self.cache is None:
+            self.cache = CacheConfig()
         
         # Ensure paths are Path objects
         self.output_dir = Path(self.output_dir)
@@ -378,6 +395,7 @@ class Config:
         # Support both old 'splitter' and new 'packer' keys for backward compatibility
         packer = HighlightPackerConfig(**data.get('packer', data.get('splitter', {})))
         shorts = ShortsConfig(**data.get('shorts', {}))
+        cache = CacheConfig(**data.get('cache', {}))
         
         # General settings
         general = data.get('general', {})
@@ -393,6 +411,7 @@ class Config:
             youtube=youtube,
             packer=packer,  # Renamed from 'splitter'
             shorts=shorts,
+            cache=cache,  # Cache configuration
             **general
         )
     
