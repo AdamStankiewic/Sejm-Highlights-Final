@@ -931,6 +931,7 @@ class SejmHighlightsApp(QMainWindow):
         layout.addWidget(self.upload_table)
 
         self.upload_manager.add_callback(self.on_upload_update)
+        self.upload_manager.start()
         return tab
     
     def create_smart_splitter_tab(self) -> QWidget:
@@ -1708,9 +1709,11 @@ class SejmHighlightsApp(QMainWindow):
             self.upload_table.setItem(row, 3, QTableWidgetItem(job.copyright_status))
 
     def on_upload_update(self, event: str, job: UploadJob, target: UploadTarget | None = None):
+        matched_row = None
         for row in range(self.upload_table.rowCount()):
             file_item = self.upload_table.item(row, 0)
             if file_item and file_item.text() in {str(job.file_path), str(job.original_path)}:
+                matched_row = row
                 self.upload_table.setItem(row, 1, QTableWidgetItem(job.aggregate_state))
                 target_summary = ", ".join(
                     f"{t.platform}:{t.state}{f' ({t.result_id})' if t.result_id else ''}"
@@ -1718,6 +1721,17 @@ class SejmHighlightsApp(QMainWindow):
                 )
                 self.upload_table.setItem(row, 2, QTableWidgetItem(target_summary or "-"))
                 self.upload_table.setItem(row, 3, QTableWidgetItem(job.copyright_status))
+        if matched_row is None and event == "jobs_restored":
+            row = self.upload_table.rowCount()
+            self.upload_table.insertRow(row)
+            self.upload_table.setItem(row, 0, QTableWidgetItem(str(job.file_path)))
+            self.upload_table.setItem(row, 1, QTableWidgetItem(job.aggregate_state))
+            target_summary = ", ".join(
+                f"{t.platform}:{t.state}{f' ({t.result_id})' if t.result_id else ''}"
+                for t in job.targets
+            )
+            self.upload_table.setItem(row, 2, QTableWidgetItem(target_summary or "-"))
+            self.upload_table.setItem(row, 3, QTableWidgetItem(job.copyright_status))
         self.upload_progress.setValue(min(100, self.upload_progress.value() + 20))
 
     def _update_upload_table(self, file_path: str, status: str):

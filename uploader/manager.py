@@ -3,55 +3,19 @@ from __future__ import annotations
 
 import logging
 import threading
-from dataclasses import dataclass
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, List, Literal, Optional
+from typing import Callable, List, Optional
 from zoneinfo import ZoneInfo
 
-from .youtube import upload_video
 from .meta import upload_reel
+from .models import UploadJob, UploadTarget
+from .store import UploadStore
 from .tiktok import upload_tiktok
+from .youtube import upload_video
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class UploadTarget:
-    platform: str
-    account_id: str
-    scheduled_at: datetime | None = None
-    mode: Literal["LOCAL_SCHEDULE", "NATIVE_SCHEDULE"] = "LOCAL_SCHEDULE"
-    state: Literal["PENDING", "UPLOADING", "DONE", "FAILED"] = "PENDING"
-    result_id: Optional[str] = None
-    retry_count: int = 0
-    next_retry_at: Optional[datetime] = None
-    last_error: Optional[str] = None
-    fingerprint: str = ""
-
-
-@dataclass
-class UploadJob:
-    file_path: Path
-    title: str
-    description: str
-    targets: List[UploadTarget]
-    copyright_status: str = "pending"
-    original_path: Path | None = None
-    state: Literal["PENDING", "UPLOADING", "DONE", "FAILED"] = "PENDING"
-
-    @property
-    def aggregate_state(self) -> str:
-        states = {target.state for target in self.targets}
-        if not states:
-            return self.state
-        if "FAILED" in states and all(t.next_retry_at is None for t in self.targets):
-            return "FAILED"
-        if states == {"DONE"}:
-            return "DONE"
-        if "UPLOADING" in states:
-            return "UPLOADING"
-        return "PENDING"
 
 
 def parse_scheduled_at(value: str | None, tz: str = "Europe/Warsaw") -> datetime | None:
@@ -66,7 +30,13 @@ def parse_scheduled_at(value: str | None, tz: str = "Europe/Warsaw") -> datetime
 class UploadManager:
     RETRY_BACKOFF_SECONDS = [60, 300, 1800]
 
-    def __init__(self, protector=None, tick_seconds: float = 2.0, max_concurrent: int = 2):
+    def __init__(
+        self,
+        protector=None,
+        tick_seconds: float = 2.0,
+        max_concurrent: int = 2,
+        store: UploadStore | None = None,
+    ):
         self.jobs: list[UploadJob] = []
         self.worker: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -74,6 +44,7 @@ class UploadManager:
         self.protector = protector
         self.tick_seconds = tick_seconds
         self._semaphore = threading.Semaphore(max_concurrent)
+        self.store = store or UploadStore()
 
     def add_callback(self, cb: Callable[[str, UploadJob, UploadTarget | None], None]):
         self.callbacks.append(cb)
@@ -82,7 +53,33 @@ class UploadManager:
         logger.info("Enqueue upload: %s", job.file_path)
         self._validate_job(job)
         self._compute_fingerprints(job)
+        if not job.job_id:
+            job.job_id = str(uuid.uuid4())
+        if job.original_path is None:
+            job.original_path = job.file_path
+        self.store.upsert_job(job)
+        for target in job.targets:
+            self.store.upsert_target(job.job_id, target)
         self.jobs.append(job)
+        self._ensure_worker()
+
+    def start(self):
+        if self.jobs:
+            self._ensure_worker()
+            return
+        restored_jobs = self.store.load_jobs_with_targets()
+        now = datetime.now(tz=ZoneInfo("UTC"))
+        for job in restored_jobs:
+            if job.original_path is None:
+                job.original_path = job.file_path
+            self._compute_fingerprints(job)
+            for target in job.targets:
+                self._recover_target(job, target, now)
+            job.state = job.aggregate_state
+            self.jobs.append(job)
+            self._notify("jobs_restored", job)
+        if restored_jobs:
+            logger.info("Restored %s jobs from persistence", len(restored_jobs))
         self._ensure_worker()
 
     def _ensure_worker(self):
@@ -145,6 +142,7 @@ class UploadManager:
 
         target.state = "UPLOADING"
         target.next_retry_at = None
+        self.store.update_target_state(target.target_id, target.state, next_retry_at=target.next_retry_at)
         job.state = job.aggregate_state
         self._notify("target_state_changed", job, target)
         try:
@@ -153,6 +151,7 @@ class UploadManager:
             target.result_id = self._dispatch_upload(processed_job, target, schedule)
             target.state = "DONE"
             target.last_error = None
+            self.store.update_target_state(target.target_id, target.state, result_id=target.result_id, last_error=None)
         except Exception as exc:  # pragma: no cover - defensive fallback
             self._handle_target_failure(job, target, exc)
         finally:
@@ -167,6 +166,13 @@ class UploadManager:
             target.retry_count += 1
             target.next_retry_at = datetime.now(tz=ZoneInfo("UTC")) + timedelta(seconds=delay)
             target.state = "FAILED"
+            self.store.update_target_state(
+                target.target_id,
+                target.state,
+                last_error=target.last_error,
+                retry_count=target.retry_count,
+                next_retry_at=target.next_retry_at,
+            )
             self._notify("target_retry_scheduled", job, target)
             logger.warning(
                 "Retryable error for %s; scheduling retry #%s at %s", target.fingerprint, target.retry_count, target.next_retry_at
@@ -174,6 +180,7 @@ class UploadManager:
         else:
             target.next_retry_at = None
             target.state = "FAILED"
+            self.store.update_target_state(target.target_id, target.state, last_error=target.last_error, next_retry_at=None)
             logger.error("Non-retryable error for %s: %s", target.fingerprint, exc)
 
     def _apply_protections(self, job: UploadJob) -> UploadJob:
@@ -207,8 +214,12 @@ class UploadManager:
         for target in job.targets:
             sched_str = target.scheduled_at.isoformat() if target.scheduled_at else "immediate"
             target.fingerprint = f"{base}|{target.platform}|{target.account_id}|{sched_str}|{job.title}"
+            if not target.target_id:
+                target.target_id = target.fingerprint
 
     def _validate_job(self, job: UploadJob):
+        if job.created_at.tzinfo is None:
+            job.created_at = job.created_at.replace(tzinfo=ZoneInfo("Europe/Warsaw"))
         for target in job.targets:
             if target.scheduled_at and target.scheduled_at.tzinfo is None:
                 target.scheduled_at = target.scheduled_at.replace(tzinfo=ZoneInfo("Europe/Warsaw"))
@@ -252,3 +263,27 @@ class UploadManager:
                 cb(event=event, job=job, target=target)
             except Exception:
                 logger.exception("Callback error")
+
+    def _recover_target(self, job: UploadJob, target: UploadTarget, now: datetime):
+        if target.state == "UPLOADING":
+            target.state = "FAILED"
+            target.retry_count += 1
+            target.next_retry_at = now + timedelta(seconds=self.RETRY_BACKOFF_SECONDS[1] if len(self.RETRY_BACKOFF_SECONDS) > 1 else 300)
+            target.last_error = "Restarted during upload"
+            self.store.update_target_state(
+                target.target_id,
+                target.state,
+                last_error=target.last_error,
+                retry_count=target.retry_count,
+                next_retry_at=target.next_retry_at,
+            )
+        if not job.file_path.exists():
+            target.state = "FAILED"
+            target.next_retry_at = None
+            target.last_error = "File missing on restart"
+            self.store.update_target_state(
+                target.target_id,
+                target.state,
+                last_error=target.last_error,
+                next_retry_at=target.next_retry_at,
+            )
