@@ -13,7 +13,7 @@ class UploadTarget:
     account_id: str
     scheduled_at: datetime | None = None
     mode: Literal["LOCAL_SCHEDULE", "NATIVE_SCHEDULE"] = "LOCAL_SCHEDULE"
-    state: Literal["PENDING", "UPLOADING", "DONE", "FAILED"] = "PENDING"
+    state: Literal["PENDING", "UPLOADING", "DONE", "FAILED", "MANUAL_REQUIRED"] = "PENDING"
     result_id: Optional[str] = None
     retry_count: int = 0
     next_retry_at: Optional[datetime] = None
@@ -42,6 +42,8 @@ class UploadJob:
         states = {target.state for target in self.targets}
         if not states:
             return self.state
+        if "MANUAL_REQUIRED" in states:
+            return "MANUAL_REQUIRED"
         if "FAILED" in states and all(t.next_retry_at is None for t in self.targets):
             return "FAILED"
         if states == {"DONE"}:

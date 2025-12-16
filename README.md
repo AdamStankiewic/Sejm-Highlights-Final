@@ -365,5 +365,49 @@ Stary układ side_left/side_right został usunięty; nowe szablony zastępują p
    [youtube] ERROR YouTube channel mismatch: current=UC_other expected=UC_expected. Re-auth with the credential_profile bound to the expected channel.
    ```
 
+## 📱 Meta upload (Instagram/Facebook Reels)
+
+1. **Konta i tokeny**
+   - Nie zapisuj tokenów w repo. W `accounts.yml` zmapuj `account_id` na ustawienia i nazwę zmiennej środowiskowej z tokenem:
+
+     ```yaml
+     meta:
+       ig_main:
+         platform: instagram
+         ig_user_id: "1784xxxxxxxxxxxx"
+         page_id: "1234567890"
+         access_token_env: "META_TOKEN_IG_MAIN"
+       fb_page_main:
+         platform: facebook
+         page_id: "1234567890"
+         access_token_env: "META_TOKEN_FB_PAGE_MAIN"
+     ```
+
+   - Ustaw zmienne środowiskowe z ważnymi tokenami Graph API (wymagane scope do publikacji reels/stron). Brak tokena kończy target stanem `MANUAL_REQUIRED` z instrukcją.
+
+2. **Walidacja i fallback**
+   - Jeśli konto nie ma wymaganych uprawnień (np. IG Business/Creator niepowiązany z Page, brak scope), uploader ustawia `MANUAL_REQUIRED` bez retry i zapisuje wskazówki w `last_error`.
+   - Scheduler nie retry’uje `MANUAL_REQUIRED`; inne błędy 429/5xx korzystają z istniejącego backoff.
+
+3. **Flow publikacji**
+   - Instagram: utworzenie kontenera reels, polling statusu (do ~10 min), a następnie `media_publish` → `media_id` zapisany jako `result_id`.
+   - Facebook: upload na Page video endpoint → `video_id` zapisany jako `result_id`.
+
+4. **Przykładowe logi**
+
+   ```text
+   [meta] Uploading Instagram reel account_id=ig_main ig_user_id=1784...
+   [meta] Instagram reel published media_id=1784_999
+   [meta] Uploading Facebook reel account_id=fb_page_main page_id=1234567890
+   [meta] Retryable error for facebook|fb_page_main: status 429
+   ```
+
+   Manual fallback, gdy brak uprawnień:
+
+   ```text
+   [meta] Meta API error status=403 message=permissions missing instagram_content_publish (permissions required: ensure IG Business/Creator is linked to a Page and token has instagram_content_publish/Page access)
+   [meta] Manual action required for /path/video.mp4|instagram|ig_main|...: permissions missing instagram_content_publish (...)
+   ```
+
 
 
