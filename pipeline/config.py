@@ -113,6 +113,9 @@ class ScoringConfig:
     # Position diversity bonus
     position_diversity_bonus: float = 0.1
 
+    # Dynamic threshold percentile for fallback selection
+    dynamic_threshold_percentile: int = 80
+
     # Language (will be set from Config.language)
     _language: Optional[str] = None
 
