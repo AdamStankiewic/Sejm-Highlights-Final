@@ -36,7 +36,12 @@ from utils.copyright_protection import CopyrightProtector, CopyrightSettings
 if TYPE_CHECKING:  # import dla type checkera, bez twardej zależności przy runtime
     from shorts.generator import ShortsGenerator, Segment
 
-from uploader.manager import UploadManager, UploadJob
+from uploader.manager import (
+    UploadManager,
+    UploadJob,
+    UploadTarget,
+    parse_scheduled_at,
+)
 
 # OpenMP duplicate library workaround (Windows/NVIDIA toolchains sometimes conflict)
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -1670,15 +1675,27 @@ class SejmHighlightsApp(QMainWindow):
             "instagram": self.cb_instagram.isChecked(),
             "tiktok": self.cb_tiktok.isChecked(),
         }
-        schedule = self.schedule_picker.dateTime().toString(Qt.DateFormat.ISODate)
+        scheduled_at = parse_scheduled_at(self.schedule_picker.dateTime().toString(Qt.DateFormat.ISODate))
         protection_enabled = self.copyright_cb.isChecked()
         for item in selected_items:
+            targets = [
+                UploadTarget(
+                    platform=platform,
+                    account_id="default",
+                    scheduled_at=scheduled_at,
+                    mode="LOCAL_SCHEDULE",
+                )
+                for platform, enabled in platforms.items()
+                if enabled
+            ]
+            if not targets:
+                QMessageBox.warning(self, "Upload", "No platforms selected")
+                return
             job = UploadJob(
                 file_path=Path(item.text()),
                 title=self.upload_title.text() or Path(item.text()).stem,
                 description=self.upload_desc.toPlainText(),
-                platforms=platforms,
-                schedule=schedule,
+                targets=targets,
             )
             job.copyright_status = "pending" if protection_enabled else "skipped"
             job.original_path = job.file_path
@@ -1686,16 +1703,20 @@ class SejmHighlightsApp(QMainWindow):
             row = self.upload_table.rowCount()
             self.upload_table.insertRow(row)
             self.upload_table.setItem(row, 0, QTableWidgetItem(item.text()))
-            self.upload_table.setItem(row, 1, QTableWidgetItem(job.status))
+            self.upload_table.setItem(row, 1, QTableWidgetItem(job.aggregate_state))
             self.upload_table.setItem(row, 2, QTableWidgetItem("-"))
             self.upload_table.setItem(row, 3, QTableWidgetItem(job.copyright_status))
 
-    def on_upload_update(self, job: UploadJob):
+    def on_upload_update(self, event: str, job: UploadJob, target: UploadTarget | None = None):
         for row in range(self.upload_table.rowCount()):
             file_item = self.upload_table.item(row, 0)
             if file_item and file_item.text() in {str(job.file_path), str(job.original_path)}:
-                self.upload_table.setItem(row, 1, QTableWidgetItem(job.status))
-                self.upload_table.setItem(row, 2, QTableWidgetItem(str(job.result_ids)))
+                self.upload_table.setItem(row, 1, QTableWidgetItem(job.aggregate_state))
+                target_summary = ", ".join(
+                    f"{t.platform}:{t.state}{f' ({t.result_id})' if t.result_id else ''}"
+                    for t in job.targets
+                )
+                self.upload_table.setItem(row, 2, QTableWidgetItem(target_summary or "-"))
                 self.upload_table.setItem(row, 3, QTableWidgetItem(job.copyright_status))
         self.upload_progress.setValue(min(100, self.upload_progress.value() + 20))
 
