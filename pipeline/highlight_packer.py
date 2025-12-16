@@ -75,14 +75,29 @@ class HighlightPacker:
         'max': 1200   # 20 min (maximum przed spadkiem retencji)
     }
     
-    def __init__(self, premiere_hour: int = 18, premiere_minute: int = 0):
+    def __init__(self, premiere_hour: int = 18, premiere_minute: int = 0, language: str = "pl"):
         """
         Args:
             premiere_hour: Godzina premier (domyślnie 18:00)
             premiere_minute: Minuta premier (domyślnie :00)
+            language: Język interfejsu ("pl" lub "en")
         """
         self.premiere_hour = premiere_hour
         self.premiere_minute = premiere_minute
+        self.language = language
+
+    def _translate(self, key: str) -> str:
+        """Get translated text based on language"""
+        translations = {
+            "part": {"pl": "Część", "en": "Part"},
+            "premiere": {"pl": "Premiera", "en": "Premiere"},
+            "duration": {"pl": "Długość", "en": "Duration"},
+            "clips": {"pl": "Klipy", "en": "Clips"},
+            "avg_score": {"pl": "Średni score", "en": "Avg score"},
+            "keywords": {"pl": "Keywords", "en": "Keywords"},
+            "title": {"pl": "Tytuł", "en": "Title"},
+        }
+        return translations.get(key, {}).get(self.language, key)
     
     def calculate_packing_strategy(
         self,
@@ -296,9 +311,10 @@ class HighlightPacker:
             # Oblicz premiere datetime
             premiere_datetime = self._calculate_premiere_datetime(base_date, i - 1)
             
-            # Generuj tytuł z numerem
+            # Generuj tytuł z numerem (language-aware)
             if num_parts > 1:
-                part_title = f"{base_title} - Część {i}/{num_parts}"
+                part_word = self._translate("part")
+                part_title = f"{base_title} - {part_word} {i}/{num_parts}"
             else:
                 part_title = base_title
             
@@ -406,24 +422,31 @@ class HighlightPacker:
                 elif kw not in regular_keywords:
                     regular_keywords.append(kw)
         
-        # Buduj tytuł bazując na dostępnych danych
+        # Buduj tytuł bazując na dostępnych danych (language-aware, generic)
         if use_politicians and len(politician_names) >= 2:
-            # Starcie nazwisk
-            title = f"🔥 {politician_names[0]} VS {politician_names[1]} - Posiedzenie Sejmu"
+            # Two personalities/speakers - generic format
+            title = f"🔥 {politician_names[0]} VS {politician_names[1]}"
         elif use_politicians and len(politician_names) == 1:
-            # Jedno nazwisko
-            title = f"💥 {politician_names[0]} w Sejmie - Najgorętsze Momenty"
+            # One personality - generic format
+            if self.language == "pl":
+                title = f"💥 {politician_names[0]} - Najgorętsze Momenty"
+            else:
+                title = f"💥 {politician_names[0]} - Best Moments"
         elif len(regular_keywords) >= 2:
-            # Keywords bez nazwisk
-            title = f"⚡ Sejm: {regular_keywords[0].title()} vs {regular_keywords[1].title()}"
+            # Keywords/topics
+            title = f"⚡ {regular_keywords[0].title()} vs {regular_keywords[1].title()}"
         else:
-            # Fallback - ogólny
-            title = f"🎯 Posiedzenie Sejmu - Gorące Momenty"
-        
-        # Dodaj numer części jeśli > 1
+            # Fallback - generic highlights
+            if self.language == "pl":
+                title = f"🎯 Najlepsze Momenty"
+            else:
+                title = f"🎯 Best Moments"
+
+        # Dodaj numer części jeśli > 1 (language-aware)
         if total_parts > 1:
-            title += f" | CZ. {part_num}/{total_parts}"
-        
+            part_word = self._translate("part").upper()
+            title += f" | {part_word} {part_num}/{total_parts}"
+
         # Dodaj datę
         title += f" | {date_str}"
         
@@ -480,14 +503,23 @@ class HighlightPacker:
 
             for part_meta in plan.parts_metadata:
                 premiere_dt = datetime.fromisoformat(part_meta['premiere_datetime'])
-                print(f"\n  Część {part_meta['part_number']}/{part_meta['total_parts']}:")
-                print(f"  📺 Tytuł: {part_meta['title']}")
-                print(f"  🗓️  Premiera: {premiere_dt.strftime('%d.%m.%Y o %H:%M')}")
-                print(f"  ⏱️  Długość: {self.format_duration_readable(part_meta['duration'])}")
-                print(f"  🎬 Klipy: {part_meta['num_clips']}")
-                print(f"  ⭐ Średni score: {part_meta['avg_score']:.2f}")
+                part_word = self._translate("part")
+                title_word = self._translate("title")
+                premiere_word = self._translate("premiere")
+                duration_word = self._translate("duration")
+
+                clips_word = self._translate("clips")
+                avg_score_word = self._translate("avg_score")
+                keywords_word = self._translate("keywords")
+
+                print(f"\n  {part_word} {part_meta['part_number']}/{part_meta['total_parts']}:")
+                print(f"  📺 {title_word}: {part_meta['title']}")
+                print(f"  🗓️  {premiere_word}: {premiere_dt.strftime('%d.%m.%Y o %H:%M')}")
+                print(f"  ⏱️  {duration_word}: {self.format_duration_readable(part_meta['duration'])}")
+                print(f"  🎬 {clips_word}: {part_meta['num_clips']}")
+                print(f"  ⭐ {avg_score_word}: {part_meta['avg_score']:.2f}")
                 if part_meta['keywords']:
-                    print(f"  🔑 Keywords: {', '.join(part_meta['keywords'][:5])}")
+                    print(f"  🔑 {keywords_word}: {', '.join(part_meta['keywords'][:5])}")
         else:
             print(f"\n⏳ Części będą wygenerowane po Selection Stage...")
 

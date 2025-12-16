@@ -74,7 +74,8 @@ class PipelineProcessor:
         if hasattr(config, 'packer') and config.packer.enabled:
             self.highlight_packer = HighlightPacker(
                 premiere_hour=config.packer.premiere_hour,
-                premiere_minute=config.packer.premiere_minute
+                premiere_minute=config.packer.premiere_minute,
+                language=config.language
             )
 
         # Cache Manager (cache dla kosztownych stages: VAD, Transcribe, Scoring)
@@ -193,19 +194,25 @@ class PipelineProcessor:
                 elif kw not in all_keywords:
                     all_keywords.append(kw)
         
-        # Buduj tytuł
+        # Buduj tytuł (language-aware and generic)
         if len(politician_names) >= 2:
-            # Starcie nazwisk
-            title = f"🔥 {politician_names[0]} VS {politician_names[1]} - Posiedzenie Sejmu {date_str}"
+            # Two personalities/speakers - generic format
+            title = f"🔥 {politician_names[0]} VS {politician_names[1]} - {date_str}"
         elif len(politician_names) == 1:
-            # Jedno nazwisko
-            title = f"💥 {politician_names[0]} w Sejmie - Najgorętsze Momenty {date_str}"
+            # One personality - generic format
+            if self.config.language == "pl":
+                title = f"💥 {politician_names[0]} - Najgorętsze Momenty | {date_str}"
+            else:
+                title = f"💥 {politician_names[0]} - Best Moments | {date_str}"
         elif len(all_keywords) >= 2:
-            # Keywords bez nazwisk
-            title = f"⚡ Sejm: {all_keywords[0]} vs {all_keywords[1]} | {date_str}"
+            # Keywords (topics)
+            title = f"⚡ {all_keywords[0].title()} vs {all_keywords[1].title()} | {date_str}"
         else:
-            # Fallback - ogólny
-            title = f"🎯 Posiedzenie Sejmu - Gorące Momenty {date_str}"
+            # Fallback - generic highlights
+            if self.config.language == "pl":
+                title = f"🎯 Najlepsze Momenty | {date_str}"
+            else:
+                title = f"🎯 Best Moments | {date_str}"
         
         # YouTube limit
         if len(title) > 100:
@@ -429,11 +436,18 @@ class PipelineProcessor:
                         packing_plan.target_duration_per_part
                     )
 
-                    # Generuj metadata premier dla każdej części
+                    # Generuj metadata premier dla każdej części (generic, language-aware base title)
                     base_date = datetime.now() + timedelta(days=self.config.packer.first_premiere_days_offset)
+
+                    # Generic base title (language-aware, no hardcoded parliamentary content)
+                    if self.config.language == "pl":
+                        base_title = "Najlepsze Momenty"
+                    else:
+                        base_title = "Best Moments"
+
                     parts_metadata = self.highlight_packer.generate_part_metadata(
                         parts,
-                        "Gorące Momenty Sejmu",
+                        base_title,
                         base_date=base_date
                     )
 

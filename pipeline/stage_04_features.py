@@ -37,52 +37,89 @@ class FeaturesStage:
         self._load_spacy()
     
     def _load_keywords(self):
-        """Załaduj bazę słów kluczowych"""
+        """Załaduj bazę słów kluczowych (language-aware)"""
         keywords_path = Path(self.config.features.keywords_file)
-        
+
         if not keywords_path.exists():
             print(f"⚠️ Brak pliku keywords: {keywords_path}")
+            print(f"   Pipeline będzie działać bez keyword scoring")
             return
-        
-        print(f"📚 Ładowanie keywords z {keywords_path.name}")
-        
+
+        print(f"📚 Ładowanie keywords z {keywords_path.name} (language: {self.config.language})")
+
         with open(keywords_path, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
                 # Skip comments
                 if row['token'].startswith('#'):
                     continue
-                
+
                 token = row['token'].lower().strip()
                 weight = float(row['weight'])
                 category = row['category'].strip()
-                
+
                 self.keywords_db[token] = {
                     'weight': weight,
                     'category': category
                 }
-        
+
         print(f"   ✓ Załadowano {len(self.keywords_db)} keywords")
     
     def _load_spacy(self):
-        """Załaduj model spaCy dla NLP"""
+        """Załaduj model spaCy dla NLP (language-aware with fallback)"""
         if not self.config.features.compute_entity_density:
             return
-        
+
         model_name = self.config.features.spacy_model
-        
+
         try:
-            print(f"📥 Ładowanie spaCy model: {model_name}")
+            print(f"📥 Ładowanie spaCy model: {model_name} (language: {self.config.language})")
             self.nlp = spacy.load(model_name)
             print("   ✓ spaCy załadowany")
         except OSError:
             print(f"⚠️ Model spaCy '{model_name}' nie zainstalowany")
-            print(f"   Instaluję: python -m spacy download {model_name}")
-            import subprocess
-            subprocess.check_call([
-                "python", "-m", "spacy", "download", model_name
-            ])
-            self.nlp = spacy.load(model_name)
+
+            # Try fallback models (smaller models if large not available)
+            fallback_models = []
+            if self.config.language == "en":
+                fallback_models = ["en_core_web_md", "en_core_web_sm"]
+            elif self.config.language == "pl":
+                fallback_models = ["pl_core_news_md", "pl_core_news_sm"]
+
+            # Try to download and load primary model first
+            try:
+                print(f"   Instaluję: python -m spacy download {model_name}")
+                import subprocess
+                subprocess.check_call([
+                    "python", "-m", "spacy", "download", model_name
+                ])
+                self.nlp = spacy.load(model_name)
+                print("   ✓ spaCy załadowany")
+                return
+            except Exception as e:
+                print(f"   ❌ Nie udało się zainstalować {model_name}: {e}")
+
+            # Try fallback models
+            for fallback in fallback_models:
+                try:
+                    print(f"   Próba fallback: {fallback}")
+                    self.nlp = spacy.load(fallback)
+                    print(f"   ✓ Używam fallback model: {fallback}")
+                    return
+                except OSError:
+                    try:
+                        print(f"   Instaluję fallback: python -m spacy download {fallback}")
+                        subprocess.check_call([
+                            "python", "-m", "spacy", "download", fallback
+                        ])
+                        self.nlp = spacy.load(fallback)
+                        print(f"   ✓ Używam fallback model: {fallback}")
+                        return
+                    except:
+                        continue
+
+            print(f"⚠️ Nie udało się załadować żadnego modelu spaCy")
+            print(f"   Pipeline będzie działać bez entity recognition")
     
     def process(
         self, 

@@ -18,11 +18,11 @@ class ThumbnailStage:
     
     def __init__(self, config):
         self.config = config
-        
+
         # Wymiary YouTube thumbnail
         self.target_width = 1280
         self.target_height = 720
-        
+
         # Style text
         self.text_styles = {
             'impact': {
@@ -34,6 +34,14 @@ class ThumbnailStage:
                 'fallback': 'Arial.ttf'
             }
         }
+
+    def _translate(self, key: str) -> str:
+        """Get translated text based on config language"""
+        translations = {
+            "part": {"pl": "Część", "en": "Part"},
+        }
+        language = getattr(self.config, 'language', 'pl')
+        return translations.get(key, {}).get(language, key)
     
     def _extract_best_frame(
         self, 
@@ -486,8 +494,9 @@ class ThumbnailStage:
             output_dir = Path("output")
             output_dir.mkdir(exist_ok=True)
         
-        # Dodaj numer części do bottom text
-        bottom_text = f"📺 Część {part_number}/{total_parts} | {datetime.now().strftime('%d.%m.%Y')}"
+        # Dodaj numer części do bottom text (language-aware)
+        part_word = self._translate("part")
+        bottom_text = f"📺 {part_word} {part_number}/{total_parts} | {datetime.now().strftime('%d.%m.%Y')}"
         
         # Wywołaj normalny process() z custom bottom text
         result = self.process(

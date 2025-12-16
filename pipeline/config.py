@@ -37,21 +37,32 @@ class ASRConfig:
     language: str = "pl"
     condition_on_previous_text: bool = True
     temperature: list = None
-    
-    # Initial prompt dla lepszej accuracy nazwisk
-    initial_prompt: str = """
-    Posiedzenie Sejmu Rzeczypospolitej Polskiej.
-    Posłowie: Donald Tusk, Jarosław Kaczyński, Szymon Hołownia,
-    Krzysztof Bosak, Władysław Kosiniak-Kamysz, Przemysław Czarnek,
-    Borys Budka, Bartłomiej Sienkiewicz, Radosław Fogiel.
-    Tematy: budżet państwa, polityka zagraniczna, sprawy wewnętrzne.
-    """
-    
+
+    # Initial prompt dla lepszej accuracy nazwisk (language-aware)
+    # Will be set based on language in Config.__post_init__
+    initial_prompt: Optional[str] = None
+
     batch_size: int = 10  # Liczba segmentów przetwarzanych jednocześnie
-    
+
     def __post_init__(self):
         if self.temperature is None:
             self.temperature = [0.0, 0.2]
+
+        # Set language-aware initial prompt if not explicitly set
+        if self.initial_prompt is None:
+            if self.language == "pl":
+                self.initial_prompt = """
+                Posiedzenie Sejmu Rzeczypospolitej Polskiej.
+                Posłowie: Donald Tusk, Jarosław Kaczyński, Szymon Hołownia,
+                Krzysztof Bosak, Władysław Kosiniak-Kamysz, Przemysław Czarnek,
+                Borys Budka, Bartłomiej Sienkiewicz, Radosław Fogiel.
+                Tematy: budżet państwa, polityka zagraniczna, sprawy wewnętrzne.
+                """
+            else:  # English
+                self.initial_prompt = """
+                Live streaming session.
+                Topics: gaming, commentary, discussion, entertainment.
+                """
 
 
 @dataclass
@@ -62,18 +73,20 @@ class FeatureConfig:
     compute_spectral_centroid: bool = True
     compute_spectral_flux: bool = True
     compute_zcr: bool = True
-    
+
     # Prosodic features
     compute_speech_rate: bool = True
     compute_pitch_variance: bool = True
     compute_pause_analysis: bool = True
-    
+
     # Lexical features
-    keywords_file: str = "models/keywords.csv"
+    # Will be set to keywords_pl.csv or keywords_en.csv based on language
+    keywords_file: Optional[str] = None
     compute_entity_density: bool = True
-    
+
     # NLP model dla entity recognition
-    spacy_model: str = "pl_core_news_lg"
+    # Will be set to pl_core_news_lg or en_core_web_lg based on language
+    spacy_model: Optional[str] = None
 
 
 @dataclass
@@ -99,21 +112,47 @@ class ScoringConfig:
     
     # Position diversity bonus
     position_diversity_bonus: float = 0.1
-    
-    def __post_init__(self):
+
+    # Language (will be set from Config.language)
+    _language: Optional[str] = None
+
+    def set_language_aware_labels(self, language: str):
+        """Set interest labels based on language"""
+        self._language = language
         if self.interest_labels is None:
-            self.interest_labels = {
-                "ostra polemika i wymiana oskarżeń między posłami": 2.2,
-                "emocjonalna lub podniesiona wypowiedź": 1.7,
-                "kontrowersyjne stwierdzenie lub oskarżenie": 2.0,
-                "pytanie retoryczne lub zaczepka": 1.5,
-                "konkretne fakty liczby i dane": 1.3,
-                "humor sarkazm lub memiczny moment": 1.8,
-                "przerwanie przemówienia lub reakcja sali": 1.6,
-                "formalna procedura sejmowa": -2.5,
-                "podziękowania i grzecznościowe formuły": -2.0,
-                "odczytywanie regulaminu": -3.0
-            }
+            if language == "pl":
+                self.interest_labels = {
+                    "ostra polemika i wymiana oskarżeń między posłami": 2.2,
+                    "emocjonalna lub podniesiona wypowiedź": 1.7,
+                    "kontrowersyjne stwierdzenie lub oskarżenie": 2.0,
+                    "pytanie retoryczne lub zaczepka": 1.5,
+                    "konkretne fakty liczby i dane": 1.3,
+                    "humor sarkazm lub memiczny moment": 1.8,
+                    "przerwanie przemówienia lub reakcja sali": 1.6,
+                    "formalna procedura sejmowa": -2.5,
+                    "podziękowania i grzecznościowe formuły": -2.0,
+                    "odczytywanie regulaminu": -3.0
+                }
+            else:  # English
+                self.interest_labels = {
+                    "heated debate and exchange of accusations": 2.2,
+                    "emotional or raised voice": 1.7,
+                    "controversial statement or accusation": 2.0,
+                    "rhetorical question or challenge": 1.5,
+                    "concrete facts numbers and data": 1.3,
+                    "humor sarcasm or meme moment": 1.8,
+                    "interruption or audience reaction": 1.6,
+                    "exciting gameplay moment or clutch play": 2.0,
+                    "funny fail or mistake": 1.9,
+                    "formal procedure": -2.5,
+                    "thank yous and pleasantries": -2.0,
+                    "reading rules or technical details": -3.0,
+                    "dead air or waiting": -2.8
+                }
+
+    def __post_init__(self):
+        # interest_labels will be set by Config.__post_init__
+        pass
 
 
 @dataclass
@@ -334,12 +373,13 @@ class Config:
     output_dir: Path = Path("output")
     temp_dir: Path = Path("temp")
     keep_intermediate: bool = False
-    
+    language: str = "pl"  # Pipeline language: "pl" or "en"
+
     # Hardware
     use_gpu: bool = True
     gpu_device: int = 0
     num_workers: int = 4
-    
+
     # Logging
     log_level: str = "INFO"
     save_logs: bool = True
@@ -368,11 +408,27 @@ class Config:
             self.shorts = ShortsConfig()
         if self.cache is None:
             self.cache = CacheConfig()
-        
+
+        # === Language-aware defaults ===
+        # Set ASR language from global language (if not explicitly set)
+        if self.asr.language == "pl" and self.language != "pl":
+            self.asr.language = self.language
+
+        # Set spaCy model based on language
+        if self.features.spacy_model is None:
+            self.features.spacy_model = "pl_core_news_lg" if self.language == "pl" else "en_core_web_lg"
+
+        # Set keywords file based on language
+        if self.features.keywords_file is None:
+            self.features.keywords_file = f"models/keywords_{self.language}.csv"
+
+        # Set language-aware interest labels for scoring
+        self.scoring.set_language_aware_labels(self.language)
+
         # Ensure paths are Path objects
         self.output_dir = Path(self.output_dir)
         self.temp_dir = Path(self.temp_dir)
-        
+
         # Create directories
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
@@ -382,7 +438,7 @@ class Config:
         """Load config z pliku YAML"""
         with open(yaml_path, 'r', encoding='utf-8') as f:
             data = yaml.safe_load(f)
-        
+
         # Parse sub-configs
         audio = AudioConfig(**data.get('audio', {}))
         vad = VADConfig(**data.get('vad', {}))
@@ -396,10 +452,10 @@ class Config:
         packer = HighlightPackerConfig(**data.get('packer', data.get('splitter', {})))
         shorts = ShortsConfig(**data.get('shorts', {}))
         cache = CacheConfig(**data.get('cache', {}))
-        
+
         # General settings
         general = data.get('general', {})
-        
+
         return cls(
             audio=audio,
             vad=vad,
@@ -441,6 +497,7 @@ class Config:
                 'output_dir': str(self.output_dir),
                 'temp_dir': str(self.temp_dir),
                 'keep_intermediate': self.keep_intermediate,
+                'language': self.language,  # Language parameter
                 'use_gpu': self.use_gpu,
                 'gpu_device': self.gpu_device,
                 'num_workers': self.num_workers,
@@ -448,7 +505,7 @@ class Config:
                 'save_logs': self.save_logs
             }
         }
-        
+
         with open(yaml_path, 'w', encoding='utf-8') as f:
             yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
     

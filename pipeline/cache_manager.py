@@ -119,6 +119,7 @@ class CacheManager:
                 'beam_size': config.asr.beam_size,
                 'compute_type': config.asr.compute_type,
                 'condition_on_previous_text': config.asr.condition_on_previous_text,
+                'global_language': config.language,  # Include global language for cache invalidation
             }
         elif stage == 'scoring':
             params = {
@@ -129,6 +130,7 @@ class CacheManager:
                 'weight_semantic': config.scoring.weight_semantic,
                 'weight_speaker_change': config.scoring.weight_speaker_change,
                 'position_diversity_bonus': config.scoring.position_diversity_bonus,
+                'global_language': config.language,  # Include global language for cache invalidation (affects prompts)
             }
         else:
             raise ValueError(f"Unknown stage for cache: {stage}")

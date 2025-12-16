@@ -29,11 +29,67 @@ load_dotenv()
 
 class ScoringStage:
     """Stage 5: AI Semantic Scoring with GPT"""
-    
+
     def __init__(self, config: Config):
         self.config = config
         self.openai_client = None
         self._load_gpt()
+
+    def _get_system_prompt(self) -> str:
+        """Get language-aware system prompt"""
+        if self.config.language == "pl":
+            return "Jesteś ekspertem od analizy politycznych debat i treści viralowych."
+        else:  # English
+            return "You are an expert at analyzing live streams and viral content."
+
+    def _get_scoring_prompt(self, transcripts_text: str, batch_size: int) -> str:
+        """Get language-aware scoring prompt"""
+        if self.config.language == "pl":
+            return f"""Oceń te fragmenty debaty sejmowej pod kątem INTERESANTOŚCI dla widza YouTube (0.0-1.0):
+
+{transcripts_text}
+
+Kryteria WYSOKIEGO score (0.7-1.0):
+- Ostra polemika, kłótnie, wymiana oskarżeń
+- Emocje, podniesiony głos, sarkazm, ironia
+- Kontrowersje, skandale, zaskakujące stwierdzenia
+- Momenty memiczne, śmieszne, absurdalne
+- Przerwania, reakcje sali, oklaski/buczenie
+
+Kryteria NISKIEGO score (0.0-0.3):
+- Formalne procedury, regulaminy
+- Monotonne odczytywanie list, liczb
+- Podziękowania, grzeczności
+- Nudne, techniczne szczegóły
+
+Odpowiedz TYLKO w formacie JSON:
+{{"scores": [0.8, 0.3, 0.9, ...]}}
+
+Tablica ma {batch_size} elementów - po jednym score dla każdego [N]."""
+        else:  # English
+            return f"""Rate these stream/video segments for INTERESTINGNESS for YouTube viewers (0.0-1.0):
+
+{transcripts_text}
+
+HIGH score criteria (0.7-1.0):
+- Heated arguments, debates, confrontations
+- Emotional moments, raised voice, sarcasm, irony
+- Controversial, scandalous, surprising statements
+- Meme-worthy, funny, absurd moments
+- Interruptions, audience reactions, applause/booing
+- Exciting gameplay moments, clutch plays, fails
+
+LOW score criteria (0.0-0.3):
+- Formal procedures, rules reading
+- Monotonous listing, numbers, technical details
+- Thank yous, pleasantries
+- Boring, mundane content
+- Dead air, silence, waiting
+
+Reply ONLY in JSON format:
+{{"scores": [0.8, 0.3, 0.9, ...]}}
+
+Array must have {batch_size} elements - one score for each [N]."""
     
     def _load_gpt(self):
         """Załaduj GPT API"""
@@ -180,35 +236,17 @@ class ScoringStage:
             for i, seg in enumerate(batch):
                 transcript = seg.get('transcript', '')[:400]  # Max 400 chars
                 transcripts_text += f"\n[{i}] {transcript}\n"
-            
-            prompt = f"""Oceń te fragmenty debaty sejmowej pod kątem INTERESANTOŚCI dla widza YouTube (0.0-1.0):
 
-{transcripts_text}
-
-Kryteria WYSOKIEGO score (0.7-1.0):
-- Ostra polemika, kłótnie, wymiana oskarżeń
-- Emocje, podniesiony głos, sarkazm, ironia
-- Kontrowersje, skandale, zaskakujące stwierdzenia
-- Momenty memiczne, śmieszne, absurdalne
-- Przerwania, reakcje sali, oklaski/buczenie
-
-Kryteria NISKIEGO score (0.0-0.3):
-- Formalne procedury, regulaminy
-- Monotonne odczytywanie list, liczb
-- Podziękowania, grzeczności
-- Nudne, techniczne szczegóły
-
-Odpowiedz TYLKO w formacie JSON:
-{{"scores": [0.8, 0.3, 0.9, ...]}}
-
-Tablica ma {len(batch)} elementów - po jednym score dla każdego [N]."""
+            # Get language-aware prompts
+            system_prompt = self._get_system_prompt()
+            user_prompt = self._get_scoring_prompt(transcripts_text, len(batch))
 
             try:
                 response = self.openai_client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[
-                        {"role": "system", "content": "Jesteś ekspertem od analizy politycznych debat i treści viralowych."},
-                        {"role": "user", "content": prompt}
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
                     ],
                     response_format={"type": "json_object"},
                     max_tokens=200,

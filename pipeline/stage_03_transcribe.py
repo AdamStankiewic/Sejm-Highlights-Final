@@ -175,7 +175,7 @@ class TranscribeStage:
                 'transcript': transcript,
                 'words': all_words,
                 'confidence': float(avg_confidence),
-                'language': info.language if hasattr(info, 'language') else self.config.asr.language,
+                'language': self.config.asr.language,  # Always use configured language (forced, not detected)
                 'num_words': len(all_words)
             }
             
