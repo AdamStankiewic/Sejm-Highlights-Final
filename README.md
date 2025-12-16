@@ -320,3 +320,37 @@ Stary układ side_left/side_right został usunięty; nowe szablony zastępują p
 - **Rollback:** w razie krytycznych problemów użyj brancha `backup-before-vertical-templates` lub revertuj merge; kluczowe zmiany są odseparowane w `stage_10_shorts.py` i `config.yml`.
 - **Komunikacja:** poinformuj zespół o zmianach, podeprzyj się README/MIGRATION; upewnij się, że MediaPipe jest doinstalowane w środowiskach buildowych.
 
+## 🎥 YouTube upload (OAuth + native schedule)
+
+1. **Sekrety i tokeny**
+   - Umieść plik OAuth w `secrets/youtube_client_secret.json` (gitignored).
+   - Pierwsze logowanie pobiera token do `secrets/youtube_token_<profile>.json` (również gitignored).
+
+2. **Konta/ustawienia kanałów**
+   - (Opcjonalnie) skonfiguruj `accounts.yml` obok repo:
+
+     ```yaml
+     youtube:
+       channel_main:
+         credential_profile: yt_main
+         default_privacy: unlisted
+         category_id: 22
+     ```
+
+   - `account_id` z `UploadTarget` mapuje się na sekcję w `accounts.yml`; dla brakującej sekcji używany jest profil `account_id` z prywatnością `unlisted`.
+
+3. **Uruchomienie uploadu testowego**
+   - Dodaj w kolejce plik MP4 (GUI lub `UploadManager.enqueue`).
+   - Dla `mode=NATIVE_SCHEDULE` uploader ustawia `publishAt` w YouTube, a lokalny scheduler odpala upload o czasie targetu.
+
+4. **Przykładowy log (due + native schedule)**
+
+   ```text
+   [scheduler] Target due -> youtube/channel_main @ 2024-05-01T12:00:00+00:00
+   [youtube] YouTube upload progress: 35%
+   [youtube] YouTube upload finished video_id=abc123
+   [youtube] Uploaded video_id=abc123 with publishAt=2024-05-02T10:00:00+00:00
+   ```
+
+
+
