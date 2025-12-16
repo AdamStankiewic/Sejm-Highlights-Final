@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 import uuid
@@ -34,7 +35,9 @@ class UploadStore:
                     created_at TEXT,
                     kind TEXT,
                     copyright_status TEXT,
-                    original_path TEXT
+                    original_path TEXT,
+                    tags TEXT,
+                    thumbnail_path TEXT
                 )
                 """
             )
@@ -62,6 +65,14 @@ class UploadStore:
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_upload_targets_state ON upload_targets(state)")
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_upload_targets_scheduled_at ON upload_targets(scheduled_at)")
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_upload_targets_next_retry_at ON upload_targets(next_retry_at)")
+            self._ensure_column("upload_jobs", "tags", "TEXT")
+            self._ensure_column("upload_jobs", "thumbnail_path", "TEXT")
+
+    def _ensure_column(self, table: str, column: str, col_type: str):
+        try:
+            self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+        except sqlite3.OperationalError:
+            return
 
     def upsert_job(self, job: UploadJob):
         job_id = job.job_id or str(uuid.uuid4())
@@ -70,8 +81,8 @@ class UploadStore:
         with self._lock, self.conn:
             self.conn.execute(
                 """
-                INSERT INTO upload_jobs (job_id, file_path, title, description, created_at, kind, copyright_status, original_path)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO upload_jobs (job_id, file_path, title, description, created_at, kind, copyright_status, original_path, tags, thumbnail_path)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(job_id) DO UPDATE SET
                     file_path=excluded.file_path,
                     title=excluded.title,
@@ -79,7 +90,9 @@ class UploadStore:
                     created_at=excluded.created_at,
                     kind=excluded.kind,
                     copyright_status=excluded.copyright_status,
-                    original_path=excluded.original_path
+                    original_path=excluded.original_path,
+                    tags=excluded.tags,
+                    thumbnail_path=excluded.thumbnail_path
                 """,
                 (
                     job_id,
@@ -90,6 +103,8 @@ class UploadStore:
                     job.kind,
                     job.copyright_status,
                     job.original_path.as_posix() if job.original_path else None,
+                    json.dumps(job.tags or []),
+                    job.thumbnail_path.as_posix() if job.thumbnail_path else None,
                 ),
             )
         return job_id
@@ -168,7 +183,7 @@ class UploadStore:
         jobs: dict[str, UploadJob] = {}
         with self._lock, self.conn:
             job_rows = self.conn.execute(
-                "SELECT job_id, file_path, title, description, created_at, kind, copyright_status, original_path FROM upload_jobs"
+                "SELECT job_id, file_path, title, description, created_at, kind, copyright_status, original_path, tags, thumbnail_path FROM upload_jobs"
             ).fetchall()
             for row in job_rows:
                 job = UploadJob(
@@ -181,6 +196,12 @@ class UploadStore:
                     kind=row["kind"],
                     copyright_status=row["copyright_status"] or "pending",
                     original_path=Path(row["original_path"]) if row["original_path"] else None,
+                    tags=json.loads(row["tags"]) if "tags" in row.keys() and row["tags"] else [],
+                    thumbnail_path=(
+                        Path(row["thumbnail_path"])
+                        if "thumbnail_path" in row.keys() and row["thumbnail_path"]
+                        else None
+                    ),
                 )
                 jobs[job.job_id] = job
 

@@ -16,6 +16,8 @@ def make_job(file_path: Path, targets: list[UploadTarget]) -> UploadJob:
         title="Test",
         description="Desc",
         targets=targets,
+        tags=["tag1", "tag2"],
+        thumbnail_path=file_path.with_suffix(".jpg"),
     )
 
 
@@ -40,6 +42,8 @@ def test_store_persists_and_loads_jobs(tmp_path: Path):
     loaded_job = loaded[0]
     assert loaded_job.file_path == file_path
     assert loaded_job.created_at.tzinfo is not None
+    assert loaded_job.tags == ["tag1", "tag2"]
+    assert loaded_job.thumbnail_path == file_path.with_suffix(".jpg")
     assert len(loaded_job.targets) == 1
     loaded_target = loaded_job.targets[0]
     assert loaded_target.platform == target.platform

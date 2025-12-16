@@ -34,6 +34,8 @@ class UploadJob:
     original_path: Path | None = None
     state: Literal["PENDING", "UPLOADING", "DONE", "FAILED"] = "PENDING"
     kind: str | None = None
+    tags: list[str] = field(default_factory=list)
+    thumbnail_path: Path | None = None
 
     @property
     def aggregate_state(self) -> str:

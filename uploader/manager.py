@@ -9,11 +9,13 @@ from pathlib import Path
 from typing import Callable, List, Optional
 from zoneinfo import ZoneInfo
 
+import yaml
+
 from .meta import upload_reel
 from .models import UploadJob, UploadTarget
 from .store import UploadStore
 from .tiktok import upload_tiktok
-from .youtube import upload_video
+from .youtube import upload_target as upload_youtube_target
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +38,8 @@ class UploadManager:
         tick_seconds: float = 2.0,
         max_concurrent: int = 2,
         store: UploadStore | None = None,
+        accounts_config: dict | None = None,
+        accounts_config_path: Path | str | None = None,
     ):
         self.jobs: list[UploadJob] = []
         self.worker: threading.Thread | None = None
@@ -45,6 +49,7 @@ class UploadManager:
         self.tick_seconds = tick_seconds
         self._semaphore = threading.Semaphore(max_concurrent)
         self.store = store or UploadStore()
+        self.accounts_config = accounts_config or self._load_accounts_config(accounts_config_path)
 
     def add_callback(self, cb: Callable[[str, UploadJob, UploadTarget | None], None]):
         self.callbacks.append(cb)
@@ -202,7 +207,7 @@ class UploadManager:
 
     def _dispatch_upload(self, job: UploadJob, target: UploadTarget, schedule: Optional[str]) -> str:
         if target.platform in ("youtube", "youtube_long", "youtube_shorts"):
-            return upload_video(job.file_path, job.title, job.description, schedule)
+            return upload_youtube_target(job, target, accounts_config=self.accounts_config)
         if target.platform in ("facebook", "instagram"):
             return upload_reel(job.file_path, job.title, job.description, schedule)
         if target.platform == "tiktok":
@@ -263,6 +268,17 @@ class UploadManager:
                 cb(event=event, job=job, target=target)
             except Exception:
                 logger.exception("Callback error")
+
+    def _load_accounts_config(self, path: Path | str | None) -> dict:
+        config_path = Path(path) if path else Path("accounts.yml")
+        if not config_path.exists():
+            return {}
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                return yaml.safe_load(f) or {}
+        except Exception:
+            logger.exception("Failed to load accounts config from %s", config_path)
+            return {}
 
     def _recover_target(self, job: UploadJob, target: UploadTarget, now: datetime):
         if target.state == "UPLOADING":
