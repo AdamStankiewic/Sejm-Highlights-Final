@@ -34,6 +34,7 @@ class YouTubeAccount:
     category_id: Optional[str] = None
     tags: list[str] | None = None
     client_secret_path: Path = DEFAULT_SECRETS_PATH
+    expected_channel_id: str | None = None
 
 
 class _Progress:
@@ -163,24 +164,63 @@ def upload_thumbnail(youtube, video_id: str, thumbnail_path: Path):
 
 def _resolve_account(account_id: str, accounts_config: dict | None) -> YouTubeAccount:
     youtube_accounts = (accounts_config or {}).get("youtube", {}) if accounts_config else {}
+    if account_id not in youtube_accounts:
+        raise YouTubeUploadError(
+            f"Unknown YouTube account_id={account_id}; configure it under accounts.yml -> youtube.",
+            status_code=400,
+        )
+
     account_cfg = youtube_accounts.get(account_id, {})
     credential_profile = account_cfg.get("credential_profile") or account_id or "default"
     default_privacy = account_cfg.get("default_privacy", "unlisted")
     category_id = account_cfg.get("category_id")
     tags = account_cfg.get("tags") or []
     client_secret_path = Path(account_cfg.get("client_secret_path") or DEFAULT_SECRETS_PATH)
+    expected_channel_id = account_cfg.get("expected_channel_id")
     return YouTubeAccount(
         credential_profile=credential_profile,
         default_privacy=default_privacy,
         category_id=str(category_id) if category_id is not None else None,
         tags=list(tags),
         client_secret_path=client_secret_path,
+        expected_channel_id=expected_channel_id,
     )
+
+
+def get_current_channel_id(youtube_client) -> str:
+    response = youtube_client.channels().list(part="id", mine=True).execute()
+    items = response.get("items") or []
+    if not items:
+        raise YouTubeUploadError("Could not determine current YouTube channel id", status_code=400)
+    return items[0].get("id")
+
+
+def validate_channel_binding(youtube_client, expected_channel_id: str | None):
+    if not expected_channel_id:
+        logger.warning("YouTube expected_channel_id not provided; skipping channel binding validation")
+        return
+    current_channel_id = get_current_channel_id(youtube_client)
+    if current_channel_id != expected_channel_id:
+        raise YouTubeUploadError(
+            (
+                "YouTube channel mismatch: current=%s expected=%s. "
+                "Re-auth with the credential_profile bound to the expected channel."
+            )
+            % (current_channel_id, expected_channel_id),
+            status_code=400,
+        )
 
 
 def upload_target(job, target, accounts_config: dict | None = None, youtube_client=None) -> str:
     account = _resolve_account(target.account_id, accounts_config)
     youtube = youtube_client or get_youtube_client(account.credential_profile, account.client_secret_path)
+    logger.info(
+        "Uploading to YouTube account_id=%s expected_channel_id=%s profile=%s",
+        target.account_id,
+        account.expected_channel_id,
+        account.credential_profile,
+    )
+    validate_channel_binding(youtube, account.expected_channel_id)
 
     is_short = (job.kind or "").lower() == "short" or target.platform == "youtube_shorts"
     base_tags = list(account.tags or []) + list(job.tags or [])

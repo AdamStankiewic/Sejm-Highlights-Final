@@ -22,6 +22,8 @@ def video_file(tmp_path: Path) -> Path:
 def test_native_schedule_sets_publish_at(monkeypatch: pytest.MonkeyPatch, video_file: Path):
     captured: dict = {}
 
+    monkeypatch.setattr(youtube, "validate_channel_binding", lambda *_, **__: None)
+
     def fake_upload_video(_youtube, file_path, *, title, description, tags, category_id, privacy_status, publish_at_iso):
         captured.update(
             {
@@ -68,6 +70,8 @@ def test_native_schedule_sets_publish_at(monkeypatch: pytest.MonkeyPatch, video_
 
 def test_shorts_metadata_appended(monkeypatch: pytest.MonkeyPatch, video_file: Path):
     captured: dict = {}
+
+    monkeypatch.setattr(youtube, "validate_channel_binding", lambda *_, **__: None)
 
     def fake_upload_video(_youtube, file_path, *, title, description, tags, category_id, privacy_status, publish_at_iso):
         captured.update({"description": description, "tags": tags or []})

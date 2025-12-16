@@ -11,7 +11,12 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
-from .meta import upload_reel
+from .meta import (
+    ManualRequiredUploadError,
+    NonRetryableUploadError,
+    RetryableUploadError,
+    upload_meta_target,
+)
 from .models import UploadJob, UploadTarget
 from .store import UploadStore
 from .tiktok import upload_tiktok
@@ -165,6 +170,18 @@ class UploadManager:
 
     def _handle_target_failure(self, job: UploadJob, target: UploadTarget, exc: Exception):
         target.last_error = str(exc)
+        if isinstance(exc, ManualRequiredUploadError):
+            target.state = "MANUAL_REQUIRED"
+            target.next_retry_at = None
+            self.store.update_target_state(
+                target.target_id,
+                target.state,
+                last_error=target.last_error,
+                next_retry_at=None,
+            )
+            self._notify("target_manual_required", job, target)
+            logger.error("Manual action required for %s: %s", target.fingerprint, exc)
+            return
         retryable = self._is_retryable_error(exc)
         if retryable and target.retry_count < len(self.RETRY_BACKOFF_SECONDS):
             delay = self.RETRY_BACKOFF_SECONDS[target.retry_count]
@@ -180,7 +197,10 @@ class UploadManager:
             )
             self._notify("target_retry_scheduled", job, target)
             logger.warning(
-                "Retryable error for %s; scheduling retry #%s at %s", target.fingerprint, target.retry_count, target.next_retry_at
+                "Retryable error for %s; scheduling retry #%s at %s",
+                target.fingerprint,
+                target.retry_count,
+                target.next_retry_at,
             )
         else:
             target.next_retry_at = None
@@ -209,7 +229,7 @@ class UploadManager:
         if target.platform in ("youtube", "youtube_long", "youtube_shorts"):
             return upload_youtube_target(job, target, accounts_config=self.accounts_config)
         if target.platform in ("facebook", "instagram"):
-            return upload_reel(job.file_path, job.title, job.description, schedule)
+            return upload_meta_target(job, target, accounts_config=self.accounts_config)
         if target.platform == "tiktok":
             return upload_tiktok(job.file_path, job.title, job.description, schedule)
         raise ValueError(f"Unsupported platform: {target.platform}")
@@ -230,7 +250,7 @@ class UploadManager:
                 target.scheduled_at = target.scheduled_at.replace(tzinfo=ZoneInfo("Europe/Warsaw"))
 
     def _should_skip_target(self, target: UploadTarget) -> bool:
-        if target.state == "UPLOADING":
+        if target.state in {"UPLOADING", "MANUAL_REQUIRED"}:
             return True
         if target.result_id and target.state in {"DONE", "PUBLISHED"}:
             return True
@@ -247,6 +267,12 @@ class UploadManager:
 
     @staticmethod
     def _is_retryable_error(exc: Exception) -> bool:
+        if isinstance(exc, ManualRequiredUploadError):
+            return False
+        if isinstance(exc, RetryableUploadError):
+            return True
+        if isinstance(exc, NonRetryableUploadError):
+            return False
         status = getattr(exc, "status_code", None)
         if status is not None:
             if status == 429 or 500 <= status <= 599:
