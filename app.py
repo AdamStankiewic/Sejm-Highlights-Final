@@ -10,11 +10,13 @@ Automatyczne generowanie najlepszych momentów z transmisji Sejmu
 import sys
 import os
 import json
+import yaml
 import logging
 from typing import TYPE_CHECKING, Optional, Tuple
 from video_downloader import VideoDownloader
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QProgressBar, QTextEdit, QFileDialog,
@@ -23,7 +25,7 @@ from PyQt6.QtWidgets import (
     QDialog, QRadioButton, QButtonGroup, QSlider, QTableWidget,
     QTableWidgetItem, QDateTimeEdit
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QTime
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QTime, QDateTime
 from PyQt6.QtGui import QFont, QTextCursor, QPixmap
 
 # Import pipeline modules
@@ -36,7 +38,13 @@ from utils.copyright_protection import CopyrightProtector, CopyrightSettings
 if TYPE_CHECKING:  # import dla type checkera, bez twardej zależności przy runtime
     from shorts.generator import ShortsGenerator, Segment
 
-from uploader.manager import UploadManager, UploadJob
+from uploader.manager import (
+    UploadManager,
+    UploadJob,
+    UploadTarget,
+    parse_scheduled_at,
+)
+from uploader.scheduling import distribute_targets, parse_times_list
 
 # OpenMP duplicate library workaround (Windows/NVIDIA toolchains sometimes conflict)
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -200,6 +208,10 @@ class SejmHighlightsApp(QMainWindow):
             )
         )
         self.upload_manager = UploadManager(protector=self.copyright_protector if getattr(self.config.copyright, "enabled", False) else None)
+        self.accounts_config = self.upload_manager.accounts_config or {}
+        self.scheduling_presets = self._load_scheduling_presets()
+        self.target_row_map: dict[str, int] = {}
+        self.target_lookup: dict[str, tuple[UploadJob, UploadTarget]] = {}
         self._min_clip_customized = False
         self.shorts_generator_cls, self.segment_cls, self.shorts_import_error = _load_shorts_modules()
         self.translations = {
@@ -921,11 +933,53 @@ class SejmHighlightsApp(QMainWindow):
         self.upload_progress = QProgressBar()
         layout.addWidget(self.upload_progress)
 
-        self.upload_table = QTableWidget(0, 4)
-        self.upload_table.setHorizontalHeaderLabels(["File", "Status", "Result IDs", "Copyright Status"])
-        layout.addWidget(self.upload_table)
+        self.target_table = QTableWidget(0, 8)
+        self.target_table.setHorizontalHeaderLabels(
+            [
+                "File",
+                "Platform",
+                "Account",
+                "Scheduled",
+                "Mode",
+                "Status",
+                "Result ID",
+                "Last error",
+            ]
+        )
+        self.target_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        layout.addWidget(self.target_table)
+
+        bulk_layout = QGroupBox("Bulk schedule")
+        bulk_form = QHBoxLayout()
+        self.bulk_start_dt = QDateTimeEdit()
+        self.bulk_start_dt.setCalendarPopup(True)
+        self.bulk_times_input = QLineEdit("18:00,20:00,22:00")
+        self.bulk_interval_spin = QSpinBox()
+        self.bulk_interval_spin.setMinimum(1)
+        self.bulk_interval_spin.setValue(1)
+        self.bulk_tz_input = QLineEdit("Europe/Warsaw")
+        self.bulk_apply_btn = QPushButton("Apply to selected/all")
+        self.bulk_apply_btn.clicked.connect(self.apply_bulk_schedule)
+        self.bulk_presets_combo = QComboBox()
+        self.bulk_presets_combo.addItem("-- preset --", userData=None)
+        for name in self.scheduling_presets.keys():
+            self.bulk_presets_combo.addItem(name, userData=name)
+        self.bulk_presets_combo.currentIndexChanged.connect(self.apply_preset)
+        bulk_form.addWidget(QLabel("Start"))
+        bulk_form.addWidget(self.bulk_start_dt)
+        bulk_form.addWidget(QLabel("Times"))
+        bulk_form.addWidget(self.bulk_times_input)
+        bulk_form.addWidget(QLabel("Interval days"))
+        bulk_form.addWidget(self.bulk_interval_spin)
+        bulk_form.addWidget(QLabel("Timezone"))
+        bulk_form.addWidget(self.bulk_tz_input)
+        bulk_form.addWidget(self.bulk_presets_combo)
+        bulk_form.addWidget(self.bulk_apply_btn)
+        bulk_layout.setLayout(bulk_form)
+        layout.addWidget(bulk_layout)
 
         self.upload_manager.add_callback(self.on_upload_update)
+        self.upload_manager.start()
         return tab
     
     def create_smart_splitter_tab(self) -> QWidget:
@@ -1652,7 +1706,7 @@ class SejmHighlightsApp(QMainWindow):
             fixed_path, status = protector.scan_and_fix(item.text())
             if fixed_path != item.text():
                 item.setText(fixed_path)
-            self._update_upload_table(item.text(), status=status)
+            self.log(f"Status copyright dla {fixed_path}: {status}", "INFO")
         QMessageBox.information(self, "Copyright", "Scan completed. Zaktualizowano statusy w tabeli.")
 
     def refresh_channels(self):
@@ -1670,41 +1724,185 @@ class SejmHighlightsApp(QMainWindow):
             "instagram": self.cb_instagram.isChecked(),
             "tiktok": self.cb_tiktok.isChecked(),
         }
-        schedule = self.schedule_picker.dateTime().toString(Qt.DateFormat.ISODate)
+        scheduled_at = parse_scheduled_at(self.schedule_picker.dateTime().toString(Qt.DateFormat.ISODate))
         protection_enabled = self.copyright_cb.isChecked()
         for item in selected_items:
+            targets: list[UploadTarget] = []
+            for platform, enabled in platforms.items():
+                if not enabled:
+                    continue
+                account_id = self._default_account(platform)
+                if not account_id:
+                    self.log(f"Brak skonfigurowanego konta dla {platform}. Dodaj je w accounts.yml", "ERROR")
+                    QMessageBox.warning(self, "Upload", f"Brak konta dla platformy {platform}")
+                    continue
+                mode = "NATIVE_SCHEDULE" if platform.startswith("youtube") else "LOCAL_SCHEDULE"
+                targets.append(
+                    UploadTarget(
+                        platform=platform,
+                        account_id=account_id,
+                        scheduled_at=scheduled_at,
+                        mode=mode,
+                    )
+                )
+            if not targets:
+                QMessageBox.warning(self, "Upload", "No platforms selected")
+                return
             job = UploadJob(
                 file_path=Path(item.text()),
                 title=self.upload_title.text() or Path(item.text()).stem,
                 description=self.upload_desc.toPlainText(),
-                platforms=platforms,
-                schedule=schedule,
+                targets=targets,
             )
             job.copyright_status = "pending" if protection_enabled else "skipped"
             job.original_path = job.file_path
             self.upload_manager.enqueue(job)
-            row = self.upload_table.rowCount()
-            self.upload_table.insertRow(row)
-            self.upload_table.setItem(row, 0, QTableWidgetItem(item.text()))
-            self.upload_table.setItem(row, 1, QTableWidgetItem(job.status))
-            self.upload_table.setItem(row, 2, QTableWidgetItem("-"))
-            self.upload_table.setItem(row, 3, QTableWidgetItem(job.copyright_status))
+            for target in job.targets:
+                self._add_or_update_target_row(job, target)
 
-    def on_upload_update(self, job: UploadJob):
-        for row in range(self.upload_table.rowCount()):
-            file_item = self.upload_table.item(row, 0)
-            if file_item and file_item.text() in {str(job.file_path), str(job.original_path)}:
-                self.upload_table.setItem(row, 1, QTableWidgetItem(job.status))
-                self.upload_table.setItem(row, 2, QTableWidgetItem(str(job.result_ids)))
-                self.upload_table.setItem(row, 3, QTableWidgetItem(job.copyright_status))
-        self.upload_progress.setValue(min(100, self.upload_progress.value() + 20))
+    def _account_options_for_platform(self, platform: str) -> list[str]:
+        key = "youtube" if platform.startswith("youtube") else platform
+        platform_accounts = self.accounts_config.get(key, {}) or {}
+        return list(platform_accounts.keys())
 
-    def _update_upload_table(self, file_path: str, status: str):
-        for row in range(self.upload_table.rowCount()):
-            item = self.upload_table.item(row, 0)
-            if item and item.text() == file_path:
-                self.upload_table.setItem(row, 3, QTableWidgetItem(status))
-                return
+    def _default_account(self, platform: str) -> str | None:
+        accounts = self._account_options_for_platform(platform)
+        return accounts[0] if accounts else None
+
+    def _add_or_update_target_row(self, job: UploadJob, target: UploadTarget):
+        row = self.target_row_map.get(target.target_id)
+        if row is None:
+            row = self.target_table.rowCount()
+            self.target_table.insertRow(row)
+            self.target_row_map[target.target_id] = row
+        self.target_lookup[target.target_id] = (job, target)
+
+        file_item = QTableWidgetItem(str(job.file_path))
+        file_item.setData(Qt.ItemDataRole.UserRole, target.target_id)
+        self.target_table.setItem(row, 0, file_item)
+        self.target_table.setItem(row, 1, QTableWidgetItem(target.platform))
+
+        # Account dropdown
+        account_combo = QComboBox()
+        account_combo.addItems(self._account_options_for_platform(target.platform))
+        if target.account_id:
+            idx = account_combo.findText(target.account_id)
+            if idx >= 0:
+                account_combo.setCurrentIndex(idx)
+        account_combo.currentTextChanged.connect(lambda value, j=job, t=target: self._on_account_changed(j, t, value))
+        self.target_table.setCellWidget(row, 2, account_combo)
+
+        # Scheduled picker
+        sched_picker = QDateTimeEdit()
+        sched_picker.setCalendarPopup(True)
+        dt_value = target.scheduled_at or datetime.now()
+        if dt_value.tzinfo:
+            sched_picker.setDateTime(QDateTime.fromSecsSinceEpoch(int(dt_value.timestamp())))
+        else:
+            sched_picker.setDateTime(QDateTime.fromString(dt_value.isoformat(), Qt.DateFormat.ISODate))
+        sched_picker.dateTimeChanged.connect(lambda value, j=job, t=target: self._on_schedule_changed(j, t, value))
+        self.target_table.setCellWidget(row, 3, sched_picker)
+
+        mode_combo = QComboBox()
+        mode_combo.addItems(["LOCAL_SCHEDULE", "NATIVE_SCHEDULE"])
+        idx = mode_combo.findText(target.mode)
+        if idx >= 0:
+            mode_combo.setCurrentIndex(idx)
+        mode_combo.currentTextChanged.connect(lambda value, j=job, t=target: self._on_mode_changed(j, t, value))
+        self.target_table.setCellWidget(row, 4, mode_combo)
+
+        self.target_table.setItem(row, 5, QTableWidgetItem(target.state))
+        self.target_table.setItem(row, 6, QTableWidgetItem(target.result_id or "-"))
+        self.target_table.setItem(row, 7, QTableWidgetItem(target.last_error or ""))
+
+    def _on_account_changed(self, job: UploadJob, target: UploadTarget, value: str):
+        if not value:
+            return
+        self.upload_manager.update_target_configuration(job, target, account_id=value)
+        self.log(f"Zapisano konto {value} dla {target.platform}", "INFO")
+
+    def _on_schedule_changed(self, job: UploadJob, target: UploadTarget, qdatetime: QDateTime):
+        py_dt = qdatetime.toPyDateTime()
+        if py_dt.tzinfo is None:
+            py_dt = py_dt.replace(tzinfo=ZoneInfo("Europe/Warsaw"))
+        self.upload_manager.update_target_configuration(job, target, scheduled_at=py_dt)
+        self.log(f"Zmieniono termin na {py_dt.isoformat()} dla {target.platform}", "INFO")
+
+    def _on_mode_changed(self, job: UploadJob, target: UploadTarget, value: str):
+        self.upload_manager.update_target_configuration(job, target, mode=value)
+
+    def _get_target_by_row(self, row: int):
+        item = self.target_table.item(row, 0)
+        if not item:
+            return None
+        target_id = item.data(Qt.ItemDataRole.UserRole)
+        return self.target_lookup.get(target_id)
+
+    def apply_bulk_schedule(self):
+        rows = {index.row() for index in self.target_table.selectedIndexes()}
+        if not rows:
+            rows = set(range(self.target_table.rowCount()))
+        selected = [self._get_target_by_row(row) for row in rows]
+        selected = [(j, t) for j, t in selected if j and t]
+        if not selected:
+            QMessageBox.warning(self, "Bulk schedule", "Brak wybranych targetów")
+            return
+        tz = self.bulk_tz_input.text() or "Europe/Warsaw"
+        start_dt = parse_scheduled_at(self.bulk_start_dt.dateTime().toString(Qt.DateFormat.ISODate), tz)
+        times = parse_times_list(self.bulk_times_input.text().split(","))
+        interval_days = self.bulk_interval_spin.value()
+        schedule = distribute_targets([t for _, t in selected], start_dt, times_of_day=times, interval_days=interval_days, tz=tz)
+        for (job, target), sched in zip(selected, schedule):
+            self.upload_manager.update_target_configuration(job, target, scheduled_at=sched)
+            self._add_or_update_target_row(job, target)
+            if sched < datetime.now(tz=sched.tzinfo):
+                self.log(f"{target.platform} ustawiony w przeszłości → due now", "WARNING")
+        self.log(f"Bulk schedule applied to {len(selected)} targets", "INFO")
+
+    def apply_preset(self):
+        preset_key = self.bulk_presets_combo.currentData()
+        if not preset_key:
+            return
+        preset = self.scheduling_presets.get(preset_key, {})
+        times = preset.get("times")
+        if times:
+            self.bulk_times_input.setText(",".join(times))
+        tz = preset.get("timezone") or "Europe/Warsaw"
+        self.bulk_tz_input.setText(tz)
+        offset_days = preset.get("start_offset_days", 0)
+        start = datetime.now(tz=ZoneInfo(tz)) + timedelta(days=offset_days)
+        self.bulk_start_dt.setDateTime(QDateTime.fromSecsSinceEpoch(int(start.timestamp())))
+
+    def _load_scheduling_presets(self):
+        config_path = Path("config.yml")
+        if not config_path.exists():
+            return {}
+        try:
+            with open(config_path, "r", encoding="utf-8") as fh:
+                data = yaml.safe_load(fh) or {}
+            return data.get("scheduling_presets", {}) or {}
+        except Exception:
+            self.logger.exception("Failed to load scheduling presets from config.yml")
+            return {}
+
+    def on_upload_update(self, event: str, job: UploadJob, target: UploadTarget | None = None):
+        if event == "jobs_restored":
+            self.log(
+                f"Restored job {job.job_id} with {len(job.targets)} targets from persistence",
+                "INFO",
+            )
+            for t in job.targets:
+                self._add_or_update_target_row(job, t)
+            return
+        if target:
+            self._add_or_update_target_row(job, target)
+        if event == "target_retry_scheduled" and target:
+            self.log(
+                f"Retry scheduled for {target.platform}/{target.account_id} at {target.next_retry_at}",
+                "WARNING",
+            )
+        if event == "target_manual_required" and target:
+            self.log(f"Manual publish required: {target.last_error}", "ERROR")
     
     def update_config_from_gui(self):
         """Aktualizuj obiekt Config wartościami z GUI"""
