@@ -52,6 +52,7 @@ class UploadStore:
                     mode TEXT,
                     state TEXT,
                     result_id TEXT,
+                    result_url TEXT,
                     fingerprint TEXT UNIQUE,
                     retry_count INTEGER,
                     next_retry_at TEXT,
@@ -67,6 +68,7 @@ class UploadStore:
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_upload_targets_next_retry_at ON upload_targets(next_retry_at)")
             self._ensure_column("upload_jobs", "tags", "TEXT")
             self._ensure_column("upload_jobs", "thumbnail_path", "TEXT")
+            self._ensure_column("upload_targets", "result_url", "TEXT")
 
     def _ensure_column(self, table: str, column: str, col_type: str):
         try:
@@ -116,9 +118,9 @@ class UploadStore:
             self.conn.execute(
                 """
                 INSERT INTO upload_targets (
-                    target_id, job_id, platform, account_id, scheduled_at, mode, state, result_id, fingerprint,
+                    target_id, job_id, platform, account_id, scheduled_at, mode, state, result_id, result_url, fingerprint,
                     retry_count, next_retry_at, last_error, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(target_id) DO UPDATE SET
                     platform=excluded.platform,
                     account_id=excluded.account_id,
@@ -126,6 +128,7 @@ class UploadStore:
                     mode=excluded.mode,
                     state=excluded.state,
                     result_id=excluded.result_id,
+                    result_url=excluded.result_url,
                     fingerprint=excluded.fingerprint,
                     retry_count=excluded.retry_count,
                     next_retry_at=excluded.next_retry_at,
@@ -141,6 +144,7 @@ class UploadStore:
                     target.mode,
                     target.state,
                     target.result_id,
+                    target.result_url,
                     target.fingerprint,
                     target.retry_count,
                     self._serialize_dt(target.next_retry_at),
@@ -186,6 +190,7 @@ class UploadStore:
         state: str,
         *,
         result_id: Optional[str] = None,
+        result_url: Optional[str] = None,
         last_error: Optional[str] = None,
         retry_count: Optional[int] = None,
         next_retry_at: Optional[datetime] = None,
@@ -194,13 +199,14 @@ class UploadStore:
             self.conn.execute(
                 """
                 UPDATE upload_targets
-                SET state=?, result_id=COALESCE(?, result_id), last_error=?, retry_count=COALESCE(?, retry_count),
+                SET state=?, result_id=COALESCE(?, result_id), result_url=COALESCE(?, result_url), last_error=?, retry_count=COALESCE(?, retry_count),
                     next_retry_at=?, updated_at=?
                 WHERE target_id=?
                 """,
                 (
                     state,
                     result_id,
+                    result_url,
                     last_error,
                     retry_count,
                     self._serialize_dt(next_retry_at),
@@ -238,7 +244,7 @@ class UploadStore:
             target_rows = self.conn.execute(
                 """
                 SELECT target_id, job_id, platform, account_id, scheduled_at, mode, state, result_id, fingerprint,
-                       retry_count, next_retry_at, last_error
+                       result_url, retry_count, next_retry_at, last_error
                 FROM upload_targets
                 """
             ).fetchall()
@@ -250,6 +256,7 @@ class UploadStore:
                     mode=row["mode"],
                     state=row["state"],
                     result_id=row["result_id"],
+                    result_url=row["result_url"],
                     retry_count=row["retry_count"] or 0,
                     next_retry_at=self._parse_dt(row["next_retry_at"]),
                     last_error=row["last_error"],

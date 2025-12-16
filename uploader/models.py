@@ -15,6 +15,7 @@ class UploadTarget:
     mode: Literal["LOCAL_SCHEDULE", "NATIVE_SCHEDULE"] = "LOCAL_SCHEDULE"
     state: Literal["PENDING", "UPLOADING", "DONE", "FAILED", "MANUAL_REQUIRED"] = "PENDING"
     result_id: Optional[str] = None
+    result_url: Optional[str] = None
     retry_count: int = 0
     next_retry_at: Optional[datetime] = None
     last_error: Optional[str] = None

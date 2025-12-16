@@ -11,6 +11,8 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
+from .links import build_public_url
+
 from .meta import (
     ManualRequiredUploadError,
     NonRetryableUploadError,
@@ -189,9 +191,16 @@ class UploadManager:
             processed_job = self._apply_protections(job)
             schedule = self._resolve_schedule(target)
             target.result_id = self._dispatch_upload(processed_job, target, schedule)
+            target.result_url = target.result_url or self._target_public_url(target)
             target.state = "DONE"
             target.last_error = None
-            self.store.update_target_state(target.target_id, target.state, result_id=target.result_id, last_error=None)
+            self.store.update_target_state(
+                target.target_id,
+                target.state,
+                result_id=target.result_id,
+                result_url=target.result_url,
+                last_error=None,
+            )
         except Exception as exc:  # pragma: no cover - defensive fallback
             self._handle_target_failure(job, target, exc)
         finally:
@@ -274,6 +283,17 @@ class UploadManager:
         target.fingerprint = f"{base}|{target.platform}|{target.account_id}|{sched_str}|{job.title}"
         if not target.target_id:
             target.target_id = target.fingerprint
+
+    def _account_config_for_target(self, target: UploadTarget) -> dict | None:
+        normalized = "youtube" if target.platform.startswith("youtube") else target.platform
+        return (self.accounts_config or {}).get(normalized, {}).get(target.account_id)
+
+    def _target_public_url(self, target: UploadTarget) -> str | None:
+        if target.result_url:
+            return target.result_url
+        if not target.result_id:
+            return None
+        return build_public_url(target.platform, target.result_id, self._account_config_for_target(target))
 
     def _validate_job(self, job: UploadJob):
         if job.created_at.tzinfo is None:

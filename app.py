@@ -25,8 +25,8 @@ from PyQt6.QtWidgets import (
     QDialog, QRadioButton, QButtonGroup, QSlider, QTableWidget,
     QTableWidgetItem, QDateTimeEdit
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QTime, QDateTime
-from PyQt6.QtGui import QFont, QTextCursor, QPixmap
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QTime, QDateTime, QUrl
+from PyQt6.QtGui import QDesktopServices, QFont, QTextCursor, QPixmap
 
 # Import pipeline modules
 from pipeline.processor import PipelineProcessor
@@ -44,6 +44,7 @@ from uploader.manager import (
     UploadTarget,
     parse_scheduled_at,
 )
+from uploader.links import build_public_url
 from uploader.scheduling import distribute_targets, parse_times_list
 
 # OpenMP duplicate library workaround (Windows/NVIDIA toolchains sometimes conflict)
@@ -933,7 +934,7 @@ class SejmHighlightsApp(QMainWindow):
         self.upload_progress = QProgressBar()
         layout.addWidget(self.upload_progress)
 
-        self.target_table = QTableWidget(0, 8)
+        self.target_table = QTableWidget(0, 11)
         self.target_table.setHorizontalHeaderLabels(
             [
                 "File",
@@ -942,7 +943,10 @@ class SejmHighlightsApp(QMainWindow):
                 "Scheduled",
                 "Mode",
                 "Status",
-                "Result ID",
+                "Result",
+                "Link",
+                "Open",
+                "Copy",
                 "Last error",
             ]
         )
@@ -1769,6 +1773,40 @@ class SejmHighlightsApp(QMainWindow):
         accounts = self._account_options_for_platform(platform)
         return accounts[0] if accounts else None
 
+    def _target_url(self, target: UploadTarget) -> str | None:
+        if target.result_url:
+            return target.result_url
+        if not target.result_id:
+            return None
+        cfg = None
+        normalized = "youtube" if target.platform.startswith("youtube") else target.platform
+        if self.accounts_config:
+            cfg = (self.accounts_config.get(normalized) or {}).get(target.account_id)
+        return build_public_url(target.platform, target.result_id, cfg)
+
+    def _open_target_link(self, target: UploadTarget):
+        url = self._target_url(target)
+        if url:
+            QDesktopServices.openUrl(QUrl(url))
+        else:
+            QMessageBox.information(
+                self,
+                "Brak linku",
+                "Brak publicznego linku — platforma nie zwróciła URL. Sprawdź materiał w panelu danej platformy.",
+            )
+
+    def _copy_target_link(self, target: UploadTarget):
+        url = self._target_url(target)
+        text = url or (target.result_id or "")
+        if not text:
+            QMessageBox.information(self, "Copy", "Brak danych do skopiowania")
+            return
+        QApplication.clipboard().setText(text)
+        if url:
+            self.log(f"Skopiowano link do {target.platform}", "INFO")
+        else:
+            self.log("Skopiowano tylko result_id (brak URL)", "INFO")
+
     def _add_or_update_target_row(self, job: UploadJob, target: UploadTarget):
         row = self.target_row_map.get(target.target_id)
         if row is None:
@@ -1812,8 +1850,28 @@ class SejmHighlightsApp(QMainWindow):
         self.target_table.setCellWidget(row, 4, mode_combo)
 
         self.target_table.setItem(row, 5, QTableWidgetItem(target.state))
-        self.target_table.setItem(row, 6, QTableWidgetItem(target.result_id or "-"))
-        self.target_table.setItem(row, 7, QTableWidgetItem(target.last_error or ""))
+
+        url = self._target_url(target)
+        result_widget = QLabel()
+        if url:
+            result_widget.setText(f"<a href='{url}'>{target.result_id}</a>")
+            result_widget.setTextFormat(Qt.TextFormat.RichText)
+            result_widget.setOpenExternalLinks(True)
+        else:
+            result_widget.setText(target.result_id or "-")
+        self.target_table.setCellWidget(row, 6, result_widget)
+
+        self.target_table.setItem(row, 7, QTableWidgetItem(url or ""))
+
+        open_btn = QPushButton("Open")
+        open_btn.clicked.connect(lambda _, t=target: self._open_target_link(t))
+        self.target_table.setCellWidget(row, 8, open_btn)
+
+        copy_btn = QPushButton("Copy")
+        copy_btn.clicked.connect(lambda _, t=target: self._copy_target_link(t))
+        self.target_table.setCellWidget(row, 9, copy_btn)
+
+        self.target_table.setItem(row, 10, QTableWidgetItem(target.last_error or ""))
 
     def _on_account_changed(self, job: UploadJob, target: UploadTarget, value: str):
         if not value:

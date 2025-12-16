@@ -446,5 +446,11 @@ Stary układ side_left/side_right został usunięty; nowe szablony zastępują p
 * Panel **Bulk schedule** pozwala rozdać terminy wielu targetom na raz (start datetime, lista godzin, odstęp dni, strefa czasowa) oraz wczytać preset z `config.yml` → sekcja `scheduling_presets`.
 * Po restarcie aplikacja wysyła callback `jobs_restored`, a UI od razu renderuje przywrócone joby/targety z harmonogramem zapisanym w `data/uploader.db`.
 
+## 🔗 Linki do opublikowanych materiałów
+
+* Tabela targetów pokazuje kolumnę z linkiem (jeśli dostępny) oraz przyciski **Open**/**Copy**.
+* YouTube i Facebook generują publiczne URL na podstawie `result_id`; Instagram/TikTok wymagają permalinka zwróconego przez API — jeśli go brak, Open pokaże instrukcję, a Copy skopiuje `result_id`.
+* Linki są odtwarzane po restarcie dzięki zapisanemu `result_url` w SQLite (jeśli był dostępny) lub wyliczeniu z `result_id`.
+
 
 

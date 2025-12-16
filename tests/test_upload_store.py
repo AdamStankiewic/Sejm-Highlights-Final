@@ -31,6 +31,8 @@ def test_store_persists_and_loads_jobs(tmp_path: Path):
         platform="youtube",
         account_id="default",
         scheduled_at=datetime.now(tz=ZoneInfo("UTC")),
+        result_id="vid1",
+        result_url="https://example.com/watch?v=vid1",
     )
     job = make_job(file_path, [target])
 
@@ -48,6 +50,8 @@ def test_store_persists_and_loads_jobs(tmp_path: Path):
     loaded_target = loaded_job.targets[0]
     assert loaded_target.platform == target.platform
     assert loaded_target.scheduled_at.tzinfo is not None
+    assert loaded_target.result_id == "vid1"
+    assert loaded_target.result_url == "https://example.com/watch?v=vid1"
 
 
 def test_update_target_state_is_persisted(tmp_path: Path):
@@ -65,12 +69,19 @@ def test_update_target_state_is_persisted(tmp_path: Path):
     store.upsert_job(job)
     store.upsert_target(job.job_id, target)
 
-    store.update_target_state(target.target_id, "FAILED", last_error="boom", retry_count=1)
+    store.update_target_state(
+        target.target_id,
+        "FAILED",
+        last_error="boom",
+        retry_count=1,
+        result_url="https://example.com/boom",
+    )
 
     loaded_target = store.load_jobs_with_targets()[0].targets[0]
     assert loaded_target.state == "FAILED"
     assert loaded_target.last_error == "boom"
     assert loaded_target.retry_count == 1
+    assert loaded_target.result_url == "https://example.com/boom"
 
 
 def test_restart_sets_uploading_to_failed_and_schedules_retry(tmp_path: Path):
