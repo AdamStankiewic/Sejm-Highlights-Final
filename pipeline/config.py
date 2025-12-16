@@ -109,9 +109,15 @@ class ScoringConfig:
     # Score weights (final composite)
     weight_acoustic: float = 0.25
     weight_semantic: float = 0.50
-    
+
     # Position diversity bonus
     position_diversity_bonus: float = 0.1
+
+    # Dynamic threshold percentile for fallback selection
+    dynamic_threshold_percentile: int = 80
+
+    # UI slider default for minimum score threshold
+    min_score_slider: float = 0.25
 
     # Language (will be set from Config.language)
     _language: Optional[str] = None
