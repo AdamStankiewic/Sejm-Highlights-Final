@@ -26,5 +26,6 @@ class TemplateBase(abc.ABC):
         subtitles: Iterable[Tuple[str, float, float]] | None = None,
         subtitle_lang: str = "pl",
         copyright_processor: Optional[object] = None,
+        idx: int | None = None,
     ) -> Path:
         raise NotImplementedError
