@@ -22,7 +22,7 @@ except ImportError:
 
 from shorts.face_detection import FaceDetector, FaceRegion
 from utils.video import (
-    add_subtitles,
+    add_subtitles as add_subtitles_fn,
     apply_speedup,
     center_crop_9_16,
     ensure_fps,
@@ -206,7 +206,7 @@ class GamingTemplate(TemplateBase):
                     logger.exception("[GamingTemplate] Speedup failed — using original speed")
 
             if add_subtitles and subtitles_data:
-                gameplay_clip = add_subtitles(gameplay_clip, subtitles_data)
+                gameplay_clip = add_subtitles_fn(gameplay_clip, subtitles_data)
                 logger.debug("Clip FPS after subtitles: %s", gameplay_clip.fps)
 
             if copyright_processor:
