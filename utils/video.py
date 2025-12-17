@@ -5,6 +5,8 @@ Funkcje współdzielone przez szablony shortsów i generator.
 from __future__ import annotations
 
 import logging
+import os
+import shutil
 from pathlib import Path
 from typing import Iterable, Tuple
 
@@ -175,6 +177,12 @@ def add_subtitles(
     color: str = "yellow",
 ) -> VideoFileClip:
     """Overlay simple hard subtitles. subtitles = [(text, start, end), ...]"""
+    # MoviePy's TextClip relies on ImageMagick; on Windows the binary is often missing.
+    # Detect early and skip subtitle rendering to avoid per-line stack traces.
+    if not _imagemagick_available():
+        logger.warning("ImageMagick not found – skipping hard subtitles for this clip")
+        return clip
+
     text_clips = []
     for text, start, end in subtitles:
         try:
@@ -190,6 +198,13 @@ def add_subtitles(
             )
             txt = txt.set_position(("center", "bottom")).set_start(start).set_end(end)
             text_clips.append(txt)
+        except FileNotFoundError as exc:  # pragma: no cover
+            logger.error(
+                "ImageMagick missing while rendering subtitles – disabling subtitles for this clip: %s",
+                exc,
+            )
+            text_clips = []
+            break
         except Exception as exc:  # pragma: no cover
             logger.exception("Failed to render subtitle '%s': %s", text, exc)
     if not text_clips:
@@ -202,6 +217,19 @@ def add_subtitles(
     ).set_duration(clip.duration)
     logger.debug("Clip FPS after subtitles composite: %s", composed.fps)
     return composed
+
+
+def _imagemagick_available() -> bool:
+    """Best-effort check for ImageMagick binary presence."""
+    binary = os.environ.get("IMAGEMAGICK_BINARY")
+    if binary:
+        return Path(binary).expanduser().exists()
+
+    # Common names across platforms
+    for candidate in ("magick", "convert"):  # pragma: no cover - simple availability check
+        if shutil.which(candidate):
+            return True
+    return False
 
 
 def ensure_output_path(path: Path) -> Path:
