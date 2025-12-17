@@ -483,7 +483,8 @@ class PipelineProcessor:
                             part_thumbnail = self._generate_thumbnail_with_part_number(
                                 part_export['output_file'],
                                 part_meta['part_number'],
-                                part_meta['total_parts']
+                                part_meta['total_parts'],
+                                clips=part_meta.get('clips', [])  # Pass clips from this part
                             )
                             thumbnail_results.append(part_thumbnail)
                 else:
@@ -765,23 +766,33 @@ class PipelineProcessor:
         return f"{hours:02d}:{minutes:02d}:{secs:02d}"
     
     def _generate_thumbnail_with_part_number(
-        self, 
-        video_file: str, 
-        part_num: int, 
-        total_parts: int
+        self,
+        video_file: str,
+        part_num: int,
+        total_parts: int,
+        clips: list = None
     ) -> Dict:
-        """Generuj thumbnail z numerem części"""
+        """
+        Generuj thumbnail z numerem części
+
+        Args:
+            video_file: Ścieżka do video
+            part_num: Numer części
+            total_parts: Całkowita liczba części
+            clips: Lista klipów dla tej części (używamy najlepszego dla thumbnail)
+        """
         from .stage_08_thumbnail import ThumbnailStage
-        
+
         if not hasattr(self, 'thumbnail_stage'):
             self.thumbnail_stage = ThumbnailStage(self.config)
-        
+
         thumbnail_result = self.thumbnail_stage.generate_with_part_number(
             video_file=video_file,
             part_number=part_num,
-            total_parts=total_parts
+            total_parts=total_parts,
+            clips=clips  # Pass clips for best frame selection
         )
-        
+
         return thumbnail_result
     
     def _generate_standard_thumbnail(self, video_file: str, clips: list) -> Dict:

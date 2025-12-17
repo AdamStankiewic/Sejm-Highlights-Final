@@ -482,34 +482,45 @@ class ThumbnailStage:
         custom_title: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Generuj miniaturkę z numerem części (dla Smart Splitter)
-        
+        Generuj miniaturkę z numerem części
+
         Args:
             video_file: Ścieżka do source video
-            clips: Lista klipów z selection stage
+            clips: Lista klipów z tej części (używamy najlepszego dla thumbnail)
             output_dir: Katalog wyjściowy
             part_number: Numer części (1, 2, 3...)
             total_parts: Całkowita liczba części
             custom_title: Opcjonalny custom tytuł
-        
+
         Returns:
             Dict z wynikami
         """
         print(f"\n🎨 Generuję miniaturkę dla części {part_number}/{total_parts}...")
-        
-        # Jeśli clips nie podane, użyj pustej listy (będzie użyta środkowa klatka video)
-        if clips is None:
+
+        # Validation and logging
+        if clips is None or len(clips) == 0:
+            print(f"   ⚠️ Brak klipów dla części {part_number} - używam środkowej klatki z video")
             clips = []
-        
+        else:
+            # Log clips info
+            print(f"   📊 Dostępne klipy: {len(clips)}")
+            # Find best clip for logging
+            if clips:
+                best_clip = max(clips, key=lambda c: c.get('final_score', c.get('score', 0)))
+                clip_score = best_clip.get('final_score', best_clip.get('score', 0))
+                clip_id = best_clip.get('id', 'unknown')
+                clip_t0 = best_clip.get('t0', 0)
+                print(f"   🎯 Using top clip for thumbnail: clip_id={clip_id}, score={clip_score:.2f}, timestamp={clip_t0:.1f}s")
+
         # Jeśli output_dir nie podane, użyj domyślnego
         if output_dir is None:
             output_dir = Path("output")
             output_dir.mkdir(exist_ok=True)
-        
+
         # Dodaj numer części do bottom text (language-aware)
         part_word = self._translate("part")
         bottom_text = f"📺 {part_word} {part_number}/{total_parts} | {datetime.now().strftime('%d.%m.%Y')}"
-        
+
         # Wywołaj normalny process() z custom bottom text
         result = self.process(
             video_file=video_file,
@@ -565,18 +576,38 @@ class ThumbnailStage:
         print("\n" + "="*60)
         print("STAGE 8: AI Thumbnail Generation")
         print("="*60)
-        
+
         try:
-            # Wybierz najlepszy klip (najwyższy score)
+            # Wybierz timestamp dla thumbnail
             if not clips:
-                print("⚠️ Brak klipów – używam losowej klatki z video")
-                mid_timestamp = self._fallback_mid_timestamp(video_file)
-                best_clip = {'id': 'fallback', 'score': 0}
+                # Fallback: użyj środkowej klatki video gdy brak klipów
+                print(f"   ⚠️ Brak klipów - używam środkowej klatki z video")
+                # Extract video duration using ffprobe
+                import subprocess
+                try:
+                    cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                           '-of', 'default=noprint_wrappers=1:nokey=1', video_file]
+                    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                    video_duration = float(result.stdout.strip())
+                    mid_timestamp = video_duration / 2
+                    best_clip = None
+                    print(f"   📹 Video duration: {video_duration:.1f}s, using middle frame at {mid_timestamp:.1f}s")
+                except Exception as e:
+                    print(f"   ⚠️ Could not determine video duration: {e}, using timestamp 30s")
+                    mid_timestamp = 30.0  # Default fallback
+                    best_clip = None
             else:
-                best_clip = max(clips, key=lambda c: c.get('score', 0))
+                # Normal path: use best clip
+                best_clip = max(clips, key=lambda c: c.get('final_score', c.get('score', 0)))
+
+                # Timestamp środka najlepszego klipu
                 mid_timestamp = (best_clip['t0'] + best_clip['t1']) / 2
-                print(f"📸 Wybieram klatkę z {mid_timestamp:.1f}s")
-                print(f"   Score klipu: {best_clip.get('score', 0):.2f}")
+
+                clip_score = best_clip.get('final_score', best_clip.get('score', 0))
+                print(f"📸 Wybieram klatkę z najlepszego klipu:")
+                print(f"   Timestamp: {mid_timestamp:.1f}s")
+                print(f"   Score: {clip_score:.2f}")
+                print(f"   Clip ID: {best_clip.get('id', 'unknown')}")
             
             # Extract best frame
             frame = self._extract_best_frame(
@@ -596,8 +627,11 @@ class ThumbnailStage:
             # Generate text
             if custom_title:
                 top_text = custom_title
+            elif best_clip:
+                top_text = self._generate_title_from_clip(best_clip)
             else:
-                top_text = self._generate_title_from_clip(best_clip) if clips else "Highlight"
+                # Fallback when no clips available
+                top_text = "Highlights"
             
             if custom_bottom_text:
                 bottom_text = custom_bottom_text
@@ -633,7 +667,7 @@ class ThumbnailStage:
                 'success': True,
                 'thumbnail_path': str(thumbnail_path),
                 'source_timestamp': mid_timestamp,
-                'source_clip_id': best_clip.get('id'),
+                'source_clip_id': best_clip.get('id') if best_clip else None,
                 'text': top_text,
                 'dimensions': f"{self.target_width}x{self.target_height}"
             }
