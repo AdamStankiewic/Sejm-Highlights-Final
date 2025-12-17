@@ -22,7 +22,7 @@ class TemplateBase(abc.ABC):
         end: float,
         output_path: Path,
         speedup: float = 1.0,
-        add_subtitles: bool = False,
+        enable_subtitles: bool = False,
         subtitles: Iterable[Tuple[str, float, float]] | None = None,
         subtitle_lang: str = "pl",
         copyright_processor: Optional[object] = None,

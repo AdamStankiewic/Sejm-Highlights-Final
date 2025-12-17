@@ -5,6 +5,8 @@ Funkcje współdzielone przez szablony shortsów i generator.
 from __future__ import annotations
 
 import logging
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Iterable, Tuple
 
@@ -13,14 +15,14 @@ try:
     # MoviePy 2.x
     from moviepy.audio.AudioClip import AudioClip
     import moviepy.audio.fx as afx
-    from moviepy import CompositeVideoClip, TextClip, VideoFileClip
+    from moviepy import CompositeVideoClip, VideoFileClip
     from moviepy.video.fx import Resize, Crop
     MOVIEPY_V2 = True
 except ImportError:
     # MoviePy 1.x
     from moviepy.audio.AudioClip import AudioClip
     from moviepy.audio.fx import all as afx
-    from moviepy.editor import CompositeVideoClip, TextClip, VideoFileClip
+    from moviepy.editor import CompositeVideoClip, VideoFileClip
     from moviepy.video.fx import resize, crop
     Resize = None
     Crop = None
@@ -168,45 +170,80 @@ def apply_speedup(clip: AudioClip | None, factor: float | None) -> AudioClip | N
         return clip
 
 
-def add_subtitles(
-    clip: VideoFileClip,
-    subtitles: Iterable[Tuple[str, float, float]],
-    fontsize: int = 42,
-    color: str = "yellow",
-) -> VideoFileClip:
-    """Overlay simple hard subtitles. subtitles = [(text, start, end), ...]"""
-    text_clips = []
-    for text, start, end in subtitles:
-        try:
-            txt = TextClip(
-                text,
-                fontsize=fontsize,
-                color=color,
-                stroke_color="black",
-                stroke_width=2,
-                font="Arial",
-                method="caption",
-                size=(clip.w - 80, None),
-            )
-            txt = txt.set_position(("center", "bottom")).set_start(start).set_end(end)
-            text_clips.append(txt)
-        except Exception as exc:  # pragma: no cover
-            logger.exception("Failed to render subtitle '%s': %s", text, exc)
-    if not text_clips:
-        return clip
-    # Get fps from source clip before creating composite
-    source_fps = getattr(clip, "fps", None) or 30
-    composed = FpsFixedCompositeVideoClip(
-        [clip, *text_clips],
-        fps=source_fps  # Forced fps via custom subclass
-    ).set_duration(clip.duration)
-    logger.debug("Clip FPS after subtitles composite: %s", composed.fps)
-    return composed
+def write_srt(subtitles: Iterable[Tuple[str, float, float]], srt_path: Path) -> Path:
+    """Serialize subtitles to SRT file."""
+    ensure_output_path(Path(srt_path))
+    lines = []
+    for idx, (text, start, end) in enumerate(subtitles, 1):
+        lines.append(str(idx))
+        lines.append(f"{_format_ts(start)} --> {_format_ts(end)}")
+        lines.append(text)
+        lines.append("")
+    Path(srt_path).write_text("\n".join(lines), encoding="utf-8")
+    return Path(srt_path)
+
+
+def burn_subtitles_ffmpeg(
+    input_video: str,
+    srt_path: str,
+    output_video: str,
+    font_size: int = 48,
+    margin_v: int = 80,
+):
+    """Render subtitles using ffmpeg's subtitles filter (Windows-safe)."""
+
+    if not Path(srt_path).exists():
+        logger.warning("Subtitles file missing (%s) – copying video without subtitles", srt_path)
+        ensure_output_path(Path(output_video))
+        shutil.copyfile(input_video, output_video)
+        return
+
+    # Escape Windows paths for the subtitles filter
+    escaped = Path(srt_path).as_posix().replace(":", r"\:").replace("'", r"\'")
+    force_style = ",".join(
+        [
+            f"Fontsize={font_size}",
+            "PrimaryColour=&HFFFFFF&",
+            "OutlineColour=&H000000&",
+            "BorderStyle=3",
+            "Outline=2",
+            "Shadow=1",
+            f"MarginV={margin_v}",
+        ]
+    )
+    vf_filter = f"subtitles='{escaped}':force_style='{force_style}'"
+
+    ensure_output_path(Path(output_video))
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(input_video),
+        "-vf",
+        vf_filter,
+        "-c:v",
+        "libx264",
+        "-c:a",
+        "copy",
+        str(output_video),
+    ]
+
+    logger.info("Burning subtitles with ffmpeg → %s", output_video)
+    subprocess.run(cmd, check=True, capture_output=True)
 
 
 def ensure_output_path(path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _format_ts(value: float) -> str:
+    total_ms = max(0, int(round(value * 1000)))
+    hours, remainder = divmod(total_ms, 3600000)
+    minutes, remainder = divmod(remainder, 60000)
+    seconds, millis = divmod(remainder, 1000)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
 
 
 def load_subclip(video_path: Path, start: float, end: float) -> VideoFileClip | None:

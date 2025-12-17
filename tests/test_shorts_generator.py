@@ -70,22 +70,32 @@ editor.TextClip = _DummyClip
 editor.ImageClip = _DummyClip
 editor.ColorClip = _DummyClip
 
+moviepy_mod = sys.modules.setdefault("moviepy", types.ModuleType("moviepy"))
+moviepy_mod.ColorClip = _DummyClip
+moviepy_mod.VideoFileClip = _DummyClip
+moviepy_mod.VideoClip = _DummyClip
+
 video_fx = types.ModuleType("moviepy.video.fx")
 resize_mod = types.SimpleNamespace(resize=lambda clip, *_, **__: clip)
 crop_mod = types.SimpleNamespace(crop=lambda clip, *_, **__: clip)
+video_fx.MultiplySpeed = lambda clip, factor=1.0: clip
 video_fx.resize = resize_mod
 
 audio_fx_all = types.SimpleNamespace(time_stretch=lambda audio, factor: audio, speedx=lambda audio, factor: audio)
 audio_fx = types.ModuleType("moviepy.audio.fx")
 audio_fx.all = audio_fx_all
+audio_mod = types.ModuleType("moviepy.audio")
+audio_clip_mod = types.ModuleType("moviepy.audio.AudioClip")
+audio_clip_mod.AudioClip = _DummyClip
+audio_mod.AudioClip = _DummyClip
 
-sys.modules.setdefault("moviepy", types.ModuleType("moviepy"))
 sys.modules.setdefault("moviepy.editor", editor)
 sys.modules.setdefault("moviepy.video", types.ModuleType("moviepy.video"))
 sys.modules.setdefault("moviepy.video.fx", video_fx)
 sys.modules.setdefault("moviepy.video.fx.resize", resize_mod)
 sys.modules.setdefault("moviepy.video.fx.crop", crop_mod)
-sys.modules.setdefault("moviepy.audio", types.ModuleType("moviepy.audio"))
+sys.modules.setdefault("moviepy.audio", audio_mod)
+sys.modules.setdefault("moviepy.audio.AudioClip", audio_clip_mod)
 sys.modules.setdefault("moviepy.audio.fx", audio_fx)
 sys.modules.setdefault("moviepy.audio.fx.all", audio_fx_all)
 

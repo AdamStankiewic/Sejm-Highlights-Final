@@ -6,10 +6,11 @@ Stage 10: YouTube Shorts Generator (Refactored Edition)
 - Integrated copyright protection
 """
 
+import json
 import logging
 import os
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from .config import Config
 from shorts import ShortsGenerator, Segment
@@ -172,41 +173,93 @@ class ShortsStage:
             'count': len(generated_shorts)
         }
 
-        # Convert clips to Segment objects
-        clip_segments = [
-            Segment(
-                start=clip.get('t0', 0),
-                end=clip.get('t1', 0),
-                score=clip.get('score', 0),
-                subtitles=self._extract_subtitles(clip, segments)
-            )
-            for clip in shorts_clips
-        ]
+    def _generate_single_short(
+        self,
+        input_file: Path,
+        clip: Dict,
+        segments: List[Dict],
+        output_dir: Path,
+        index: int,
+        template: str = "simple",
+        webcam_detection: Optional[Dict] = None,
+    ) -> Dict:
+        """Generate a single short using the modular ShortsGenerator pipeline.
 
-        # Generate shorts with copyright protection
-        try:
-            shorts_paths = generator.generate(
-                input_path,
-                clip_segments,
-                template=effective_template,
-                count=getattr(self.config.shorts, 'num_shorts', 5),
-                speedup=getattr(self.config.shorts, 'speedup_factor', 1.0),
-                add_subtitles=getattr(self.config.shorts, 'add_subtitles', False),
-                subtitle_lang=getattr(self.config.shorts, 'subtitle_lang', 'pl'),
-                copyright_processor=self.copyright_protector
-            )
-        except Exception as e:
-            logger.exception("Failed to generate shorts")
-            raise RuntimeError(f"Shorts generation failed: {e}") from e
+        This is a simplified implementation focused on keeping the new Stage 10
+        orchestrator working without the older FFmpeg template stack. We rely on
+        ``ShortsGenerator`` to render the clip with the chosen template and return
+        a single output path.
+        """
 
-        logger.info(f"✅ Generated {len(shorts_paths)} Shorts")
-        logger.info(f"📁 Location: {shorts_dir}")
+        # Build the segment representation expected by ShortsGenerator.
+        subtitles = self._extract_subtitles(clip, segments)
+        segment = Segment(
+            start=clip.get('t0', 0),
+            end=clip.get('t1', 0),
+            score=clip.get('final_score', clip.get('score', 0)),
+            subtitles=subtitles,
+        )
+
+        generator = ShortsGenerator(
+            output_dir=output_dir,
+            face_regions=getattr(self.config.shorts, 'face_regions', None),
+            face_detector=self.face_detector,
+        )
+
+        paths = generator.generate(
+            input_file,
+            [segment],
+            template=template,
+            count=1,
+            speedup=getattr(self.config.shorts, 'speedup_factor', 1.0),
+            enable_subtitles=getattr(
+                self.config.shorts, 'enable_subtitles', getattr(self.config.shorts, 'add_subtitles', False)
+            ),
+            subtitle_lang=getattr(self.config.shorts, 'subtitle_lang', 'pl'),
+            copyright_processor=self.copyright_protector,
+        )
+
+        if not paths:
+            raise RuntimeError("ShortsGenerator did not return any output paths")
+
+        output_file = paths[0]
+        duration = max(0, clip.get('t1', 0) - clip.get('t0', 0))
+
+        # Basic metadata (kept close to the previous structure for downstream usage)
+        title = clip.get('title') or f"Short {index:02d}"
+        description = clip.get('description') or getattr(self.config.shorts, 'default_description', '')
+        tags = clip.get('tags') or getattr(self.config.shorts, 'default_tags', [])
 
         return {
-            'shorts': [str(p) for p in shorts_paths],
-            'shorts_dir': str(shorts_dir),
-            'count': len(shorts_paths)
+            'file': str(output_file),
+            'filename': output_file.name,
+            'title': title,
+            'description': description,
+            'tags': tags,
+            'duration': duration,
+            'template': template,
+            'clip_id': clip.get('id'),
+            'score': clip.get('final_score', 0),
+            'source_timestamp': f"{clip.get('t0', 0):.1f}-{clip.get('t1', 0):.1f}s",
         }
+
+    def _detect_webcam_region(self, input_path: Path, t_sample: float) -> Optional[Dict]:
+        """Stub for backward compatibility.
+
+        The current face detector does not expose webcam-region detection, so we
+        return ``None`` and allow template selection to fall back to configured
+        defaults.
+        """
+
+        return None
+
+    def _select_template(self, detected_webcam: Optional[Dict]) -> str:
+        """Select template based on detection fallback.
+
+        If a template is already configured, prefer it; otherwise return "simple".
+        """
+
+        return getattr(self.config.shorts, 'template', None) or "simple"
 
     def _extract_subtitles(
         self,
@@ -218,7 +271,9 @@ class ShortsStage:
         Returns:
             List of (text, start, end) tuples or None
         """
-        if not getattr(self.config.shorts, 'add_subtitles', False):
+        if not getattr(
+            self.config.shorts, 'enable_subtitles', getattr(self.config.shorts, 'add_subtitles', False)
+        ):
             return None
 
         # Find matching segment

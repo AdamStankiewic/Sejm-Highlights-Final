@@ -22,12 +22,13 @@ except ImportError:
 
 from shorts.face_detection import FaceDetector, FaceRegion
 from utils.video import (
-    add_subtitles,
     apply_speedup,
+    burn_subtitles_ffmpeg,
     center_crop_9_16,
     ensure_fps,
     ensure_output_path,
     load_subclip,
+    write_srt,
     FpsFixedCompositeVideoClip,
 )
 from .base import TemplateBase
@@ -157,7 +158,7 @@ class GamingTemplate(TemplateBase):
         end: float,
         output_path: Path,
         speedup: float = 1.0,
-        add_subtitles: bool = False,
+        enable_subtitles: bool = False,
         subtitles: Iterable[Tuple[str, float, float]] | None = None,
         subtitle_lang: str = "pl",
         copyright_processor=None,
@@ -205,10 +206,6 @@ class GamingTemplate(TemplateBase):
                 except Exception:
                     logger.exception("[GamingTemplate] Speedup failed — using original speed")
 
-            if add_subtitles and subtitles_data:
-                gameplay_clip = add_subtitles(gameplay_clip, subtitles_data)
-                logger.debug("Clip FPS after subtitles: %s", gameplay_clip.fps)
-
             if copyright_processor:
                 gameplay_clip = copyright_processor.clean_clip_audio(
                     gameplay_clip, video_path, start, end, output_path.stem
@@ -242,11 +239,26 @@ class GamingTemplate(TemplateBase):
                 # set_audio also returns a new clip, restore fps again
                 final = ensure_fps(final, fallback=target_fps)
 
-            # BYPASS MoviePy's broken write_videofile() and use direct ffmpeg
-            logger.info("Rendering video with direct ffmpeg (fps=30)")
-            render_with_ffmpeg(final, output_path, fps=30)
+            render_target = output_path
+            if enable_subtitles and subtitles_data:
+                render_target = output_path.with_name(f"{output_path.stem}_nosub{output_path.suffix}")
+
+            logger.info(
+                "Rendering video with direct ffmpeg (fps=30) → %s", render_target.name
+            )
+            render_with_ffmpeg(final, render_target, fps=30)
             final.close()
             clip.close()
+
+            if enable_subtitles and subtitles_data:
+                srt_path = render_target.with_suffix(".srt")
+                write_srt(subtitles_data, srt_path)
+                burn_subtitles_ffmpeg(str(render_target), str(srt_path), str(output_path))
+                try:
+                    Path(render_target).unlink(missing_ok=True)
+                    Path(srt_path).unlink(missing_ok=True)
+                except Exception:
+                    logger.debug("Cleanup of temporary subtitle artifacts failed", exc_info=True)
             return output_path
         except Exception:
             logger.exception("[GamingTemplate] Hard failure during render")
@@ -263,9 +275,22 @@ class GamingTemplate(TemplateBase):
                     fallback_clip = ensure_fps(fallback_clip, fallback=30)
 
                 # BYPASS MoviePy's broken write_videofile() - use direct ffmpeg
-                logger.info("Rendering fallback video with direct ffmpeg (fps=30)")
-                render_with_ffmpeg(fallback_clip, output_path, fps=30)
+                render_target = output_path
+                if enable_subtitles and subtitles_data:
+                    render_target = output_path.with_name(f"{output_path.stem}_nosub{output_path.suffix}")
+
+                logger.info("Rendering fallback video with direct ffmpeg (fps=30) → %s", render_target.name)
+                render_with_ffmpeg(fallback_clip, render_target, fps=30)
                 fallback_clip.close()
+                if enable_subtitles and subtitles_data:
+                    srt_path = render_target.with_suffix(".srt")
+                    write_srt(subtitles_data, srt_path)
+                    burn_subtitles_ffmpeg(str(render_target), str(srt_path), str(output_path))
+                    try:
+                        Path(render_target).unlink(missing_ok=True)
+                        Path(srt_path).unlink(missing_ok=True)
+                    except Exception:
+                        logger.debug("Cleanup of temporary subtitle artifacts failed", exc_info=True)
             except Exception:
                 logger.exception("[GamingTemplate] Fallback clip rendering failed")
             try:

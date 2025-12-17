@@ -16,12 +16,14 @@ class ShortsConfig:
     enabled: bool = True
     generate_shorts: bool = False
     template: str = "auto"  # "auto" albo nazwa konkretnego szablonu
+    # Domyślny szablon używany przez pipeline (fallback dla nowego pola w stage 10)
+    default_template: str = "auto"
     manual_template: Optional[str] = None
     face_regions: List[str] = field(
         default_factory=lambda: ["bottom_right", "bottom_left", "top_right", "top_left"]
     )
     speedup_factor: float = 1.0
-    add_subtitles: bool = False
+    enable_subtitles: bool = False
     subtitle_lang: str = "pl"
     min_duration: int = 8
     max_duration: int = 58
@@ -58,9 +60,20 @@ class ShortsConfig:
     count: int = field(init=False, default=5)
     speedup: float = field(init=False, default=1.0)
     subtitles: bool = field(init=False, default=False)
+    add_subtitles: bool = field(init=False, default=False)
 
     def __post_init__(self) -> None:
         """Ustandaryzuj i zaklamruj wartości, zachowując aliasy."""
+
+        # Fallback: jeżeli config nie miał default_template lub zostawiono "auto",
+        # zsynchronizuj z bieżącym polem template.
+        try:
+            base_template = str(self.template or "auto")
+        except Exception:
+            base_template = "auto"
+
+        if not getattr(self, "default_template", None) or self.default_template == "auto":
+            self.default_template = base_template
 
         # Alias speedup -> speedup_factor
         if hasattr(self, "speedup") and self.speedup is not None:
@@ -69,12 +82,23 @@ class ShortsConfig:
             except Exception:
                 self.speedup_factor = 1.0
 
-        # Alias subtitles -> add_subtitles
+        # Alias subtitles -> enable_subtitles
         if hasattr(self, "subtitles") and self.subtitles is not None:
             try:
-                self.add_subtitles = bool(getattr(self, "subtitles"))
+                self.enable_subtitles = bool(getattr(self, "subtitles"))
             except Exception:
-                self.add_subtitles = False
+                self.enable_subtitles = False
+
+        # Legacy add_subtitles -> enable_subtitles
+        if hasattr(self, "add_subtitles") and self.add_subtitles is not None:
+            try:
+                self.enable_subtitles = bool(getattr(self, "add_subtitles"))
+            except Exception:
+                self.enable_subtitles = self.enable_subtitles
+
+        # Keep aliases in sync for serialization
+        self.add_subtitles = bool(self.enable_subtitles)
+        self.subtitles = bool(self.enable_subtitles)
 
         try:
             self.face_detection = bool(self.face_detection)

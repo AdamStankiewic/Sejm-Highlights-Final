@@ -52,7 +52,9 @@ def generate_shorts_example() -> None:
         template=config.shorts.template,
         count=getattr(config.shorts, "num_shorts", getattr(config.shorts, "count", 5)),
         speedup=getattr(config.shorts, "speedup_factor", getattr(config.shorts, "speedup", 1.0)),
-        add_subtitles=getattr(config.shorts, "add_subtitles", getattr(config.shorts, "subtitles", False)),
+        enable_subtitles=getattr(
+            config.shorts, "enable_subtitles", getattr(config.shorts, "add_subtitles", getattr(config.shorts, "subtitles", False))
+        ),
         subtitle_lang=config.shorts.subtitle_lang,
     )
     print(f"📱 Wygenerowano {len(result)} shortsów → {result}")

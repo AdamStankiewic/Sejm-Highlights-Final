@@ -58,7 +58,7 @@ class ShortsGenerator:
         template: str = "gaming",
         count: int = 6,
         speedup: float = 1.0,
-        add_subtitles: bool = False,
+        enable_subtitles: bool = False,
         subtitle_lang: str = "pl",
         copyright_processor=None,
     ) -> List[Path]:
@@ -70,7 +70,7 @@ class ShortsGenerator:
             template: Template name (must be registered)
             count: Maximum number of Shorts to generate
             speedup: Speed multiplier (1.0 = normal, 1.5 = 50% faster)
-            add_subtitles: Whether to burn-in subtitles
+            enable_subtitles: Whether to burn-in subtitles
             subtitle_lang: Subtitle language code
             copyright_processor: Optional copyright checker/processor
 
@@ -111,8 +111,8 @@ class ShortsGenerator:
         for idx, segment in enumerate(selected, 1):
             out = self.output_dir / f"short_{idx:02d}.mp4"
             logger.info(
-                "Rendering short %d/%d (%.1f-%.1fs, score=%.2f)",
-                idx, len(selected), segment.start, segment.end, segment.score
+                "Rendering short %d/%d → %s (%.1f-%.1fs, score=%.2f)",
+                idx, len(selected), out.name, segment.start, segment.end, segment.score
             )
 
             try:
@@ -122,7 +122,7 @@ class ShortsGenerator:
                     min(segment.end, segment.start + 60),
                     out,
                     speedup=speedup,
-                    add_subtitles=add_subtitles,
+                    enable_subtitles=enable_subtitles,
                     subtitles=segment.subtitles,
                     subtitle_lang=subtitle_lang,
                     copyright_processor=copyright_processor,
