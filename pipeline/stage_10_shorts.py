@@ -217,6 +217,7 @@ class ShortsStage:
             ),
             subtitle_lang=getattr(self.config.shorts, 'subtitle_lang', 'pl'),
             copyright_processor=self.copyright_protector,
+            start_index=index,
         )
 
         if not paths:

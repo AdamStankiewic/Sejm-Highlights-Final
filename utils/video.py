@@ -5,10 +5,12 @@ Funkcje współdzielone przez szablony shortsów i generator.
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
+import textwrap
 from pathlib import Path
-from typing import Iterable, Tuple
+from typing import Iterable, Optional, Tuple
 
 # Support both MoviePy 1.x and 2.x
 try:
@@ -177,7 +179,7 @@ def write_srt(subtitles: Iterable[Tuple[str, float, float]], srt_path: Path) -> 
     for idx, (text, start, end) in enumerate(subtitles, 1):
         lines.append(str(idx))
         lines.append(f"{_format_ts(start)} --> {_format_ts(end)}")
-        lines.append(text)
+        lines.append(_wrap_subtitle_line(text))
         lines.append("")
     Path(srt_path).write_text("\n".join(lines), encoding="utf-8")
     return Path(srt_path)
@@ -187,8 +189,8 @@ def burn_subtitles_ffmpeg(
     input_video: str,
     srt_path: str,
     output_video: str,
-    font_size: int = 48,
-    margin_v: int = 80,
+    font_size: Optional[int] = None,
+    margin_v: Optional[int] = None,
 ):
     """Render subtitles using ffmpeg's subtitles filter (Windows-safe)."""
 
@@ -198,11 +200,18 @@ def burn_subtitles_ffmpeg(
         shutil.copyfile(input_video, output_video)
         return
 
+    # Dynamically scale subtitle styling based on video height (Shorts vs 16:9)
+    video_height = _probe_video_height(input_video)
+    default_font, default_margin = (30, 140) if video_height and video_height >= 1600 else (46, 84)
+    font_size = font_size or default_font
+    margin_v = margin_v or default_margin
+
     # Escape Windows paths for the subtitles filter
     escaped = Path(srt_path).as_posix().replace(":", r"\:").replace("'", r"\'")
     force_style = ",".join(
         [
             f"Fontsize={font_size}",
+            "Bold=1",
             "PrimaryColour=&HFFFFFF&",
             "OutlineColour=&H000000&",
             "BorderStyle=3",
@@ -257,6 +266,46 @@ def _format_ts(value: float) -> str:
     minutes, remainder = divmod(remainder, 60000)
     seconds, millis = divmod(remainder, 1000)
     return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
+
+
+def _wrap_subtitle_line(text: str, width: int = 38) -> str:
+    """Wrap long subtitle sentences for better readability in Shorts."""
+
+    if not text:
+        return ""
+
+    if "\n" in text:
+        return text
+
+    return textwrap.fill(text, width=width, break_long_words=False, break_on_hyphens=False)
+
+
+def _probe_video_height(input_video: str) -> Optional[int]:
+    """Return video height using ffprobe; best-effort fallback to None."""
+
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=height",
+                "-of",
+                "csv=p=0",
+                input_video,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        output = result.stdout.strip().splitlines()
+        return int(output[-1]) if output else None
+    except Exception:
+        logger.debug("Unable to probe video height, using defaults", exc_info=True)
+        return None
 
 
 def load_subclip(video_path: Path, start: float, end: float) -> VideoFileClip | None:
