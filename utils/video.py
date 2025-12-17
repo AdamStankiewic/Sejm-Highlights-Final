@@ -233,6 +233,19 @@ def burn_subtitles_ffmpeg(
     subprocess.run(cmd, check=True, capture_output=True)
 
 
+def _imagemagick_available() -> bool:
+    """Best-effort check for ImageMagick binary presence."""
+    binary = os.environ.get("IMAGEMAGICK_BINARY")
+    if binary:
+        return Path(binary).expanduser().exists()
+
+    # Common names across platforms
+    for candidate in ("magick", "convert"):  # pragma: no cover - simple availability check
+        if shutil.which(candidate):
+            return True
+    return False
+
+
 def ensure_output_path(path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     return path

@@ -21,6 +21,7 @@ except ImportError:
     MOVIEPY_V2 = False
 
 from shorts.face_detection import FaceDetector, FaceRegion
+from utils import video as video_utils
 from utils.video import (
     apply_speedup,
     burn_subtitles_ffmpeg,
