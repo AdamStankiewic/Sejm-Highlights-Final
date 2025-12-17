@@ -16,6 +16,8 @@ class ShortsConfig:
     enabled: bool = True
     generate_shorts: bool = False
     template: str = "auto"  # "auto" albo nazwa konkretnego szablonu
+    # Domyślny szablon używany przez pipeline (fallback dla nowego pola w stage 10)
+    default_template: str = "auto"
     manual_template: Optional[str] = None
     face_regions: List[str] = field(
         default_factory=lambda: ["bottom_right", "bottom_left", "top_right", "top_left"]
@@ -61,6 +63,16 @@ class ShortsConfig:
 
     def __post_init__(self) -> None:
         """Ustandaryzuj i zaklamruj wartości, zachowując aliasy."""
+
+        # Fallback: jeżeli config nie miał default_template lub zostawiono "auto",
+        # zsynchronizuj z bieżącym polem template.
+        try:
+            base_template = str(self.template or "auto")
+        except Exception:
+            base_template = "auto"
+
+        if not getattr(self, "default_template", None) or self.default_template == "auto":
+            self.default_template = base_template
 
         # Alias speedup -> speedup_factor
         if hasattr(self, "speedup") and self.speedup is not None:

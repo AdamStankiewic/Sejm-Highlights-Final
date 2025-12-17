@@ -2004,6 +2004,7 @@ class SejmHighlightsApp(QMainWindow):
             else:
                 # Fallback for backward compat
                 self.config.shorts.template = 'gaming' if self.shorts_template_combo.currentIndex() == 0 else 'universal'
+            self.config.shorts.default_template = self.config.shorts.template
 
             self.config.shorts.add_subtitles = bool(self.shorts_add_subs_cb.isChecked())
             self.config.shorts.subtitles = bool(self.shorts_add_subs_cb.isChecked())

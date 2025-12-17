@@ -405,6 +405,11 @@ class Config:
             self.youtube = YouTubeConfig()
         if self.shorts is None:
             self.shorts = ShortsConfig()
+        if not getattr(self.shorts, "default_template", None):
+            try:
+                self.shorts.default_template = getattr(self.shorts, "template", "auto")
+            except Exception:
+                self.shorts.default_template = "auto"
         if self.cache is None:
             self.cache = CacheConfig()
         if self.uploader is None:
