@@ -218,3 +218,5 @@ client_secret.json
 youtube_token.json
 Nowy Dokument tekstowy.txt
 .env
+secrets/
+data/uploader.db
