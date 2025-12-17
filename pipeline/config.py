@@ -108,7 +108,9 @@ class ScoringConfig:
     
     # Score weights (final composite)
     weight_acoustic: float = 0.25
+    weight_keyword: float = 0.15
     weight_semantic: float = 0.50
+    weight_speaker_change: float = 0.10
 
     # Position diversity bonus
     position_diversity_bonus: float = 0.1
