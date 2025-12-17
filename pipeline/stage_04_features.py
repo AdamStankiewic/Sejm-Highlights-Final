@@ -14,13 +14,13 @@ import librosa
 import soundfile as sf
 from collections import defaultdict
 
+_SPACY_AVAILABLE = True
 try:
     import spacy
-except ImportError:
-    print("⚠️ spaCy nie zainstalowany. Instaluję...")
-    import subprocess
-    subprocess.check_call(["pip", "install", "spacy"])
-    import spacy
+except Exception as exc:  # pragma: no cover - defensive for environments without network/pip
+    print("⚠️ spaCy nie jest dostępny: pomijam entity recognition. Szczegóły:", exc)
+    spacy = None
+    _SPACY_AVAILABLE = False
 
 from .config import Config
 
@@ -68,6 +68,11 @@ class FeaturesStage:
     def _load_spacy(self):
         """Załaduj model spaCy dla NLP (language-aware with fallback)"""
         if not self.config.features.compute_entity_density:
+            return
+
+        if not _SPACY_AVAILABLE:
+            print("⚠️ spaCy niedostępny w środowisku – wyłączam entity recognition")
+            self.config.features.compute_entity_density = False
             return
 
         model_name = self.config.features.spacy_model
