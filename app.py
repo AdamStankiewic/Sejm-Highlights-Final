@@ -857,7 +857,13 @@ class SejmHighlightsApp(QMainWindow):
 
         self.shorts_add_subs_cb = QCheckBox(self._t("add_subtitles"))
         self.shorts_add_subs_cb.setChecked(
-            bool(getattr(self.config.shorts, "add_subtitles", getattr(self.config.shorts, "subtitles", False)))
+            bool(
+                getattr(
+                    self.config.shorts,
+                    "enable_subtitles",
+                    getattr(self.config.shorts, "add_subtitles", getattr(self.config.shorts, "subtitles", False)),
+                )
+            )
         )
         layout.addWidget(self.shorts_add_subs_cb)
 
@@ -1645,7 +1651,11 @@ class SejmHighlightsApp(QMainWindow):
                     template=self.config.shorts.template,
                     count=getattr(self.config.shorts, "num_shorts", getattr(self.config.shorts, "count", 5)),
                     speedup=getattr(self.config.shorts, "speedup_factor", getattr(self.config.shorts, "speedup", 1.0)),
-                    add_subtitles=getattr(self.config.shorts, "add_subtitles", getattr(self.config.shorts, "subtitles", False)),
+                    enable_subtitles=getattr(
+                        self.config.shorts,
+                        "enable_subtitles",
+                        getattr(self.config.shorts, "add_subtitles", getattr(self.config.shorts, "subtitles", False)),
+                    ),
                     subtitle_lang=self.config.shorts.subtitle_lang,
                     copyright_processor=copyright_processor,
                 )
@@ -2006,6 +2016,7 @@ class SejmHighlightsApp(QMainWindow):
                 self.config.shorts.template = 'gaming' if self.shorts_template_combo.currentIndex() == 0 else 'universal'
             self.config.shorts.default_template = self.config.shorts.template
 
+            self.config.shorts.enable_subtitles = bool(self.shorts_add_subs_cb.isChecked())
             self.config.shorts.add_subtitles = bool(self.shorts_add_subs_cb.isChecked())
             self.config.shorts.subtitles = bool(self.shorts_add_subs_cb.isChecked())
             self.config.shorts.speedup_factor = float(self.shorts_speed_slider.value()) / 100.0

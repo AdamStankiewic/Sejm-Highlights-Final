@@ -23,7 +23,7 @@ class ShortsConfig:
         default_factory=lambda: ["bottom_right", "bottom_left", "top_right", "top_left"]
     )
     speedup_factor: float = 1.0
-    add_subtitles: bool = False
+    enable_subtitles: bool = False
     subtitle_lang: str = "pl"
     min_duration: int = 8
     max_duration: int = 58
@@ -60,6 +60,7 @@ class ShortsConfig:
     count: int = field(init=False, default=5)
     speedup: float = field(init=False, default=1.0)
     subtitles: bool = field(init=False, default=False)
+    add_subtitles: bool = field(init=False, default=False)
 
     def __post_init__(self) -> None:
         """Ustandaryzuj i zaklamruj wartości, zachowując aliasy."""
@@ -81,12 +82,23 @@ class ShortsConfig:
             except Exception:
                 self.speedup_factor = 1.0
 
-        # Alias subtitles -> add_subtitles
+        # Alias subtitles -> enable_subtitles
         if hasattr(self, "subtitles") and self.subtitles is not None:
             try:
-                self.add_subtitles = bool(getattr(self, "subtitles"))
+                self.enable_subtitles = bool(getattr(self, "subtitles"))
             except Exception:
-                self.add_subtitles = False
+                self.enable_subtitles = False
+
+        # Legacy add_subtitles -> enable_subtitles
+        if hasattr(self, "add_subtitles") and self.add_subtitles is not None:
+            try:
+                self.enable_subtitles = bool(getattr(self, "add_subtitles"))
+            except Exception:
+                self.enable_subtitles = self.enable_subtitles
+
+        # Keep aliases in sync for serialization
+        self.add_subtitles = bool(self.enable_subtitles)
+        self.subtitles = bool(self.enable_subtitles)
 
         try:
             self.face_detection = bool(self.face_detection)

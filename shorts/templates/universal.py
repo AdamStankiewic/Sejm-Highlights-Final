@@ -20,11 +20,12 @@ except ImportError:
 
 from utils.video import (
     apply_speedup,
+    burn_subtitles_ffmpeg,
     center_crop_9_16,
-    add_subtitles,
     ensure_fps,
     ensure_output_path,
     load_subclip,
+    write_srt,
 )
 from .base import TemplateBase
 
@@ -41,7 +42,7 @@ class UniversalTemplate(TemplateBase):
         end: float,
         output_path: Path,
         speedup: float = 1.0,
-        add_subtitles: bool = False,
+        enable_subtitles: bool = False,
         subtitles: Iterable[Tuple[str, float, float]] | None = None,
         subtitle_lang: str = "pl",
         copyright_processor=None,
@@ -64,9 +65,6 @@ class UniversalTemplate(TemplateBase):
             logger.debug("Clip FPS after center crop: %s", clip.fps)
             if clip.audio is None:
                 logger.warning("[UniversalTemplate] No audio — subtitles and speedup skipped")
-            if add_subtitles and subtitles and clip.audio is not None:
-                clip = add_subtitles(clip, subtitles)
-                logger.debug("Clip FPS after subtitles: %s", clip.fps)
             if speedup > 1.0 and clip.audio is not None:
                 try:
                     if MOVIEPY_V2:
@@ -86,8 +84,12 @@ class UniversalTemplate(TemplateBase):
             clip = ensure_fps(clip, fallback=30)
             render_fps = 30  # Always use 30fps for Shorts
             logger.debug("Clip FPS before render: %s", getattr(clip, "fps", None))
+            render_target = output_path
+            if enable_subtitles and subtitles:
+                render_target = output_path.with_name(f"{output_path.stem}_nosub{output_path.suffix}")
+
             clip.write_videofile(
-                str(output_path),
+                str(render_target),
                 codec="libx264",
                 audio_codec="aac",
                 fps=render_fps,
@@ -96,6 +98,16 @@ class UniversalTemplate(TemplateBase):
                 logger=None,
             )
             clip.close()
+
+            if enable_subtitles and subtitles:
+                srt_path = render_target.with_suffix(".srt")
+                write_srt(subtitles, srt_path)
+                burn_subtitles_ffmpeg(str(render_target), str(srt_path), str(output_path))
+                try:
+                    Path(render_target).unlink(missing_ok=True)
+                    Path(srt_path).unlink(missing_ok=True)
+                except Exception:
+                    logger.debug("Cleanup of temporary subtitle artifacts failed", exc_info=True)
             return output_path
         except Exception:
             logger.exception("[UniversalTemplate] Failed to render segment %.2f-%.2f", start, end)
@@ -106,8 +118,12 @@ class UniversalTemplate(TemplateBase):
                     ),
                     fallback=30,
                 )
+                render_target = output_path
+                if enable_subtitles and subtitles:
+                    render_target = output_path.with_name(f"{output_path.stem}_nosub{output_path.suffix}")
+
                 fallback.write_videofile(
-                    str(output_path),
+                    str(render_target),
                     codec="libx264",
                     audio_codec="aac",
                     fps=30,
@@ -116,6 +132,15 @@ class UniversalTemplate(TemplateBase):
                     logger=None,
                 )
                 fallback.close()
+                if enable_subtitles and subtitles:
+                    srt_path = render_target.with_suffix(".srt")
+                    write_srt(subtitles, srt_path)
+                    burn_subtitles_ffmpeg(str(render_target), str(srt_path), str(output_path))
+                    try:
+                        Path(render_target).unlink(missing_ok=True)
+                        Path(srt_path).unlink(missing_ok=True)
+                    except Exception:
+                        logger.debug("Cleanup of temporary subtitle artifacts failed", exc_info=True)
             except Exception:
                 logger.exception("[UniversalTemplate] Fallback clip rendering failed")
             return output_path

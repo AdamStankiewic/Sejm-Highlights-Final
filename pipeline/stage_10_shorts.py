@@ -212,7 +212,9 @@ class ShortsStage:
             template=template,
             count=1,
             speedup=getattr(self.config.shorts, 'speedup_factor', 1.0),
-            add_subtitles=getattr(self.config.shorts, 'add_subtitles', False),
+            enable_subtitles=getattr(
+                self.config.shorts, 'enable_subtitles', getattr(self.config.shorts, 'add_subtitles', False)
+            ),
             subtitle_lang=getattr(self.config.shorts, 'subtitle_lang', 'pl'),
             copyright_processor=self.copyright_protector,
         )
@@ -269,7 +271,9 @@ class ShortsStage:
         Returns:
             List of (text, start, end) tuples or None
         """
-        if not getattr(self.config.shorts, 'add_subtitles', False):
+        if not getattr(
+            self.config.shorts, 'enable_subtitles', getattr(self.config.shorts, 'add_subtitles', False)
+        ):
             return None
 
         # Find matching segment

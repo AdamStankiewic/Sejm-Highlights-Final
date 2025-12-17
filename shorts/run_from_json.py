@@ -75,7 +75,7 @@ def main() -> None:
         template=args.template,
         count=args.count,
         speedup=args.speedup,
-        add_subtitles=args.subtitles,
+        enable_subtitles=args.subtitles,
         subtitle_lang=args.subtitle_lang,
     )
 

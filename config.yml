@@ -220,7 +220,7 @@ shorts:
   manual_template: null
   face_regions: ["bottom_right", "bottom_left", "top_right", "top_left"]
   speedup_factor: 1.0       # 1.0 - 1.5
-  add_subtitles: false
+  enable_subtitles: false
   subtitle_lang: "pl"       # pl | en
   min_duration: 8           # sekundy
   max_duration: 58          # sekundy

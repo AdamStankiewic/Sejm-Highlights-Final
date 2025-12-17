@@ -42,7 +42,10 @@ editor_mod.VideoClip = _DummyClip
 editor_mod.VideoFileClip = _DummyClip
 editor_mod.TextClip = _DummyClip
 
-sys.modules.setdefault("moviepy", types.ModuleType("moviepy"))
+moviepy_mod = sys.modules.setdefault("moviepy", types.ModuleType("moviepy"))
+moviepy_mod.ColorClip = _DummyClip
+moviepy_mod.VideoClip = _DummyClip
+moviepy_mod.VideoFileClip = _DummyClip
 sys.modules.setdefault("moviepy.editor", editor_mod)
 sys.modules.setdefault("moviepy.video", types.ModuleType("moviepy.video"))
 
@@ -50,6 +53,7 @@ video_fx = types.ModuleType("moviepy.video.fx")
 video_fx_all = types.ModuleType("moviepy.video.fx.all")
 video_fx_all.speedx = lambda clip, *_ , **__: clip
 video_fx_all.crop = lambda clip, *_ , **__: clip
+video_fx.MultiplySpeed = lambda clip, factor=1.0: clip
 video_fx.resize = lambda clip, *_ , **__: clip
 
 sys.modules.setdefault("moviepy.video.fx", video_fx)
