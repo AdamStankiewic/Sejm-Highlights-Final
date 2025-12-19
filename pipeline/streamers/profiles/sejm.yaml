@@ -1,0 +1,37 @@
+streamer_id: "sejm"
+name: "Sejm RP"
+aliases: ["Sejm", "Parlament"]
+
+# Platform accounts
+platforms:
+  youtube:
+    channel_id: "UCSlsIpJrotOvA1wbA4Z46zA"
+    channel_url: "https://youtube.com/@SejmRP"
+
+# Content metadata
+content:
+  primary_platform: "youtube"
+  channel_type: "political"
+  primary_language: "pl"
+  categories: ["polityka", "sejm", "parlament"]
+
+# AI generation settings
+generation:
+  context_model: "gpt-4o-mini"
+  title_model: "gpt-4o"
+  description_model: "gpt-4o"
+  temperature: 0.8
+  enable_research: false
+
+# Seed examples (high-performing content patterns)
+seed_examples:
+  - title: "🔥 SEJM: Tusk vs Kaczyński - Najgorętsze Momenty!"
+    description: "Ostra wymiana zdań w Sejmie RP"
+    metadata:
+      content_type: "debate"
+      emotional_tone: "heated"
+  - title: "💥 SEJM Eksploduje! Kontrowersyjna Debata"
+    description: "Najciekawsze fragmenty posiedzenia Sejmu"
+    metadata:
+      content_type: "highlights"
+      emotional_tone: "controversial"

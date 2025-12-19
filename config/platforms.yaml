@@ -1,0 +1,20 @@
+# Platform-specific constraints for title/description generation
+youtube:
+  long:
+    title_max: 100
+    description_max: 5000
+    hashtags_max: 15
+  shorts:
+    title_max: 60
+    description_max: 500
+    hashtags_max: 10
+
+twitch:
+  title_max: 140
+  description_max: 4000
+  hashtags_max: 10
+
+kick:
+  title_max: 120
+  description_max: 3000
+  hashtags_max: 10
