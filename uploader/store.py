@@ -48,6 +48,7 @@ class UploadStore:
                     job_id TEXT,
                     platform TEXT,
                     account_id TEXT,
+                    kind TEXT,
                     scheduled_at TEXT,
                     mode TEXT,
                     state TEXT,
@@ -68,6 +69,7 @@ class UploadStore:
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_upload_targets_next_retry_at ON upload_targets(next_retry_at)")
             self._ensure_column("upload_jobs", "tags", "TEXT")
             self._ensure_column("upload_jobs", "thumbnail_path", "TEXT")
+            self._ensure_column("upload_targets", "kind", "TEXT")
             self._ensure_column("upload_targets", "result_url", "TEXT")
 
     def _ensure_column(self, table: str, column: str, col_type: str):
@@ -118,12 +120,13 @@ class UploadStore:
             self.conn.execute(
                 """
                 INSERT INTO upload_targets (
-                    target_id, job_id, platform, account_id, scheduled_at, mode, state, result_id, result_url, fingerprint,
+                    target_id, job_id, platform, account_id, kind, scheduled_at, mode, state, result_id, result_url, fingerprint,
                     retry_count, next_retry_at, last_error, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(target_id) DO UPDATE SET
                     platform=excluded.platform,
                     account_id=excluded.account_id,
+                    kind=excluded.kind,
                     scheduled_at=excluded.scheduled_at,
                     mode=excluded.mode,
                     state=excluded.state,
@@ -140,6 +143,7 @@ class UploadStore:
                     job_id,
                     target.platform,
                     target.account_id,
+                    target.kind,
                     self._serialize_dt(target.scheduled_at),
                     target.mode,
                     target.state,
@@ -243,7 +247,7 @@ class UploadStore:
 
             target_rows = self.conn.execute(
                 """
-                SELECT target_id, job_id, platform, account_id, scheduled_at, mode, state, result_id, fingerprint,
+                SELECT target_id, job_id, platform, account_id, kind, scheduled_at, mode, state, result_id, fingerprint,
                        result_url, retry_count, next_retry_at, last_error
                 FROM upload_targets
                 """
@@ -252,6 +256,7 @@ class UploadStore:
                 target = UploadTarget(
                     platform=row["platform"],
                     account_id=row["account_id"],
+                    kind=row["kind"],
                     scheduled_at=self._parse_dt(row["scheduled_at"]),
                     mode=row["mode"],
                     state=row["state"],

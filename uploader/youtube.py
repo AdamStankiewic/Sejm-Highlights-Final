@@ -165,12 +165,14 @@ def upload_thumbnail(youtube, video_id: str, thumbnail_path: Path):
 def _resolve_account(account_id: str, accounts_config: dict | None) -> YouTubeAccount:
     youtube_accounts = (accounts_config or {}).get("youtube", {}) if accounts_config else {}
     if account_id not in youtube_accounts:
-        raise YouTubeUploadError(
-            f"Unknown YouTube account_id={account_id}; configure it under accounts.yml -> youtube.",
-            status_code=400,
-        )
-
-    account_cfg = youtube_accounts.get(account_id, {})
+        if accounts_config:
+            raise YouTubeUploadError(
+                f"Unknown YouTube account_id={account_id}; configure it under accounts.yml -> youtube.",
+                status_code=400,
+            )
+        account_cfg = {}
+    else:
+        account_cfg = youtube_accounts.get(account_id, {})
     credential_profile = account_cfg.get("credential_profile") or account_id or "default"
     default_privacy = account_cfg.get("default_privacy", "unlisted")
     category_id = account_cfg.get("category_id")
