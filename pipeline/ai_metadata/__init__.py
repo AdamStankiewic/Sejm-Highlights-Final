@@ -2,7 +2,20 @@
 AI Metadata Generation Module
 
 This module provides AI-powered metadata generation for video content.
-Will be populated in Phase 2.
+
+Components:
+- ContextBuilder: Extracts context from clips
+- PromptBuilder: Constructs AI prompts with few-shot learning
+- MetadataGenerator: Main orchestration for title/description generation
 """
 
-__all__ = []
+from .context_builder import ContextBuilder, StreamingBrief
+from .prompt_builder import PromptBuilder
+from .generator import MetadataGenerator
+
+__all__ = [
+    "ContextBuilder",
+    "StreamingBrief",
+    "PromptBuilder",
+    "MetadataGenerator"
+]
