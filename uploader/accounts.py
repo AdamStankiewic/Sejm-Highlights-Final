@@ -13,7 +13,8 @@ import yaml
 logger = logging.getLogger(__name__)
 
 STATUS_OK = "OK"
-STATUS_MISSING_CONFIG = "MISSING_CONFIG"
+STATUS_INVALID_CONFIG = "INVALID_CONFIG"
+STATUS_MISSING_CONFIG = STATUS_INVALID_CONFIG  # backwards-compatible alias
 STATUS_MISSING_ENV = "MISSING_ENV"
 STATUS_MANUAL_REQUIRED = "MANUAL_REQUIRED"
 
@@ -36,8 +37,14 @@ class AccountSpec:
     default_for: list[str] = field(default_factory=list)
     is_default: bool = False
 
-    def label(self) -> str:
-        return f"{self.account_id} ({self.status})"
+    def label(self, kind: str | None = None) -> str:
+        badges: list[str] = []
+        if kind and kind in self.default_for:
+            badges.append("default")
+        elif self.is_default:
+            badges.append("default")
+        badge_str = f" [{' / '.join(badges)}]" if badges else ""
+        return f"{self.account_id} ({self.status}){badge_str}"
 
 
 class AccountRegistry:
@@ -102,7 +109,7 @@ class AccountRegistry:
 def _status_worse(current: str, new: str) -> bool:
     priority = {
         STATUS_OK: 0,
-        STATUS_MISSING_CONFIG: 1,
+        STATUS_INVALID_CONFIG: 1,
         STATUS_MISSING_ENV: 2,
         STATUS_MANUAL_REQUIRED: 3,
     }
@@ -115,10 +122,10 @@ def _validate_youtube(account_id: str, cfg: dict) -> AccountSpec:
     client_secret = Path(cfg.get("client_secret_path") or "secrets/youtube_client_secret.json")
     credential_profile = cfg.get("credential_profile") or account_id or "default"
     if not credential_profile:
-        status = STATUS_MISSING_CONFIG
+        status = STATUS_INVALID_CONFIG
         message = "credential_profile missing"
     if not client_secret.exists():
-        status = STATUS_MISSING_CONFIG
+        status = STATUS_INVALID_CONFIG
         message = "client_secret_path not found"
 
     default_for = cfg.get("default_for") or []
@@ -146,7 +153,7 @@ def _validate_meta(account_id: str, cfg: dict) -> AccountSpec:
     message = None
     access_token_env = cfg.get("access_token_env")
     if not access_token_env:
-        status = STATUS_MISSING_CONFIG
+        status = STATUS_INVALID_CONFIG
         message = "access_token_env missing"
     elif not os.getenv(access_token_env):
         status = STATUS_MISSING_ENV
@@ -154,17 +161,17 @@ def _validate_meta(account_id: str, cfg: dict) -> AccountSpec:
 
     if platform == "facebook":
         if not cfg.get("page_id"):
-            if _status_worse(status, STATUS_MISSING_CONFIG):
-                status = STATUS_MISSING_CONFIG
+            if _status_worse(status, STATUS_INVALID_CONFIG):
+                status = STATUS_INVALID_CONFIG
             message = message or "page_id required"
     elif platform == "instagram":
         if not cfg.get("ig_user_id"):
-            if _status_worse(status, STATUS_MISSING_CONFIG):
-                status = STATUS_MISSING_CONFIG
+            if _status_worse(status, STATUS_INVALID_CONFIG):
+                status = STATUS_INVALID_CONFIG
             message = message or "ig_user_id required"
         if not cfg.get("page_id"):
-            if _status_worse(status, STATUS_MISSING_CONFIG):
-                status = STATUS_MISSING_CONFIG
+            if _status_worse(status, STATUS_INVALID_CONFIG):
+                status = STATUS_INVALID_CONFIG
             message = message or "page_id required"
 
     default_for = cfg.get("default_for") or []
@@ -189,7 +196,7 @@ def _validate_tiktok(account_id: str, cfg: dict) -> AccountSpec:
     access_token_env = cfg.get("access_token_env")
     if mode == "OFFICIAL_API":
         if not access_token_env:
-            status = STATUS_MISSING_CONFIG
+            status = STATUS_INVALID_CONFIG
             message = "access_token_env required for OFFICIAL_API"
         elif not os.getenv(access_token_env):
             status = STATUS_MISSING_ENV

@@ -55,7 +55,8 @@ class UploadManager:
         self.tick_seconds = tick_seconds
         self._semaphore = threading.Semaphore(max_concurrent)
         self.store = store or UploadStore()
-        self.accounts_registry: AccountRegistry = self._load_accounts(accounts_config, accounts_config_path)
+        self.accounts_config_path = Path(accounts_config_path) if accounts_config_path else Path("accounts.yml")
+        self.accounts_registry: AccountRegistry = self._load_accounts(accounts_config, self.accounts_config_path)
         self.accounts_config = self.accounts_registry.raw_config
 
     def add_callback(self, cb: Callable[[str, UploadJob, UploadTarget | None], None]):
@@ -116,6 +117,7 @@ class UploadManager:
                 job.original_path = job.file_path
             self._compute_fingerprints(job)
             for target in job.targets:
+                self._backfill_kind(target)
                 self._recover_target(job, target, now)
             job.state = job.aggregate_state
             self.jobs.append(job)
@@ -356,6 +358,22 @@ class UploadManager:
             return registry
         registry = load_accounts(path or Path("accounts.yml"))
         return registry
+
+    def _backfill_kind(self, target: UploadTarget):
+        if target.kind:
+            return
+        if target.platform.startswith("youtube"):
+            target.kind = "long"
+        elif target.platform == "tiktok":
+            target.kind = target.kind or "shorts"
+        else:
+            target.kind = target.kind or None
+
+    def refresh_accounts(self):
+        """Reload accounts.yml and propagate to runtime structures."""
+
+        self.accounts_registry = self._load_accounts(None, self.accounts_config_path)
+        self.accounts_config = self.accounts_registry.raw_config
 
     def _recover_target(self, job: UploadJob, target: UploadTarget, now: datetime):
         if target.state == "UPLOADING":

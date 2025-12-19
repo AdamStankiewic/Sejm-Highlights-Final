@@ -69,6 +69,11 @@ tiktok:
 
 > Sekcja `meta` dostarcza kont dla obu platform (facebook/instagram), które są filtrowane w UI według pola `platform` w danym wpisie.【F:uploader/accounts.py†L93-L129】
 
+### YouTube long vs shorts
+- W sekcji `youtube` możesz wskazać domyślne konto osobno dla długich filmów i Shorts przez `default_for: ["long"]` lub `default_for: ["shorts"]`.
+- UI posiada dwa osobne dropdowny: „YouTube – Długie (16:9)” oraz „YouTube Shorts (9:16)”. Jeśli nie wybierzesz konta ręcznie, aplikacja użyje wpisu oznaczonego odpowiednim `default_for` (badge `default` przy opcji).
+- Historyczne targety bez pola `kind` są traktowane jako `long` przy wznawianiu kolejki, więc migracja jest wstecznie kompatybilna.【F:uploader/manager.py†L69-L111】
+
 ## 3. Instrukcja krok po kroku (per platforma)
 
 ### YouTube (wiele kanałów)
@@ -98,14 +103,12 @@ tiktok:
 2. **Kolejne konto**: dopisz nowy `account_id`; UI pokaże go w dropdownie „tiktok”.【F:app.py†L1744-L1800】
 3. **Wybór w UI**: pierwszy wpis jest domyślny; zmień konto w tabeli targetów (kolumna „Account”).
 
-## 4. UI/UX – Account Manager (propozycja)
+## 4. UI/UX – ekran „Konta / Integracje”
 
-Obecny UI oferuje tylko dropdowny w tabeli uploadów; brak widoku do zarządzania kontami, statusami tokenów i domyślnymi mapowaniami.【F:app.py†L1744-L1800】
-
-Rekomendowany ekran „Account Manager” (nowy widok):
-- Lista kont per platforma z kolumnami: `account_id`, opis (np. channel/page/user), status tokenu (OK/EXPIRED/MISSING na podstawie pliku tokenu lub ENV), znaczniki `default_for` (`shorts`/`long`).
-- Akcje: **Verify** (sprawdzenie kanału / uprawnień), **Refresh token** (rozpoczęcie OAuth / link do regeneracji), **Open token folder** (otwiera `secrets/`).
-- Edycje powinny aktualizować `accounts.yml` lub oddzielny store i odświeżać dropdowny w zakładce Upload.
+- W aplikacji pojawiła się zakładka **🔑 Konta / Integracje**, która pokazuje wszystkie konta z `accounts.yml` wraz ze statusem walidacji (`OK` / `MISSING_ENV` / `MANUAL_REQUIRED` / `INVALID_CONFIG`).【F:app.py†L944-L994】
+- Kolumny zawierają platformę, `account_id`, opis/nazwę, wymagane pola oraz praktyczną instrukcję naprawy.
+- Przycisk **Odśwież status** przeładowuje `accounts.yml` i zmienne środowiskowe (wywołuje `AccountRegistry` ponownie). Przycisk **Otwórz docs** otwiera ten plik w przeglądarce plików.【F:app.py†L969-L994】
+- Statusy są ustalane lekko: YouTube sprawdza obecność `client_secret_path`, Meta/TikTok – wymagane pola i zmienne ENV; MANUAL_ONLY dla TikTok powoduje status `MANUAL_REQUIRED`.【F:uploader/accounts.py†L12-L120】
 
 ## 5. Weryfikacja i testy
 

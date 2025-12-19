@@ -224,7 +224,11 @@ def upload_target(job, target, accounts_config: dict | None = None, youtube_clie
     )
     validate_channel_binding(youtube, account.expected_channel_id)
 
-    is_short = (job.kind or "").lower() == "short" or target.platform == "youtube_shorts"
+    is_short = (
+        (target.kind or "").lower().startswith("short")
+        or (job.kind or "").lower().startswith("short")
+        or target.platform == "youtube_shorts"
+    )
     base_tags = list(account.tags or []) + list(job.tags or [])
     description = job.description
     if is_short:
