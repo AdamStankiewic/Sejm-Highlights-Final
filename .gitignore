@@ -220,3 +220,4 @@ Nowy Dokument tekstowy.txt
 .env
 secrets/
 data/uploader.db
+accounts.yml

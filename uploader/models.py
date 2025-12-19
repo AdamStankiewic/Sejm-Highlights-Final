@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 class UploadTarget:
     platform: str
     account_id: str
+    kind: str | None = None
     scheduled_at: datetime | None = None
     mode: Literal["LOCAL_SCHEDULE", "NATIVE_SCHEDULE"] = "LOCAL_SCHEDULE"
     state: Literal["PENDING", "UPLOADING", "DONE", "FAILED", "MANUAL_REQUIRED"] = "PENDING"

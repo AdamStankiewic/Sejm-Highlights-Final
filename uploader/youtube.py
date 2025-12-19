@@ -165,12 +165,14 @@ def upload_thumbnail(youtube, video_id: str, thumbnail_path: Path):
 def _resolve_account(account_id: str, accounts_config: dict | None) -> YouTubeAccount:
     youtube_accounts = (accounts_config or {}).get("youtube", {}) if accounts_config else {}
     if account_id not in youtube_accounts:
-        raise YouTubeUploadError(
-            f"Unknown YouTube account_id={account_id}; configure it under accounts.yml -> youtube.",
-            status_code=400,
-        )
-
-    account_cfg = youtube_accounts.get(account_id, {})
+        if accounts_config:
+            raise YouTubeUploadError(
+                f"Unknown YouTube account_id={account_id}; configure it under accounts.yml -> youtube.",
+                status_code=400,
+            )
+        account_cfg = {}
+    else:
+        account_cfg = youtube_accounts.get(account_id, {})
     credential_profile = account_cfg.get("credential_profile") or account_id or "default"
     default_privacy = account_cfg.get("default_privacy", "unlisted")
     category_id = account_cfg.get("category_id")
@@ -222,7 +224,11 @@ def upload_target(job, target, accounts_config: dict | None = None, youtube_clie
     )
     validate_channel_binding(youtube, account.expected_channel_id)
 
-    is_short = (job.kind or "").lower() == "short" or target.platform == "youtube_shorts"
+    is_short = (
+        (target.kind or "").lower().startswith("short")
+        or (job.kind or "").lower().startswith("short")
+        or target.platform == "youtube_shorts"
+    )
     base_tags = list(account.tags or []) + list(job.tags or [])
     description = job.description
     if is_short:

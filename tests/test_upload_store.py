@@ -110,3 +110,26 @@ def test_restart_sets_uploading_to_failed_and_schedules_retry(tmp_path: Path):
     assert reloaded_target.retry_count == 1
     assert reloaded_target.next_retry_at is not None
     assert reloaded_target.next_retry_at > datetime.now(tz=ZoneInfo("UTC"))
+
+
+def test_backfills_kind_for_legacy_youtube_targets(tmp_path: Path):
+    db_path = tmp_path / "uploader.db"
+    store = UploadStore(db_path)
+
+    file_path = tmp_path / "video.mp4"
+    file_path.write_text("data")
+    target = UploadTarget(
+        platform="youtube_long",
+        account_id="default",
+        scheduled_at=datetime.now(tz=ZoneInfo("UTC")) + timedelta(days=1),
+        kind=None,
+    )
+    job = make_job(file_path, [target])
+    store.upsert_job(job)
+    store.upsert_target(job.job_id, target)
+
+    manager = UploadManager(store=store, tick_seconds=0.1, accounts_config={})
+    manager.start()
+    manager.stop()
+
+    assert manager.jobs[0].targets[0].kind == "long"

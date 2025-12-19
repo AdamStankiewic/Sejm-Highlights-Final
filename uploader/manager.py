@@ -9,8 +9,7 @@ from pathlib import Path
 from typing import Callable, List, Optional
 from zoneinfo import ZoneInfo
 
-import yaml
-
+from .accounts import AccountRegistry, load_accounts
 from .links import build_public_url
 
 from .meta import (
@@ -56,7 +55,9 @@ class UploadManager:
         self.tick_seconds = tick_seconds
         self._semaphore = threading.Semaphore(max_concurrent)
         self.store = store or UploadStore()
-        self.accounts_config = accounts_config or self._load_accounts_config(accounts_config_path)
+        self.accounts_config_path = Path(accounts_config_path) if accounts_config_path else Path("accounts.yml")
+        self.accounts_registry: AccountRegistry = self._load_accounts(accounts_config, self.accounts_config_path)
+        self.accounts_config = self.accounts_registry.raw_config
 
     def add_callback(self, cb: Callable[[str, UploadJob, UploadTarget | None], None]):
         self.callbacks.append(cb)
@@ -116,6 +117,7 @@ class UploadManager:
                 job.original_path = job.file_path
             self._compute_fingerprints(job)
             for target in job.targets:
+                self._backfill_kind(target)
                 self._recover_target(job, target, now)
             job.state = job.aggregate_state
             self.jobs.append(job)
@@ -280,7 +282,8 @@ class UploadManager:
     def _compute_target_fingerprint(self, job: UploadJob, target: UploadTarget):
         base = job.file_path.resolve().as_posix()
         sched_str = target.scheduled_at.isoformat() if target.scheduled_at else "immediate"
-        target.fingerprint = f"{base}|{target.platform}|{target.account_id}|{sched_str}|{job.title}"
+        kind_part = target.kind or job.kind or ""
+        target.fingerprint = f"{base}|{target.platform}|{target.account_id}|{kind_part}|{sched_str}|{job.title}"
         if not target.target_id:
             target.target_id = target.fingerprint
 
@@ -348,16 +351,29 @@ class UploadManager:
             except Exception:
                 logger.exception("Callback error")
 
-    def _load_accounts_config(self, path: Path | str | None) -> dict:
-        config_path = Path(path) if path else Path("accounts.yml")
-        if not config_path.exists():
-            return {}
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                return yaml.safe_load(f) or {}
-        except Exception:
-            logger.exception("Failed to load accounts config from %s", config_path)
-            return {}
+    def _load_accounts(self, accounts_config: dict | None, path: Path | str | None) -> AccountRegistry:
+        if accounts_config is not None:
+            registry = AccountRegistry({}, raw_config=accounts_config)
+            logger.info("Loaded %s platforms from provided accounts config", len(accounts_config))
+            return registry
+        registry = load_accounts(path or Path("accounts.yml"))
+        return registry
+
+    def _backfill_kind(self, target: UploadTarget):
+        if target.kind:
+            return
+        if target.platform.startswith("youtube"):
+            target.kind = "long"
+        elif target.platform == "tiktok":
+            target.kind = target.kind or "shorts"
+        else:
+            target.kind = target.kind or None
+
+    def refresh_accounts(self):
+        """Reload accounts.yml and propagate to runtime structures."""
+
+        self.accounts_registry = self._load_accounts(None, self.accounts_config_path)
+        self.accounts_config = self.accounts_registry.raw_config
 
     def _recover_target(self, job: UploadJob, target: UploadTarget, now: datetime):
         if target.state == "UPLOADING":

@@ -26,7 +26,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QDateTimeEdit
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QTime, QDateTime, QUrl
-from PyQt6.QtGui import QDesktopServices, QFont, QTextCursor, QPixmap
+from PyQt6.QtGui import QDesktopServices, QFont, QTextCursor, QPixmap, QColor
 
 # Import pipeline modules
 from pipeline.processor import PipelineProcessor
@@ -38,6 +38,12 @@ from utils.copyright_protection import CopyrightProtector, CopyrightSettings
 if TYPE_CHECKING:  # import dla type checkera, bez twardej zależności przy runtime
     from shorts.generator import ShortsGenerator, Segment
 
+from uploader.accounts import (
+    STATUS_INVALID_CONFIG,
+    STATUS_MANUAL_REQUIRED,
+    STATUS_MISSING_ENV,
+    STATUS_OK,
+)
 from uploader.manager import (
     UploadManager,
     UploadJob,
@@ -208,7 +214,10 @@ class SejmHighlightsApp(QMainWindow):
                 royalty_free_folder=getattr(self.config.copyright, "royalty_free_folder", Path("assets/royalty_free")),
             )
         )
-        self.upload_manager = UploadManager(protector=self.copyright_protector if getattr(self.config.copyright, "enabled", False) else None)
+        self.upload_manager = UploadManager(
+            protector=self.copyright_protector if getattr(self.config.copyright, "enabled", False) else None
+        )
+        self.accounts_registry = self.upload_manager.accounts_registry
         self.accounts_config = self.upload_manager.accounts_config or {}
         self.scheduling_presets = self._load_scheduling_presets()
         self.target_row_map: dict[str, int] = {}
@@ -689,6 +698,9 @@ class SejmHighlightsApp(QMainWindow):
         # TAB 6: Upload Manager
         tabs.addTab(self.create_upload_tab(), "🚀 Upload Manager")
 
+        # TAB 7: Konta / Integracje
+        tabs.addTab(self.create_accounts_tab(), "🔑 Konta / Integracje")
+
         return tabs
     
     def create_output_tab(self) -> QWidget:
@@ -915,13 +927,45 @@ class SejmHighlightsApp(QMainWindow):
         file_row.addLayout(file_buttons, 1)
         layout.addLayout(file_row)
 
+        yt_group = QGroupBox("YouTube konta")
+        yt_layout = QVBoxLayout()
+
+        yt_long_row = QHBoxLayout()
+        self.cb_youtube = QCheckBox("YouTube – Długie (16:9)")
+        self.cb_youtube.setChecked(True)
+        yt_long_row.addWidget(self.cb_youtube)
+        self.youtube_long_account_combo = QComboBox()
+        self.youtube_long_default_label = QLabel()
+        yt_long_row.addWidget(self.youtube_long_account_combo, 1)
+        yt_long_row.addWidget(self.youtube_long_default_label)
+        yt_layout.addLayout(yt_long_row)
+
+        yt_shorts_row = QHBoxLayout()
+        self.cb_youtube_shorts = QCheckBox("YouTube Shorts (9:16)")
+        self.cb_youtube_shorts.setChecked(True)
+        yt_shorts_row.addWidget(self.cb_youtube_shorts)
+        self.youtube_shorts_account_combo = QComboBox()
+        self.youtube_shorts_default_label = QLabel()
+        yt_shorts_row.addWidget(self.youtube_shorts_account_combo, 1)
+        yt_shorts_row.addWidget(self.youtube_shorts_default_label)
+        yt_layout.addLayout(yt_shorts_row)
+
+        yt_hint = QLabel(
+            "Domyślne konta wybierane są z pola default_for=['long'/'shorts'] w accounts.yml."
+        )
+        yt_hint.setStyleSheet("color: #666; font-size: 11px;")
+        yt_layout.addWidget(yt_hint)
+
+        yt_group.setLayout(yt_layout)
+        layout.addWidget(yt_group)
+
+        self._refresh_youtube_account_inputs()
+
         platforms_layout = QHBoxLayout()
-        self.cb_youtube = QCheckBox("YouTube")
-        self.cb_youtube_shorts = QCheckBox("YouTube Shorts")
         self.cb_facebook = QCheckBox("Facebook")
         self.cb_instagram = QCheckBox("Instagram Reels")
         self.cb_tiktok = QCheckBox("TikTok")
-        for cb in [self.cb_youtube, self.cb_youtube_shorts, self.cb_facebook, self.cb_instagram, self.cb_tiktok]:
+        for cb in [self.cb_facebook, self.cb_instagram, self.cb_tiktok]:
             cb.setChecked(True)
             platforms_layout.addWidget(cb)
         platforms_layout.addStretch()
@@ -1005,6 +1049,49 @@ class SejmHighlightsApp(QMainWindow):
 
         self.upload_manager.add_callback(self.on_upload_update)
         self.upload_manager.start()
+        return tab
+
+    def create_accounts_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        header = QLabel("Status kont i integracji")
+        header.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        layout.addWidget(header)
+
+        desc = QLabel(
+            "Lista kont z accounts.yml wraz z walidacją plików/ENV. Skorzystaj z przycisku odśwież, jeśli zmienisz plik lub zmienne ENV."
+        )
+        desc.setWordWrap(True)
+        desc.setStyleSheet("color: #555; padding: 6px;")
+        layout.addWidget(desc)
+
+        self.accounts_table = QTableWidget(0, 6)
+        self.accounts_table.setHorizontalHeaderLabels(
+            [
+                "Platforma",
+                "Account ID",
+                "Opis",
+                "Status",
+                "Wymagane pola",
+                "Jak naprawić",
+            ]
+        )
+        self.accounts_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        layout.addWidget(self.accounts_table)
+
+        btn_row = QHBoxLayout()
+        refresh_btn = QPushButton("Odśwież status")
+        refresh_btn.clicked.connect(self.reload_accounts_registry)
+        docs_btn = QPushButton("Otwórz docs")
+        docs_btn.clicked.connect(self.open_accounts_docs)
+        btn_row.addWidget(refresh_btn)
+        btn_row.addWidget(docs_btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        self.populate_accounts_status_table()
+
         return tab
     
     def create_smart_splitter_tab(self) -> QWidget:
@@ -1746,23 +1833,28 @@ class SejmHighlightsApp(QMainWindow):
         if not selected_items:
             QMessageBox.warning(self, "Upload", "No files selected")
             return
-        platforms = {
-            "youtube_long": self.cb_youtube.isChecked(),
-            "youtube_shorts": self.cb_youtube_shorts.isChecked(),
-            "facebook": self.cb_facebook.isChecked(),
-            "instagram": self.cb_instagram.isChecked(),
-            "tiktok": self.cb_tiktok.isChecked(),
-        }
         scheduled_at = parse_scheduled_at(self.schedule_picker.dateTime().toString(Qt.DateFormat.ISODate))
         protection_enabled = self.copyright_cb.isChecked()
         for item in selected_items:
             targets: list[UploadTarget] = []
-            for platform, enabled in platforms.items():
-                if not enabled:
+            platform_choices = [
+                ("youtube_long", self.cb_youtube, "long", self.youtube_long_account_combo),
+                ("youtube_shorts", self.cb_youtube_shorts, "shorts", self.youtube_shorts_account_combo),
+                ("facebook", self.cb_facebook, None, None),
+                ("instagram", self.cb_instagram, None, None),
+                ("tiktok", self.cb_tiktok, None, None),
+            ]
+            for platform, checkbox, kind, combo in platform_choices:
+                if not checkbox.isChecked():
                     continue
-                account_id = self._default_account(platform)
+                account_id = combo.currentData() if combo else None
                 if not account_id:
-                    self.log(f"Brak skonfigurowanego konta dla {platform}. Dodaj je w accounts.yml", "ERROR")
+                    account_id = self._default_account(platform, kind if platform.startswith("youtube") else None)
+                if not account_id:
+                    self.log(
+                        f"Brak skonfigurowanego konta dla {platform}. Dodaj je w accounts.yml",
+                        "ERROR",
+                    )
                     QMessageBox.warning(self, "Upload", f"Brak konta dla platformy {platform}")
                     continue
                 mode = "NATIVE_SCHEDULE" if platform.startswith("youtube") else "LOCAL_SCHEDULE"
@@ -1772,6 +1864,7 @@ class SejmHighlightsApp(QMainWindow):
                         account_id=account_id,
                         scheduled_at=scheduled_at,
                         mode=mode,
+                        kind=kind,
                     )
                 )
             if not targets:
@@ -1789,14 +1882,121 @@ class SejmHighlightsApp(QMainWindow):
             for target in job.targets:
                 self._add_or_update_target_row(job, target)
 
-    def _account_options_for_platform(self, platform: str) -> list[str]:
-        key = "youtube" if platform.startswith("youtube") else platform
-        platform_accounts = self.accounts_config.get(key, {}) or {}
-        return list(platform_accounts.keys())
+    def _account_options_for_platform(self, platform: str, kind: str | None = None) -> list[tuple[str, str]]:
+        specs = self.accounts_registry.list(platform) if hasattr(self, "accounts_registry") else []
+        options: list[tuple[str, str]] = []
+        for spec in specs:
+            label = spec.label(kind)
+            options.append((spec.account_id, label))
+        return options
 
-    def _default_account(self, platform: str) -> str | None:
-        accounts = self._account_options_for_platform(platform)
-        return accounts[0] if accounts else None
+    def _default_account(self, platform: str, kind: str | None = None) -> str | None:
+        if not hasattr(self, "accounts_registry"):
+            return None
+        return self.accounts_registry.default_account(platform, kind)
+
+    def _refresh_youtube_account_inputs(self):
+        if not hasattr(self, "youtube_long_account_combo"):
+            return
+
+        combos = [
+            (self.youtube_long_account_combo, self.youtube_long_default_label, "youtube_long", "long"),
+            (self.youtube_shorts_account_combo, self.youtube_shorts_default_label, "youtube_shorts", "shorts"),
+        ]
+        for combo, label, platform, kind in combos:
+            combo.blockSignals(True)
+            combo.clear()
+            label.setText("")
+            options = self._account_options_for_platform(platform, kind)
+            default_acc = self._default_account(platform, kind)
+            if not options:
+                combo.addItem("Brak kont YouTube", userData=None)
+                combo.setEnabled(False)
+                label.setText("Dodaj wpis w accounts.yml")
+                label.setStyleSheet("color: #c0392b; font-size: 11px;")
+            else:
+                combo.setEnabled(True)
+                for account_id, option_label in options:
+                    combo.addItem(option_label, userData=account_id)
+                if default_acc is not None:
+                    idx = combo.findData(default_acc)
+                    if idx >= 0:
+                        combo.setCurrentIndex(idx)
+                        label.setText(f"Domyślne: {default_acc}")
+                if not label.text():
+                    label.setText("Wybierz konto")
+                label.setStyleSheet("color: #555; font-size: 11px;")
+            combo.blockSignals(False)
+
+    def reload_accounts_registry(self):
+        self.upload_manager.refresh_accounts()
+        self.accounts_registry = self.upload_manager.accounts_registry
+        self.accounts_config = self.upload_manager.accounts_config or {}
+        self._refresh_youtube_account_inputs()
+        self.populate_accounts_status_table()
+
+    def populate_accounts_status_table(self):
+        if not hasattr(self, "accounts_table"):
+            return
+        self.accounts_table.setRowCount(0)
+        platforms = ["youtube", "facebook", "instagram", "tiktok"]
+        for platform in platforms:
+            for spec in self.accounts_registry.list(platform):
+                row = self.accounts_table.rowCount()
+                self.accounts_table.insertRow(row)
+                self.accounts_table.setItem(row, 0, QTableWidgetItem(platform))
+                self.accounts_table.setItem(row, 1, QTableWidgetItem(spec.account_id))
+                description = spec.config.get("description") or spec.config.get("name") or "—"
+                self.accounts_table.setItem(row, 2, QTableWidgetItem(str(description)))
+                status_item = QTableWidgetItem(spec.status)
+                color = "#27ae60" if spec.status == STATUS_OK else "#c0392b"
+                if spec.status == STATUS_MISSING_ENV:
+                    color = "#d35400"
+                elif spec.status == STATUS_MANUAL_REQUIRED:
+                    color = "#f39c12"
+                status_item.setForeground(Qt.GlobalColor.black)
+                status_item.setBackground(QColor(color))
+                self.accounts_table.setItem(row, 3, status_item)
+                self.accounts_table.setItem(row, 4, QTableWidgetItem(self._account_requirements(spec)))
+                self.accounts_table.setItem(row, 5, QTableWidgetItem(self._account_diagnosis(spec)))
+
+    def open_accounts_docs(self):
+        docs_path = Path("docs/accounts_setup.md").resolve()
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(docs_path)))
+
+    def _account_requirements(self, spec):
+        if spec.platform == "youtube":
+            return "client_secret_path, credential_profile, (optional) expected_channel_id"
+        if spec.platform == "facebook":
+            return "page_id, access_token_env"
+        if spec.platform == "instagram":
+            return "ig_user_id, page_id, access_token_env"
+        if spec.platform == "tiktok":
+            return "mode, advertiser_id (opcjonalnie), access_token_env dla OFFICIAL_API"
+        return "—"
+
+    def _account_diagnosis(self, spec):
+        cfg = spec.config or {}
+        access_env = cfg.get("access_token_env")
+        if spec.platform == "youtube":
+            if spec.status == STATUS_OK:
+                return "Konto gotowe. Zaloguj/zweryfikuj w UI, aby odświeżyć token."
+            if spec.status == STATUS_INVALID_CONFIG:
+                secret_path = cfg.get("client_secret_path") or "secrets/youtube_client_secret.json"
+                return f"Umieść plik client_secret pod {secret_path} i ustaw credential_profile."
+            if spec.status == STATUS_MISSING_ENV:
+                return "Ustaw brakujące zmienne środowiskowe przed startem."
+        if spec.platform in {"facebook", "instagram"}:
+            if spec.status == STATUS_MISSING_ENV:
+                return f"Dodaj token do ENV: export {access_env}=<PAGE_TOKEN> albo wpisz w .env."
+            if spec.status == STATUS_INVALID_CONFIG:
+                return "Uzupełnij page_id/ig_user_id i access_token_env w accounts.yml."
+        if spec.platform == "tiktok":
+            if spec.status == STATUS_MANUAL_REQUIRED:
+                return "Tryb MANUAL_ONLY – zaloguj ręcznie i podaj advertiser_id/username w accounts.yml."
+            if spec.status == STATUS_MISSING_ENV:
+                return f"OFFICIAL_API wymaga tokena w ENV: export {access_env}=<TOKEN>."
+        return spec.message or "Sprawdź konfigurację"
 
     def _target_url(self, target: UploadTarget) -> str | None:
         if target.result_url:
@@ -1847,12 +2047,23 @@ class SejmHighlightsApp(QMainWindow):
 
         # Account dropdown
         account_combo = QComboBox()
-        account_combo.addItems(self._account_options_for_platform(target.platform))
+        for account_id, label in self._account_options_for_platform(target.platform, target.kind):
+            account_combo.addItem(label, userData=account_id)
         if target.account_id:
-            idx = account_combo.findText(target.account_id)
+            idx = account_combo.findData(target.account_id)
             if idx >= 0:
                 account_combo.setCurrentIndex(idx)
-        account_combo.currentTextChanged.connect(lambda value, j=job, t=target: self._on_account_changed(j, t, value))
+        else:
+            default_acc = self._default_account(target.platform, target.kind)
+            if default_acc is not None:
+                idx = account_combo.findData(default_acc)
+                if idx >= 0:
+                    account_combo.setCurrentIndex(idx)
+        account_combo.currentIndexChanged.connect(
+            lambda _, j=job, t=target, combo=account_combo: self._on_account_changed(
+                j, t, combo.currentData()
+            )
+        )
         self.target_table.setCellWidget(row, 2, account_combo)
 
         # Scheduled picker
