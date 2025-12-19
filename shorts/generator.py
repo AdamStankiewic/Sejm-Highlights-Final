@@ -61,6 +61,7 @@ class ShortsGenerator:
         enable_subtitles: bool = False,
         subtitle_lang: str = "pl",
         copyright_processor=None,
+        start_index: int = 1,
     ) -> List[Path]:
         """Generate Shorts from segments using specified template
 
@@ -108,7 +109,7 @@ class ShortsGenerator:
 
         # Render each segment
         results: List[Path] = []
-        for idx, segment in enumerate(selected, 1):
+        for idx, segment in enumerate(selected, start_index):
             out = self.output_dir / f"short_{idx:02d}.mp4"
             logger.info(
                 "Rendering short %d/%d → %s (%.1f-%.1fs, score=%.2f)",
@@ -126,6 +127,7 @@ class ShortsGenerator:
                     subtitles=segment.subtitles,
                     subtitle_lang=subtitle_lang,
                     copyright_processor=copyright_processor,
+                    idx=idx,
                 )
 
                 if rendered is None:
