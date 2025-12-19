@@ -208,7 +208,10 @@ class SejmHighlightsApp(QMainWindow):
                 royalty_free_folder=getattr(self.config.copyright, "royalty_free_folder", Path("assets/royalty_free")),
             )
         )
-        self.upload_manager = UploadManager(protector=self.copyright_protector if getattr(self.config.copyright, "enabled", False) else None)
+        self.upload_manager = UploadManager(
+            protector=self.copyright_protector if getattr(self.config.copyright, "enabled", False) else None
+        )
+        self.accounts_registry = self.upload_manager.accounts_registry
         self.accounts_config = self.upload_manager.accounts_config or {}
         self.scheduling_presets = self._load_scheduling_presets()
         self.target_row_map: dict[str, int] = {}
@@ -1760,7 +1763,8 @@ class SejmHighlightsApp(QMainWindow):
             for platform, enabled in platforms.items():
                 if not enabled:
                     continue
-                account_id = self._default_account(platform)
+                kind = "shorts" if platform == "youtube_shorts" else "long"
+                account_id = self._default_account(platform, kind if platform.startswith("youtube") else None)
                 if not account_id:
                     self.log(f"Brak skonfigurowanego konta dla {platform}. Dodaj je w accounts.yml", "ERROR")
                     QMessageBox.warning(self, "Upload", f"Brak konta dla platformy {platform}")
@@ -1772,6 +1776,7 @@ class SejmHighlightsApp(QMainWindow):
                         account_id=account_id,
                         scheduled_at=scheduled_at,
                         mode=mode,
+                        kind=kind,
                     )
                 )
             if not targets:
@@ -1789,14 +1794,18 @@ class SejmHighlightsApp(QMainWindow):
             for target in job.targets:
                 self._add_or_update_target_row(job, target)
 
-    def _account_options_for_platform(self, platform: str) -> list[str]:
-        key = "youtube" if platform.startswith("youtube") else platform
-        platform_accounts = self.accounts_config.get(key, {}) or {}
-        return list(platform_accounts.keys())
+    def _account_options_for_platform(self, platform: str) -> list[tuple[str, str]]:
+        specs = self.accounts_registry.list(platform) if hasattr(self, "accounts_registry") else []
+        options: list[tuple[str, str]] = []
+        for spec in specs:
+            label = spec.label()
+            options.append((spec.account_id, label))
+        return options
 
-    def _default_account(self, platform: str) -> str | None:
-        accounts = self._account_options_for_platform(platform)
-        return accounts[0] if accounts else None
+    def _default_account(self, platform: str, kind: str | None = None) -> str | None:
+        if not hasattr(self, "accounts_registry"):
+            return None
+        return self.accounts_registry.default_account(platform, kind)
 
     def _target_url(self, target: UploadTarget) -> str | None:
         if target.result_url:
@@ -1847,12 +1856,17 @@ class SejmHighlightsApp(QMainWindow):
 
         # Account dropdown
         account_combo = QComboBox()
-        account_combo.addItems(self._account_options_for_platform(target.platform))
+        for account_id, label in self._account_options_for_platform(target.platform):
+            account_combo.addItem(label, userData=account_id)
         if target.account_id:
-            idx = account_combo.findText(target.account_id)
+            idx = account_combo.findData(target.account_id)
             if idx >= 0:
                 account_combo.setCurrentIndex(idx)
-        account_combo.currentTextChanged.connect(lambda value, j=job, t=target: self._on_account_changed(j, t, value))
+        account_combo.currentIndexChanged.connect(
+            lambda _, j=job, t=target, combo=account_combo: self._on_account_changed(
+                j, t, combo.currentData()
+            )
+        )
         self.target_table.setCellWidget(row, 2, account_combo)
 
         # Scheduled picker

@@ -1,0 +1,34 @@
+youtube:
+  yt_main:
+    credential_profile: yt_main
+    expected_channel_id: "UCxxxx"
+    client_secret_path: secrets/youtube_client_secret.json
+    default_privacy: unlisted
+    default_for: ["long", "shorts"]
+  yt_shorts:
+    credential_profile: yt_shorts
+    expected_channel_id: "UCyyyy"
+    client_secret_path: secrets/youtube_client_secret.json
+    default_privacy: private
+    default_for: ["shorts"]
+
+meta:
+  fb_page_main:
+    platform: facebook
+    page_id: "1234567890"
+    access_token_env: META_TOKEN_FB_PAGE_MAIN
+    default: true
+  ig_main:
+    platform: instagram
+    ig_user_id: "1789..."
+    page_id: "1234567890"
+    access_token_env: META_TOKEN_IG_MAIN
+
+# Instagram/Facebook targets are defined in the meta section above.
+
+tiktok:
+  tt_main:
+    mode: OFFICIAL_API
+    advertiser_id: "adv_123"
+    access_token_env: TIKTOK_TOKEN_MAIN
+    default_caption: "#sejm #shorts"

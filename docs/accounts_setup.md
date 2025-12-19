@@ -1,6 +1,6 @@
 # Multi-account upload audit and setup
 
-This document explains how the application models multiple accounts per platform, how tokens are mapped, and how to configure and verify new accounts.
+This document explains how the application models multiple accounts per platform, how tokens are mapped, and how to configure and verify new accounts. Multi-account handling is now live through `accounts.yml` and the runtime `AccountRegistry`.
 
 ## 1. Audyt aktualnej obsługi wielu kont
 
@@ -16,15 +16,16 @@ This document explains how the application models multiple accounts per platform
 
 ### Czy aplikacja obsługuje wiele kont?
 - **Tak** – każda sekcja (`youtube`, `meta`, `tiktok`) jest słownikiem `account_id -> config`; UI buduje dropdown z kluczami, więc można dodać dowolną liczbę kont na platformę.【F:app.py†L1744-L1800】【F:README.md†L330-L440】
-- Rozróżnienie kont następuje przez `account_id` (musi istnieć w `accounts.yml`); fingerprint targetu zawiera `account_id`, co pozwala schedulować i logować osobno.【F:uploader/manager.py†L92-L105】【F:uploader/manager.py†L185-L209】
+- Rozróżnienie kont następuje przez `account_id` (musi istnieć w `accounts.yml`); fingerprint targetu zawiera `account_id` i `kind`, co pozwala schedulować i logować osobno.【F:uploader/manager.py†L180-L207】
 - Tokeny są zawsze przypisane do wpisu konta: YouTube → plik tokenu zależny od `credential_profile`; Meta/TikTok → zmienna środowiskowa zdefiniowana w konfiguracji konta.【F:uploader/youtube.py†L52-L186】【F:uploader/meta.py†L111-L147】【F:uploader/tiktok.py†L70-L125】
 
 ### Jak UI pobiera listę kont w zakładce „Upload”?
 - `SejmHighlightsApp` ładuje `accounts.yml` podczas inicjalizacji uploadera; dropdown w kolumnie „Account” jest wypełniany kluczami z sekcji platformy (`youtube` dla obu `youtube_long` i `youtube_shorts`, osobne sekcje dla `facebook`, `instagram`, `tiktok`). Brak konta powoduje komunikat i blokadę dodania targetu.【F:app.py†L210-L239】【F:app.py†L1744-L1800】
+- W każdej opcji widać status walidacji (`OK`/`MISSING_CONFIG`/`MISSING_ENV`/`MANUAL_REQUIRED`), a konto domyślne wybierane jest według pól `default`/`default_for` (oddzielnie long/shorts).【F:uploader/accounts.py†L38-L82】【F:app.py†L1759-L1806】
 
 ## 2. Struktura konfiguracji wielu kont (`accounts.yml`)
 
-Repo nie zawiera domyślnego `accounts.yml`; plik należy utworzyć w katalogu głównym obok `config.yml` i przekazać do aplikacji (ładowany automatycznie). Aktualny kod oczekuje słownika per platforma z kluczami `account_id`.
+Repo nie zawiera domyślnego `accounts.yml`; plik należy utworzyć w katalogu głównym obok `config.yml` i przekazać do aplikacji (ładowany automatycznie przez `AccountRegistry`). Struktura to słownik per platforma z kluczami `account_id`. Brak pliku powoduje wejście w tryb legacy (single-account YouTube z `secrets/youtube_client_secret.json`) oraz ostrzeżenie w logach.
 
 Przykładowa struktura (z obsługą wielu kont na każdej platformie):
 
@@ -37,7 +38,7 @@ youtube:
     default_privacy: unlisted
     category_id: 22
     tags: ["sejm", "polityka"]
-    default_for: ["long", "shorts"]     # własne pole dla UI – patrz propozycje zmian
+    default_for: ["long", "shorts"]     # decyduje o domyślnym koncie dla long/shorts
   yt_alt:
     credential_profile: yt_alt
     expected_channel_id: "UCyyyy"
@@ -49,15 +50,12 @@ meta:
     platform: facebook
     page_id: "123456"
     access_token_env: META_TOKEN_FB_PAGE_MAIN
+    default: true
   ig_main:
     platform: instagram
     ig_user_id: "1789..."
     page_id: "123456"
     access_token_env: META_TOKEN_IG_MAIN
-
-instagram: {}  # nieużywane – IG korzysta z sekcji meta
-
-facebook: {}   # nieużywane – FB korzysta z sekcji meta
 
 tiktok:
   tt_main:
@@ -69,7 +67,7 @@ tiktok:
     mode: MANUAL_ONLY
 ```
 
-> Sekcje `instagram`/`facebook` są zarezerwowane, ale obecny uploader używa sekcji `meta` dla obu platform; pozostawione pustymi dla jasności.【F:uploader/meta.py†L111-L168】
+> Sekcja `meta` dostarcza kont dla obu platform (facebook/instagram), które są filtrowane w UI według pola `platform` w danym wpisie.【F:uploader/accounts.py†L93-L129】
 
 ## 3. Instrukcja krok po kroku (per platforma)
 
@@ -77,8 +75,8 @@ tiktok:
 1. **Dodanie kanału**: dopisz wpis pod `youtube:` w `accounts.yml` z unikalnym `account_id`, `credential_profile` i `expected_channel_id` (brand account).【F:uploader/youtube.py†L165-L187】
 2. **Token**: uruchom aplikację z nowym profilem – podczas pierwszej autoryzacji zapisze token do `secrets/youtube_token_<credential_profile>.json`. Przechowuj `secrets/youtube_client_secret.json` z danymi OAuth.【F:uploader/youtube.py†L52-L67】【F:README.md†L325-L344】
 3. **Wykrywanie Brand Accounts**: `expected_channel_id` jest porównywany z `channels().list(mine=True)`; mismatch blokuje upload i zwraca błąd non-retryable.【F:uploader/youtube.py†L190-L212】
-4. **Widoczność w UI**: po restarcie aplikacji wpis pojawi się w dropdownie kont dla `YouTube`/`YouTube Shorts`; pierwszy wpis w sekcji `youtube` jest wybierany domyślnie.【F:app.py†L1744-L1800】
-5. **Domyślny kanał dla Shorts/Long**: aktualnie brak wsparcia w kodzie – wybierany jest pierwszy wpis. Można wprowadzić pole `default_for` (patrz sekcja „Propozycje zmian”) i przypisać je w UI.
+4. **Widoczność w UI**: po restarcie aplikacji wpis pojawi się w dropdownie kont dla `YouTube`/`YouTube Shorts`; pola `default`/`default_for` wybiorą domyślne konto osobno dla long i shorts, w przeciwnym razie używany jest pierwszy wpis.【F:app.py†L1744-L1800】【F:uploader/accounts.py†L60-L82】
+5. **Domyślny kanał dla Shorts/Long**: użyj `default_for: ["long"]` lub `default_for: ["shorts"]` w `accounts.yml`, aby wymusić wybór w UI i przy automatycznym dodawaniu targetów.【F:uploader/accounts.py†L60-L82】
 
 ### YouTube Shorts
 - Shorts korzystają z tej samej sekcji `youtube` i uploader-a; odróżnia je `target.platform` (`youtube_shorts`) oraz flaga `is_short` w uploaderze (dodaje `#shorts` do opisu/tagów).【F:uploader/youtube.py†L214-L239】
@@ -115,6 +113,7 @@ Rekomendowany ekran „Account Manager” (nowy widok):
   - YouTube: uruchom upload testowy; log „Uploading to YouTube account_id=… expected_channel_id=…” powinien potwierdzić profil i kanał, a mismatch zakończy się błędem zanim materiał zostanie opublikowany.【F:uploader/youtube.py†L214-L239】
   - Meta: brak tokena lub uprawnień skutkuje stanem `MANUAL_REQUIRED` w tabeli targetów i logiem o brakujących permissionach.【F:uploader/meta.py†L111-L168】
   - TikTok: `MANUAL_REQUIRED` gdy `mode=MANUAL_ONLY` lub brak tokena; log wskazuje konkretną zmienną ENV.【F:uploader/tiktok.py†L70-L125】
+- **Szybka walidacja konfiguracji**: `python -m uploader.accounts --validate-accounts --path accounts.yml` wypisze statusy wszystkich kont wraz z brakującymi plikami/env.【F:uploader/accounts.py†L137-L160】
 - **Oczekiwane logi**: scheduler loguje `target_due` z `platform` i `account_id`; uploader loguje wynik lub błąd i zapisuje `last_error` w SQLite.【F:uploader/manager.py†L144-L209】
 - **Rotacja tokenów**: podmień pliki `secrets/youtube_token_<profile>.json` lub zmień wartości ENV dla Meta/TikTok; restart aplikacji wczyta nowe tokeny. Zachowaj kopie poprzednich tokenów w bezpiecznym katalogu poza repo.
 
