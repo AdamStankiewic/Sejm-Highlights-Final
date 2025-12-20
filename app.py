@@ -651,6 +651,17 @@ class SejmHighlightsApp(QMainWindow):
             self.chat_path_edit.setText(file_path)
             self._refresh_chat_status()
 
+    def _browse_chat_file(self):
+        """Browse chat file for overlay (long videos)."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Wybierz plik chat.json dla nakładki",
+            "",
+            "Chat JSON (*.json);;All Files (*)",
+        )
+        if file_path:
+            self.chat_file_path.setText(file_path)
+
     def test_chat_file(self):
         """Przetestuj parsowanie chat.json i pokaż wynik w popupie."""
 
@@ -793,6 +804,85 @@ class SejmHighlightsApp(QMainWindow):
         self.add_hardsub = QCheckBox("📝 Dodaj napisy (hardsub)")
         self.add_hardsub.setChecked(False)
         layout.addWidget(self.add_hardsub)
+
+        # === CHAT OVERLAY (Long Videos Only) ===
+        layout.addWidget(QLabel(""))  # Spacer
+
+        chat_overlay_group = QGroupBox("💬 Chat Overlay (tylko dla długich filmów)")
+        chat_overlay_layout = QVBoxLayout()
+
+        # Enable checkbox
+        self.chat_overlay_enabled = QCheckBox("📱 Dodaj nakładkę czatu na film")
+        self.chat_overlay_enabled.setChecked(False)
+        chat_overlay_layout.addWidget(self.chat_overlay_enabled)
+
+        # Info label
+        info_label = QLabel(
+            "⚠️ Pozycja manualna (brak auto-detekcji kamerki dla długich filmów).\n"
+            "Czat zostanie zsynchronizowany z timeline'em automatycznie."
+        )
+        info_label.setStyleSheet("color: #666; font-size: 10px; padding: 5px;")
+        info_label.setWordWrap(True)
+        chat_overlay_layout.addWidget(info_label)
+
+        # Chat file path
+        chat_file_layout = QHBoxLayout()
+        chat_file_layout.addWidget(QLabel("Plik czatu (chat.json):"))
+        self.chat_file_path = QLineEdit()
+        self.chat_file_path.setPlaceholderText("Wybierz plik chat.json...")
+        chat_file_layout.addWidget(self.chat_file_path)
+
+        browse_chat_btn = QPushButton("📂 Przeglądaj")
+        browse_chat_btn.clicked.connect(self._browse_chat_file)
+        chat_file_layout.addWidget(browse_chat_btn)
+        chat_overlay_layout.addLayout(chat_file_layout)
+
+        # Position dropdown
+        position_layout = QHBoxLayout()
+        position_layout.addWidget(QLabel("Pozycja:"))
+        self.chat_position = QComboBox()
+        self.chat_position.addItems([
+            "Góra-Prawo (Recommended)",
+            "Góra-Lewo",
+            "Dół-Prawo",
+            "Dół-Lewo"
+        ])
+        position_layout.addWidget(self.chat_position)
+        position_layout.addStretch()
+        chat_overlay_layout.addLayout(position_layout)
+
+        # Optional: Width slider
+        width_layout = QHBoxLayout()
+        width_layout.addWidget(QLabel("Szerokość:"))
+        self.chat_width_slider = QSlider(Qt.Orientation.Horizontal)
+        self.chat_width_slider.setRange(20, 40)
+        self.chat_width_slider.setValue(25)
+        self.chat_width_slider.setSingleStep(1)
+        width_layout.addWidget(self.chat_width_slider)
+        self.chat_width_label = QLabel("25%")
+        self.chat_width_slider.valueChanged.connect(
+            lambda v: self.chat_width_label.setText(f"{v}%")
+        )
+        width_layout.addWidget(self.chat_width_label)
+        chat_overlay_layout.addLayout(width_layout)
+
+        # Optional: Opacity slider
+        opacity_layout = QHBoxLayout()
+        opacity_layout.addWidget(QLabel("Przezroczystość tła:"))
+        self.chat_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.chat_opacity_slider.setRange(60, 100)
+        self.chat_opacity_slider.setValue(80)
+        self.chat_opacity_slider.setSingleStep(5)
+        opacity_layout.addWidget(self.chat_opacity_slider)
+        self.chat_opacity_label = QLabel("80%")
+        self.chat_opacity_slider.valueChanged.connect(
+            lambda v: self.chat_opacity_label.setText(f"{v}%")
+        )
+        opacity_layout.addWidget(self.chat_opacity_label)
+        chat_overlay_layout.addLayout(opacity_layout)
+
+        chat_overlay_group.setLayout(chat_overlay_layout)
+        layout.addWidget(chat_overlay_group)
 
         layout.addStretch()
         return tab
@@ -2042,6 +2132,13 @@ class SejmHighlightsApp(QMainWindow):
         # Export settings
         self.config.export.add_transitions = bool(self.add_transitions.isChecked())
         self.config.export.generate_hardsub = bool(self.add_hardsub.isChecked())
+
+        # Chat overlay settings
+        self.config.export.chat_overlay_enabled = bool(self.chat_overlay_enabled.isChecked())
+        self.config.export.chat_overlay_path = self.chat_file_path.text().strip() or None
+        self.config.export.chat_position = self.chat_position.currentText()
+        self.config.export.chat_width_percent = int(self.chat_width_slider.value())
+        self.config.export.chat_opacity = float(self.chat_opacity_slider.value()) / 100.0
 
         # Shorts settings
         if hasattr(self.config, 'shorts'):

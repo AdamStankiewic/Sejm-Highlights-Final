@@ -181,28 +181,47 @@ class ExportStage:
             part_number=part_number  # ✅ Przekazanie part_number
         )
         
-        # STEP 5: Generate hardsub version (optional)
+        # STEP 5: Add chat overlay (optional, long videos only)
+        output_with_chat = output_file
+        if self.config.export.chat_overlay_enabled:
+            if progress_callback:
+                progress_callback(0.85, "Dodawanie nakładki czatu...")
+
+            try:
+                output_with_chat = self._add_chat_overlay(
+                    output_file,
+                    output_dir,
+                    part_number=part_number
+                )
+            except Exception as e:
+                print(f"   ⚠️ Błąd chat overlay (kontynuuję bez czatu): {e}")
+                import traceback
+                traceback.print_exc()
+                output_with_chat = output_file
+
+        # STEP 6: Generate hardsub version (optional)
         output_file_hardsub = None
         if self.config.export.generate_hardsub:
             if progress_callback:
                 progress_callback(0.9, "Generowanie wersji z napisami...")
-            
+
             try:
                 output_file_hardsub = self._generate_hardsub(
-                    output_file,
+                    output_with_chat,  # Use chat overlay version if available
                     clips,
                     segments,
                     output_dir
                 )
             except Exception as e:
                 print(f"   ⚠️ Błąd hardsub: {e}")
-        
+
         print("✅ Stage 7 zakończony")
-        
+
         return {
-            'output_file': str(output_file),
+            'output_file': str(output_with_chat),
             'output_file_hardsub': str(output_file_hardsub) if output_file_hardsub else None,
-            'num_clips': len(clips)
+            'num_clips': len(clips),
+            'chat_overlay_applied': self.config.export.chat_overlay_enabled
         }
     
     def _extract_clips(
@@ -757,7 +776,140 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         secs = int(seconds % 60)
         millis = int((seconds % 1) * 1000)
         return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
-    
+
+    def _add_chat_overlay(
+        self,
+        input_video: Path,
+        output_dir: Path,
+        part_number: Optional[int] = None
+    ) -> Path:
+        """
+        Add chat overlay to long video.
+
+        Args:
+            input_video: Path to video file (without chat)
+            output_dir: Output directory
+            part_number: Part number (for multi-part export)
+
+        Returns:
+            Path to video with chat overlay
+        """
+        print("   Dodawanie nakładki czatu...")
+
+        chat_path = self.config.export.chat_overlay_path
+        if not chat_path or not Path(chat_path).exists():
+            print(f"   ⚠️ Chat file not found: {chat_path}")
+            print("   Skipping chat overlay")
+            return input_video
+
+        # Get video duration using ffprobe
+        try:
+            result = subprocess.run(
+                ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                 '-of', 'default=noprint_wrappers=1:nokey=1', str(input_video)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                encoding='utf-8'
+            )
+            video_duration = float(result.stdout.strip())
+        except Exception as e:
+            print(f"   ⚠️ Failed to get video duration: {e}")
+            return input_video
+
+        # Initialize chat overlay renderer
+        try:
+            from pipeline.chat_overlay import ChatOverlayRenderer
+
+            # Map GUI position to internal format
+            position_map = {
+                "Góra-Prawo (Recommended)": "top_right",
+                "Góra-Lewo": "top_left",
+                "Dół-Prawo": "bottom_right",
+                "Dół-Lewo": "bottom_left"
+            }
+            position = position_map.get(
+                self.config.export.chat_position,
+                self.config.export.chat_position.lower().replace("-", "_")
+            )
+
+            renderer = ChatOverlayRenderer(
+                position=position,
+                width_percent=self.config.export.chat_width_percent,
+                opacity=self.config.export.chat_opacity,
+                max_messages=10,
+                message_lifetime=30.0
+            )
+
+            # Render chat overlay
+            overlay_path = renderer.render_overlay(
+                chat_json_path=chat_path,
+                video_duration=video_duration,
+                video_size=(1920, 1080)
+            )
+
+            if not overlay_path or not Path(overlay_path).exists():
+                print("   ⚠️ Chat overlay rendering failed")
+                return input_video
+
+            print(f"   ✓ Chat overlay rendered: {overlay_path}")
+
+        except Exception as e:
+            print(f"   ⚠️ Failed to render chat overlay: {e}")
+            import traceback
+            traceback.print_exc()
+            return input_video
+
+        # Composite chat overlay onto video using ffmpeg overlay filter
+        part_suffix = f"_part{part_number}" if part_number else ""
+        output_file = output_dir / input_video.name.replace('.mp4', f'{part_suffix}_WITH_CHAT.mp4')
+
+        # Remove suffix duplication if exists
+        if part_suffix and f'{part_suffix}_WITH_CHAT' in str(output_file):
+            output_file = output_dir / input_video.name.replace(
+                f'{part_suffix}.mp4',
+                f'{part_suffix}_WITH_CHAT.mp4'
+            )
+
+        print(f"   Compositing chat overlay onto video...")
+
+        try:
+            # Use overlay filter to composite chat on top of video
+            cmd = [
+                'ffmpeg',
+                '-i', str(input_video),  # Main video
+                '-i', overlay_path,      # Chat overlay
+                '-filter_complex', '[0:v][1:v]overlay=0:0',  # Overlay at position 0,0 (chat already positioned)
+                '-c:v', self.config.export.video_codec,
+                '-preset', 'fast',
+                '-crf', str(self.config.export.crf),
+                '-c:a', 'copy',  # Copy audio without re-encoding
+                '-y',
+                str(output_file)
+            ]
+
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+                encoding='utf-8',
+                errors='replace'
+            )
+
+            print(f"   ✓ Chat overlay added: {output_file.name}")
+
+            # Clean up temporary overlay file
+            try:
+                Path(overlay_path).unlink()
+            except:
+                pass
+
+            return output_file
+
+        except subprocess.CalledProcessError as e:
+            print(f"   ❌ Failed to composite chat overlay: {e.stderr[:500]}")
+            return input_video
+
     def cancel(self):
         """Anuluj operację"""
         pass
