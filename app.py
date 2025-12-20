@@ -809,84 +809,60 @@ class SejmHighlightsApp(QMainWindow):
         self.add_hardsub.setChecked(False)
         layout.addWidget(self.add_hardsub)
 
-        # === CHAT OVERLAY (Long Videos Only) ===
-        layout.addWidget(QLabel(""))  # Spacer
-
-        chat_overlay_group = QGroupBox("💬 Chat Overlay (tylko dla długich filmów)")
-        chat_overlay_layout = QVBoxLayout()
-
-        # Enable checkbox
-        self.chat_overlay_enabled = QCheckBox("📱 Dodaj nakładkę czatu na film")
+        # === CHAT OVERLAY (Compact Layout) ===
+        self.chat_overlay_enabled = QCheckBox("💬 Dodaj czat (tylko długie filmy)")
         self.chat_overlay_enabled.setChecked(False)
-        chat_overlay_layout.addWidget(self.chat_overlay_enabled)
+        layout.addWidget(self.chat_overlay_enabled)
 
-        # Info label
-        info_label = QLabel(
-            "⚠️ Pozycja manualna (brak auto-detekcji kamerki dla długich filmów).\n"
-            "Czat zostanie zsynchronizowany z timeline'em automatycznie."
-        )
-        info_label.setStyleSheet("color: #666; font-size: 10px; padding: 5px;")
-        info_label.setWordWrap(True)
-        chat_overlay_layout.addWidget(info_label)
-
-        # Chat file path
-        chat_file_layout = QHBoxLayout()
-        chat_file_layout.addWidget(QLabel("Plik czatu (chat.json):"))
+        # Chat file + position in one row
+        chat_row1 = QHBoxLayout()
+        chat_row1.addWidget(QLabel("Plik:"))
         self.chat_file_path = QLineEdit()
-        self.chat_file_path.setPlaceholderText("Wybierz plik chat.json...")
-        chat_file_layout.addWidget(self.chat_file_path)
+        self.chat_file_path.setPlaceholderText("chat.json...")
+        chat_row1.addWidget(self.chat_file_path)
 
-        browse_chat_btn = QPushButton("📂 Przeglądaj")
+        browse_chat_btn = QPushButton("📂")
+        browse_chat_btn.setMaximumWidth(40)
         browse_chat_btn.clicked.connect(self._browse_chat_file)
-        chat_file_layout.addWidget(browse_chat_btn)
-        chat_overlay_layout.addLayout(chat_file_layout)
+        chat_row1.addWidget(browse_chat_btn)
 
-        # Position dropdown
-        position_layout = QHBoxLayout()
-        position_layout.addWidget(QLabel("Pozycja:"))
+        chat_row1.addWidget(QLabel("Pozycja:"))
         self.chat_position = QComboBox()
         self.chat_position.addItems([
-            "Góra-Prawo (Recommended)",
+            "Góra-Prawo",
             "Góra-Lewo",
             "Dół-Prawo",
             "Dół-Lewo"
         ])
-        position_layout.addWidget(self.chat_position)
-        position_layout.addStretch()
-        chat_overlay_layout.addLayout(position_layout)
+        chat_row1.addWidget(self.chat_position)
+        layout.addLayout(chat_row1)
 
-        # Optional: Width slider
-        width_layout = QHBoxLayout()
-        width_layout.addWidget(QLabel("Szerokość:"))
+        # Width + Opacity in one row
+        chat_row2 = QHBoxLayout()
+        chat_row2.addWidget(QLabel("Szerokość:"))
         self.chat_width_slider = QSlider(Qt.Orientation.Horizontal)
         self.chat_width_slider.setRange(20, 40)
         self.chat_width_slider.setValue(25)
-        self.chat_width_slider.setSingleStep(1)
-        width_layout.addWidget(self.chat_width_slider)
+        chat_row2.addWidget(self.chat_width_slider)
         self.chat_width_label = QLabel("25%")
+        self.chat_width_label.setMinimumWidth(40)
         self.chat_width_slider.valueChanged.connect(
             lambda v: self.chat_width_label.setText(f"{v}%")
         )
-        width_layout.addWidget(self.chat_width_label)
-        chat_overlay_layout.addLayout(width_layout)
+        chat_row2.addWidget(self.chat_width_label)
 
-        # Optional: Opacity slider
-        opacity_layout = QHBoxLayout()
-        opacity_layout.addWidget(QLabel("Przezroczystość tła:"))
+        chat_row2.addWidget(QLabel("  Przezr.:"))
         self.chat_opacity_slider = QSlider(Qt.Orientation.Horizontal)
         self.chat_opacity_slider.setRange(60, 100)
         self.chat_opacity_slider.setValue(80)
-        self.chat_opacity_slider.setSingleStep(5)
-        opacity_layout.addWidget(self.chat_opacity_slider)
+        chat_row2.addWidget(self.chat_opacity_slider)
         self.chat_opacity_label = QLabel("80%")
+        self.chat_opacity_label.setMinimumWidth(40)
         self.chat_opacity_slider.valueChanged.connect(
             lambda v: self.chat_opacity_label.setText(f"{v}%")
         )
-        opacity_layout.addWidget(self.chat_opacity_label)
-        chat_overlay_layout.addLayout(opacity_layout)
-
-        chat_overlay_group.setLayout(chat_overlay_layout)
-        layout.addWidget(chat_overlay_group)
+        chat_row2.addWidget(self.chat_opacity_label)
+        layout.addLayout(chat_row2)
 
         layout.addStretch()
         return tab
