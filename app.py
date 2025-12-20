@@ -21,6 +21,10 @@ from dotenv import load_dotenv
 
 # Load environment variables from .env file (for OPENAI_API_KEY, etc.)
 load_dotenv()
+
+# Module-level logger
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QProgressBar, QTextEdit, QFileDialog,
