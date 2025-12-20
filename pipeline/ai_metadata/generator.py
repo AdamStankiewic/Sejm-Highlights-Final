@@ -58,6 +58,7 @@ class MetadataGenerator:
         platform: str = "youtube",
         video_type: str = "long",
         language: Optional[str] = None,
+        content_type: Optional[str] = None,
         force_regenerate: bool = False
     ) -> Dict:
         """
@@ -69,10 +70,11 @@ class MetadataGenerator:
             platform: Target platform (youtube/twitch/kick)
             video_type: Video type (long/shorts)
             language: Override language (defaults to profile language)
+            content_type: Content type (e.g., sejm_meeting_pl, asmongold_gaming)
             force_regenerate: Skip cache and regenerate
 
         Returns:
-            Dict with 'title', 'description', 'brief', 'cost', 'cached'
+            Dict with 'title', 'description', 'brief', 'cost', 'cached', 'content_type'
         """
         try:
             # Get streamer profile
@@ -84,8 +86,14 @@ class MetadataGenerator:
             # Determine language
             lang = language or profile.primary_language
 
+            # Auto-detect content type if not specified (SIMPLE heuristics)
+            if not content_type:
+                content_type = self._auto_detect_content_type(clips, streamer_id, lang)
+
+            logger.info(f"Content type: {content_type}")
+
             # Create video facts hash for caching
-            video_facts = self._create_video_facts(clips, streamer_id, platform)
+            video_facts = self._create_video_facts(clips, streamer_id, platform, content_type)
             facts_hash = self._hash_video_facts(video_facts)
 
             # Check cache first (unless force regenerate)
@@ -96,13 +104,13 @@ class MetadataGenerator:
                     return cached
 
             # Generate new metadata
-            logger.info(f"🤖 Generating AI metadata for {streamer_id} ({platform}/{video_type})")
+            logger.info(f"🤖 Generating AI metadata for {streamer_id} ({platform}/{video_type}/{content_type})")
 
             # Step 1: Build context (StreamingBrief)
             brief = self._build_context(clips, lang, profile)
 
-            # Step 2: Get few-shot examples
-            examples = self._get_few_shot_examples(streamer_id, platform)
+            # Step 2: Get few-shot examples (filtered by content_type)
+            examples = self._get_few_shot_examples(streamer_id, platform, content_type)
 
             # Step 3: Generate title and description
             metadata = self._generate_with_ai(
@@ -111,12 +119,13 @@ class MetadataGenerator:
 
             # Step 4: Cache results
             self._cache_metadata(
-                video_facts, facts_hash, brief, metadata, streamer_id, platform
+                video_facts, facts_hash, brief, metadata, streamer_id, platform, content_type
             )
 
             return {
                 **metadata,
                 "brief": brief.to_dict(),
+                "content_type": content_type,
                 "cached": False
             }
 
@@ -130,13 +139,15 @@ class MetadataGenerator:
         self,
         clips: List[Dict],
         streamer_id: str,
-        platform: str
+        platform: str,
+        content_type: str = "default"
     ) -> Dict:
         """Create deterministic video facts for hashing"""
         # Extract deterministic facts from clips
         facts = {
             "streamer_id": streamer_id,
             "platform": platform,
+            "content_type": content_type,
             "clips": [
                 {
                     "title": clip.get("title", ""),
@@ -153,6 +164,49 @@ class MetadataGenerator:
         """Create hash of video facts for deduplication"""
         facts_json = json.dumps(facts, sort_keys=True)
         return hashlib.sha256(facts_json.encode()).hexdigest()[:16]
+
+    def _auto_detect_content_type(
+        self,
+        clips: List[Dict],
+        streamer_id: str,
+        language: str
+    ) -> str:
+        """
+        Simple auto-detection of content type from clips.
+
+        Uses keyword matching in clip titles/transcripts.
+        For MVP - SIMPLE heuristics only!
+        """
+        # Get first few clip titles and transcripts for analysis
+        text = ""
+        for clip in clips[:3]:
+            text += " " + clip.get("title", "").lower()
+            text += " " + clip.get("transcript", "")[:200].lower()
+
+        # Language suffix
+        lang_suffix = "_pl" if language == "pl" else "_en"
+
+        # Sejm-specific detection
+        if streamer_id == "sejm":
+            if any(kw in text for kw in ["posiedzenie", "obrady sejmu", "obrady"]):
+                return f"sejm_meeting{lang_suffix}"
+            elif any(kw in text for kw in ["konferencja prasowa"]):
+                return f"sejm_press_conference{lang_suffix}"
+            elif any(kw in text for kw in ["briefing", "komunikat"]):
+                return f"sejm_briefing{lang_suffix}"
+            elif any(kw in text for kw in ["komisja", "posiedzenie komisji"]):
+                return f"sejm_committee{lang_suffix}"
+            elif any(kw in text for kw in ["wystąpienie", "przemówienie"]):
+                return f"sejm_speech{lang_suffix}"
+            else:
+                return f"sejm_other{lang_suffix}"
+
+        # Gaming streamers - simple heuristic
+        else:
+            if any(kw in text for kw in ["irl", "just chatting", "talking", "reacts"]):
+                return f"{streamer_id}_irl"
+            else:
+                return f"{streamer_id}_gaming"
 
     def _get_cached_metadata(self, facts_hash: str) -> Optional[Dict]:
         """Check if metadata already generated for these facts"""
@@ -227,15 +281,24 @@ class MetadataGenerator:
         self,
         streamer_id: str,
         platform: str,
+        content_type: str = None,
         max_examples: int = 3
     ) -> List[Dict]:
-        """Get few-shot examples: learned + seed"""
+        """Get few-shot examples: learned + seed (filtered by content_type)"""
         # Get profile seed examples
         profile = self.streamer_manager.get(streamer_id)
         seed_examples = profile.seed_examples if profile else []
 
-        # Get learned examples from database
-        learned_examples = self._get_learned_examples(streamer_id, platform, max_examples)
+        # Filter seed examples by content_type if specified
+        if content_type:
+            seed_examples = [
+                ex for ex in seed_examples
+                if (hasattr(ex, 'metadata') and ex.metadata and
+                    ex.metadata.get('content_type') == content_type)
+            ]
+
+        # Get learned examples from database (filtered by content_type)
+        learned_examples = self._get_learned_examples(streamer_id, platform, content_type, max_examples)
 
         # Combine with PromptBuilder utility
         prompt_builder = PromptBuilder(self.platform_config, language="pl")
@@ -251,22 +314,33 @@ class MetadataGenerator:
         self,
         streamer_id: str,
         platform: str,
+        content_type: str = None,
         limit: int = 3
     ) -> List[Dict]:
-        """Get top-performing examples from database"""
+        """Get top-performing examples from database (filtered by content_type)"""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
 
-            cursor.execute("""
-                SELECT title, description, brief_json
+            # Build query with optional content_type filter
+            query = """
+                SELECT title, description, brief_json, content_type
                 FROM streamer_learned_examples
                 WHERE streamer_id = ?
                 AND platform = ?
                 AND is_active = 1
-                ORDER BY performance_score DESC
-                LIMIT ?
-            """, (streamer_id, platform, limit))
+            """
+            params = [streamer_id, platform]
+
+            # Filter by content_type if specified
+            if content_type:
+                query += " AND content_type = ?"
+                params.append(content_type)
+
+            query += " ORDER BY performance_score DESC LIMIT ?"
+            params.append(limit)
+
+            cursor.execute(query, tuple(params))
 
             examples = []
             for row in cursor.fetchall():
@@ -275,12 +349,13 @@ class MetadataGenerator:
                     "title": row[0],
                     "description": row[1],
                     "metadata": {
-                        "content_type": brief.get("content_type", "general"),
+                        "content_type": row[3] if len(row) > 3 else brief.get("content_type", "default"),
                         "emotional_tone": brief.get("emotional_state", "neutral")
                     }
                 })
 
             conn.close()
+            logger.info(f"Loaded {len(examples)} learned examples for content_type={content_type}")
             return examples
 
         except Exception as e:
@@ -382,7 +457,8 @@ class MetadataGenerator:
         brief: StreamingBrief,
         metadata: Dict,
         streamer_id: str,
-        platform: str
+        platform: str,
+        content_type: str = "default"
     ):
         """Cache generated metadata in database"""
         try:
@@ -397,6 +473,7 @@ class MetadataGenerator:
                     video_id,
                     streamer_id,
                     platform,
+                    content_type,
                     video_facts_hash,
                     video_facts_json,
                     streaming_brief_json,
@@ -406,11 +483,12 @@ class MetadataGenerator:
                     metadata_generated_at,
                     metadata_model,
                     metadata_cost
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 video_id,
                 streamer_id,
                 platform,
+                content_type,
                 facts_hash,
                 json.dumps(video_facts),
                 json.dumps(brief.to_dict()),
@@ -428,7 +506,7 @@ class MetadataGenerator:
             conn.commit()
             conn.close()
 
-            logger.info(f"✅ Cached metadata for {video_id}")
+            logger.info(f"✅ Cached metadata for {video_id} (content_type={content_type})")
 
         except Exception as e:
             logger.warning(f"Failed to cache metadata: {e}")

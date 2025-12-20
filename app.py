@@ -242,6 +242,12 @@ class SejmHighlightsApp(QMainWindow):
         self.init_ui()
         self.setup_styles()
 
+        # Detect streamer after UI is initialized
+        try:
+            self.detect_streamer()
+        except Exception as e:
+            logger.warning(f"Failed to detect streamer on init: {e}")
+
     def _t(self, key: str) -> str:
         lang = getattr(self.config, "language", "pl")
         return self.translations.get(lang, {}).get(key, key)
@@ -1194,7 +1200,39 @@ class SejmHighlightsApp(QMainWindow):
         cred_info = QLabel("📘 Pobierz z: Google Cloud Console → APIs & Services → Credentials")
         cred_info.setStyleSheet("color: #2196F3; font-style: italic; padding-left: 25px;")
         layout.addWidget(cred_info)
-        
+
+        layout.addSpacing(20)
+
+        # === STREAMER PROFILE DETECTION (NEW!) ===
+        profile_group = QGroupBox("🎭 Streamer Profile")
+        profile_layout = QVBoxLayout()
+
+        # Info label
+        self.profile_info_label = QLabel("Detecting...")
+        self.profile_info_label.setWordWrap(True)
+        self.profile_info_label.setStyleSheet("padding: 8px; background-color: #f5f5f5; border-radius: 4px;")
+        profile_layout.addWidget(self.profile_info_label)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+
+        self.change_profile_btn = QPushButton("🔄 Change Profile")
+        self.change_profile_btn.clicked.connect(self.show_profile_selector)
+        button_layout.addWidget(self.change_profile_btn)
+
+        self.refresh_detection_btn = QPushButton("🔍 Refresh")
+        self.refresh_detection_btn.clicked.connect(self.detect_streamer)
+        button_layout.addWidget(self.refresh_detection_btn)
+
+        button_layout.addStretch()
+        profile_layout.addLayout(button_layout)
+
+        profile_group.setLayout(profile_layout)
+        layout.addWidget(profile_group)
+
+        # Initialize current_profile
+        self.current_profile = None
+
         layout.addStretch()
         return tab
     
@@ -2219,6 +2257,106 @@ class SejmHighlightsApp(QMainWindow):
             # Update config with dialog values
             dialog.apply_to_config(self.config)
             self.log(f"Shorts template: {self.shorts_template_selection}", "INFO")
+
+    def detect_streamer(self):
+        """Auto-detect streamer from config"""
+        try:
+            from pipeline.streamers import get_manager
+            manager = get_manager()
+
+            # Get channel_id from config
+            channel_id = self.config.youtube.channel_id if hasattr(self.config, 'youtube') else None
+
+            if not channel_id:
+                self.profile_info_label.setText("⚠️ No YouTube channel_id in config.yml")
+                self.profile_info_label.setStyleSheet("padding: 8px; background-color: #fff3e0; border-radius: 4px;")
+                self.current_profile = None
+                return
+
+            # Try auto-detection
+            profile = manager.detect_from_youtube(channel_id)
+
+            if profile:
+                # Success
+                self.profile_info_label.setText(
+                    f"✅ Detected: {profile.name}\n"
+                    f"Language: {profile.primary_language.upper()} | "
+                    f"Type: {profile.channel_type.title()}"
+                )
+                self.profile_info_label.setStyleSheet("padding: 8px; background-color: #e8f5e9; border-radius: 4px;")
+                self.current_profile = profile
+                logger.info(f"Auto-detected streamer: {profile.streamer_id}")
+            else:
+                # Not found
+                self.profile_info_label.setText(
+                    f"⚠️ No profile found for channel: {channel_id}\n"
+                    f"Click 'Change Profile' to select one."
+                )
+                self.profile_info_label.setStyleSheet("padding: 8px; background-color: #fff3e0; border-radius: 4px;")
+                self.current_profile = None
+                logger.warning(f"No profile found for channel_id: {channel_id}")
+
+        except ImportError:
+            # StreamerManager not available
+            self.profile_info_label.setText("ℹ️ Streamer profiles not available (legacy mode)")
+            self.profile_info_label.setStyleSheet("padding: 8px; background-color: #e3f2fd; border-radius: 4px;")
+            self.current_profile = None
+
+        except Exception as e:
+            self.profile_info_label.setText(f"❌ Error detecting profile: {e}")
+            self.profile_info_label.setStyleSheet("padding: 8px; background-color: #ffebee; border-radius: 4px;")
+            self.current_profile = None
+            logger.error(f"Profile detection error: {e}", exc_info=True)
+
+    def show_profile_selector(self):
+        """Show simple profile selection dialog"""
+        try:
+            from pipeline.streamers import get_manager
+            from PyQt6.QtWidgets import QInputDialog
+            manager = get_manager()
+
+            profiles = manager.list_all()
+
+            if not profiles:
+                QMessageBox.warning(
+                    self,
+                    "No Profiles",
+                    "No streamer profiles found.\n\n"
+                    "Create one in: pipeline/streamers/profiles/\n"
+                    "Use _TEMPLATE.yaml as starting point."
+                )
+                return
+
+            # Simple selection dialog
+            items = [f"{p.name} ({p.streamer_id})" for p in profiles]
+
+            selected, ok = QInputDialog.getItem(
+                self,
+                "Select Streamer Profile",
+                "Choose profile:",
+                items,
+                0,
+                False
+            )
+
+            if ok and selected:
+                # Extract streamer_id from selection
+                streamer_id = selected.split('(')[1].split(')')[0]
+                profile = manager.get(streamer_id)
+
+                if profile:
+                    self.current_profile = profile
+                    self.profile_info_label.setText(
+                        f"✅ Selected: {profile.name}\n"
+                        f"Language: {profile.primary_language.upper()} | "
+                        f"Type: {profile.channel_type.title()}"
+                    )
+                    self.profile_info_label.setStyleSheet("padding: 8px; background-color: #e8f5e9; border-radius: 4px;")
+                    logger.info(f"User selected profile: {streamer_id}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load profiles: {e}")
+            logger.error(f"Profile selector error: {e}", exc_info=True)
 
 
 class ShortsTemplateDialog(QDialog):

@@ -25,13 +25,30 @@ generation:
 
 # Seed examples (high-performing content patterns)
 seed_examples:
-  - title: "🔥 SEJM: Tusk vs Kaczyński - Najgorętsze Momenty!"
-    description: "Ostra wymiana zdań w Sejmie RP"
+  - title: "🔥 SEJM: Tusk vs Kaczyński - Najgorętsze Momenty Debaty!"
+    description: "Ostra wymiana zdań podczas posiedzenia Sejmu RP. Zobacz najbardziej kontrowersyjne fragmenty debaty o budżecie państwa."
     metadata:
-      content_type: "debate"
+      content_type: "sejm_meeting_pl"
       emotional_tone: "heated"
-  - title: "💥 SEJM Eksploduje! Kontrowersyjna Debata"
-    description: "Najciekawsze fragmenty posiedzenia Sejmu"
+      video_type: "long"
+
+  - title: "💥 Konferencja Prasowa - Minister Odpowiada na Oskarżenia!"
+    description: "Minister finansów na konferencji prasowej odnosi się do zarzutów opozycji. Gorąca atmosfera i nieprzewidziane pytania."
     metadata:
-      content_type: "highlights"
-      emotional_tone: "controversial"
+      content_type: "sejm_press_conference_pl"
+      emotional_tone: "professional"
+      video_type: "long"
+
+  - title: "⚡ PILNY Briefing - Marszałek Wydaje Oświadczenie"
+    description: "Marszałek Sejmu w pilnym komunikacie odnosi się do najnowszych wydarzeń politycznych."
+    metadata:
+      content_type: "sejm_briefing_pl"
+      emotional_tone: "urgent"
+      video_type: "long"
+
+  - title: "🏛️ Posiedzenie Komisji - Ustawa o Ochronie Środowiska"
+    description: "Komisja Ochrony Środowiska debatuje nad kontrowersyjnymi zapisami nowej ustawy."
+    metadata:
+      content_type: "sejm_committee_pl"
+      emotional_tone: "professional"
+      video_type: "long"
