@@ -218,8 +218,8 @@ def overlay_chat_on_video(
             '-map', '[outv]',  # Use overlayed video
             '-map', '0:a?',     # Copy audio from main video only (? = optional)
             '-c:v', 'libx264',
-            '-preset', 'fast',
-            '-crf', '21',
+            '-preset', 'ultrafast',  # Faster encoding for overlay (was 'fast')
+            '-crf', '23',  # Slightly lower quality for speed (was 21)
             '-c:a', 'copy',
             '-y',
             output_path
@@ -234,7 +234,7 @@ def overlay_chat_on_video(
             check=True,
             encoding='utf-8',
             errors='replace',
-            timeout=300
+            timeout=3600  # 1 hour timeout (was 300s/5min)
         )
 
         logger.info(f"Chat overlay complete: {output_path}")
