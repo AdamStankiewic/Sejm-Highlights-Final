@@ -656,12 +656,12 @@ class SejmHighlightsApp(QMainWindow):
             self._refresh_chat_status()
 
     def _browse_chat_file(self):
-        """Browse chat file for overlay (long videos)."""
+        """Browse Chat Render MP4 file for overlay (long videos)."""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Wybierz plik chat.json dla nakładki",
+            "Wybierz Chat Render MP4",
             "",
-            "Chat JSON (*.json);;All Files (*)",
+            "Chat Render MP4 (*.mp4);;All Files (*)",
         )
         if file_path:
             self.chat_file_path.setText(file_path)
@@ -809,60 +809,67 @@ class SejmHighlightsApp(QMainWindow):
         self.add_hardsub.setChecked(False)
         layout.addWidget(self.add_hardsub)
 
-        # === CHAT OVERLAY (Compact Layout) ===
-        self.chat_overlay_enabled = QCheckBox("💬 Dodaj czat (tylko długie filmy)")
+        # === CHAT OVERLAY (Simplified - MP4 Render based) ===
+        self.chat_overlay_enabled = QCheckBox("💬 Dodaj czat (Chat Render MP4)")
         self.chat_overlay_enabled.setChecked(False)
         layout.addWidget(self.chat_overlay_enabled)
 
-        # Chat file + position in one row
-        chat_row1 = QHBoxLayout()
-        chat_row1.addWidget(QLabel("Plik:"))
+        # Chat file path
+        chat_file_row = QHBoxLayout()
+        chat_file_row.addWidget(QLabel("Plik:"))
         self.chat_file_path = QLineEdit()
-        self.chat_file_path.setPlaceholderText("chat.json...")
-        chat_row1.addWidget(self.chat_file_path)
+        self.chat_file_path.setPlaceholderText("Chat Render MP4 (700x1200)...")
+        chat_file_row.addWidget(self.chat_file_path)
 
         browse_chat_btn = QPushButton("📂")
         browse_chat_btn.setMaximumWidth(40)
         browse_chat_btn.clicked.connect(self._browse_chat_file)
-        chat_row1.addWidget(browse_chat_btn)
+        chat_file_row.addWidget(browse_chat_btn)
+        layout.addLayout(chat_file_row)
 
-        chat_row1.addWidget(QLabel("Pozycja:"))
-        self.chat_position = QComboBox()
-        self.chat_position.addItems([
-            "Góra-Prawo",
-            "Góra-Lewo",
-            "Dół-Prawo",
-            "Dół-Lewo"
-        ])
-        chat_row1.addWidget(self.chat_position)
-        layout.addLayout(chat_row1)
+        # Position X, Y, Scale in one row (cleaner UI)
+        chat_pos_row = QHBoxLayout()
 
-        # Width + Opacity in one row
-        chat_row2 = QHBoxLayout()
-        chat_row2.addWidget(QLabel("Szerokość:"))
-        self.chat_width_slider = QSlider(Qt.Orientation.Horizontal)
-        self.chat_width_slider.setRange(20, 40)
-        self.chat_width_slider.setValue(25)
-        chat_row2.addWidget(self.chat_width_slider)
-        self.chat_width_label = QLabel("25%")
-        self.chat_width_label.setMinimumWidth(40)
-        self.chat_width_slider.valueChanged.connect(
-            lambda v: self.chat_width_label.setText(f"{v}%")
+        # X position (horizontal - left to right)
+        chat_pos_row.addWidget(QLabel("X:"))
+        self.chat_x_slider = QSlider(Qt.Orientation.Horizontal)
+        self.chat_x_slider.setRange(0, 100)
+        self.chat_x_slider.setValue(64)  # Right side default (good for facecam left)
+        chat_pos_row.addWidget(self.chat_x_slider)
+        self.chat_x_label = QLabel("64%")
+        self.chat_x_label.setMinimumWidth(45)
+        self.chat_x_slider.valueChanged.connect(
+            lambda v: self.chat_x_label.setText(f"{v}%")
         )
-        chat_row2.addWidget(self.chat_width_label)
+        chat_pos_row.addWidget(self.chat_x_label)
 
-        chat_row2.addWidget(QLabel("  Przezr.:"))
-        self.chat_opacity_slider = QSlider(Qt.Orientation.Horizontal)
-        self.chat_opacity_slider.setRange(60, 100)
-        self.chat_opacity_slider.setValue(80)
-        chat_row2.addWidget(self.chat_opacity_slider)
-        self.chat_opacity_label = QLabel("80%")
-        self.chat_opacity_label.setMinimumWidth(40)
-        self.chat_opacity_slider.valueChanged.connect(
-            lambda v: self.chat_opacity_label.setText(f"{v}%")
+        # Y position (vertical - top to bottom)
+        chat_pos_row.addWidget(QLabel("  Y:"))
+        self.chat_y_slider = QSlider(Qt.Orientation.Horizontal)
+        self.chat_y_slider.setRange(0, 100)
+        self.chat_y_slider.setValue(10)  # Top default
+        chat_pos_row.addWidget(self.chat_y_slider)
+        self.chat_y_label = QLabel("10%")
+        self.chat_y_label.setMinimumWidth(45)
+        self.chat_y_slider.valueChanged.connect(
+            lambda v: self.chat_y_label.setText(f"{v}%")
         )
-        chat_row2.addWidget(self.chat_opacity_label)
-        layout.addLayout(chat_row2)
+        chat_pos_row.addWidget(self.chat_y_label)
+
+        # Scale (resize chat render)
+        chat_pos_row.addWidget(QLabel("  Skala:"))
+        self.chat_scale_slider = QSlider(Qt.Orientation.Horizontal)
+        self.chat_scale_slider.setRange(50, 100)
+        self.chat_scale_slider.setValue(80)  # 80% of original size
+        chat_pos_row.addWidget(self.chat_scale_slider)
+        self.chat_scale_label = QLabel("80%")
+        self.chat_scale_label.setMinimumWidth(45)
+        self.chat_scale_slider.valueChanged.connect(
+            lambda v: self.chat_scale_label.setText(f"{v}%")
+        )
+        chat_pos_row.addWidget(self.chat_scale_label)
+
+        layout.addLayout(chat_pos_row)
 
         layout.addStretch()
         return tab
@@ -2113,12 +2120,12 @@ class SejmHighlightsApp(QMainWindow):
         self.config.export.add_transitions = bool(self.add_transitions.isChecked())
         self.config.export.generate_hardsub = bool(self.add_hardsub.isChecked())
 
-        # Chat overlay settings
+        # Chat overlay settings (Chat Render MP4 based)
         self.config.export.chat_overlay_enabled = bool(self.chat_overlay_enabled.isChecked())
         self.config.export.chat_overlay_path = self.chat_file_path.text().strip() or None
-        self.config.export.chat_position = self.chat_position.currentText()
-        self.config.export.chat_width_percent = int(self.chat_width_slider.value())
-        self.config.export.chat_opacity = float(self.chat_opacity_slider.value()) / 100.0
+        self.config.export.chat_x_percent = int(self.chat_x_slider.value())
+        self.config.export.chat_y_percent = int(self.chat_y_slider.value())
+        self.config.export.chat_scale_percent = int(self.chat_scale_slider.value())
 
         # Shorts settings
         if hasattr(self.config, 'shorts'):

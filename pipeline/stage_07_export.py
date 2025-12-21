@@ -185,12 +185,13 @@ class ExportStage:
         output_with_chat = output_file
         if self.config.export.chat_overlay_enabled:
             if progress_callback:
-                progress_callback(0.85, "Dodawanie nakładki czatu...")
+                progress_callback(0.85, "Dodawanie Chat Render overlay...")
 
             try:
                 output_with_chat = self._add_chat_overlay(
-                    output_file,
-                    output_dir,
+                    input_video=output_file,
+                    output_dir=output_dir,
+                    clips=clips,  # Pass clips for timestamp extraction
                     part_number=part_number
                 )
             except Exception as e:
@@ -781,110 +782,96 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         self,
         input_video: Path,
         output_dir: Path,
+        clips: List[Dict],
         part_number: Optional[int] = None
     ) -> Path:
         """
-        Add chat overlay to long video.
+        Add chat overlay from Chat Render MP4 to long video.
+
+        Extracts chat segments matching clip timestamps and overlays them.
 
         Args:
-            input_video: Path to video file (without chat)
+            input_video: Path to concatenated video file (without chat)
             output_dir: Output directory
+            clips: List of clip dicts with t0, t1 timestamps from original VOD
             part_number: Part number (for multi-part export)
 
         Returns:
             Path to video with chat overlay
         """
-        print("   Dodawanie nakładki czatu...")
+        print("   Dodawanie Chat Render overlay...")
 
         chat_path = self.config.export.chat_overlay_path
         if not chat_path or not Path(chat_path).exists():
-            print(f"   ⚠️ Chat file not found: {chat_path}")
+            print(f"   ⚠️ Chat Render MP4 not found: {chat_path}")
             print("   Skipping chat overlay")
             return input_video
 
-        # Get video duration using ffprobe
         try:
-            result = subprocess.run(
-                ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
-                 '-of', 'default=noprint_wrappers=1:nokey=1', str(input_video)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                encoding='utf-8'
-            )
-            video_duration = float(result.stdout.strip())
-        except Exception as e:
-            print(f"   ⚠️ Failed to get video duration: {e}")
-            return input_video
+            from pipeline.chat_overlay import ChatRenderOverlay, overlay_chat_on_video
+            from pathlib import Path as P
+            import tempfile
 
-        # Initialize chat overlay renderer
-        try:
-            from pipeline.chat_overlay import ChatOverlayRenderer
-
-            # Map GUI position to internal format
-            position_map = {
-                "Góra-Prawo (Recommended)": "top_right",
-                "Góra-Lewo": "top_left",
-                "Dół-Prawo": "bottom_right",
-                "Dół-Lewo": "bottom_left"
-            }
-            position = position_map.get(
-                self.config.export.chat_position,
-                self.config.export.chat_position.lower().replace("-", "_")
+            # Initialize chat render overlay
+            chat_overlay = ChatRenderOverlay(
+                chat_render_path=chat_path,
+                x_percent=self.config.export.chat_x_percent,
+                y_percent=self.config.export.chat_y_percent,
+                scale_percent=self.config.export.chat_scale_percent
             )
 
-            renderer = ChatOverlayRenderer(
-                position=position,
-                width_percent=self.config.export.chat_width_percent,
-                opacity=self.config.export.chat_opacity,
-                max_messages=10,
-                message_lifetime=30.0
-            )
+            print(f"   Chat dimensions: {chat_overlay.chat_width}x{chat_overlay.chat_height}")
+            print(f"   Position: X={self.config.export.chat_x_percent}%, Y={self.config.export.chat_y_percent}%")
+            print(f"   Scale: {self.config.export.chat_scale_percent}%")
 
-            # Render chat overlay
-            overlay_path = renderer.render_overlay(
-                chat_json_path=chat_path,
-                video_duration=video_duration,
-                video_size=(1920, 1080)
-            )
+            # Extract chat segments for each clip
+            chat_segments = []
+            temp_dir = P(tempfile.gettempdir())
 
-            if not overlay_path or not Path(overlay_path).exists():
-                print("   ⚠️ Chat overlay rendering failed")
-                return input_video
+            for i, clip in enumerate(clips):
+                # Get original timestamps from VOD
+                t0 = clip['t0']  # Start time in original VOD
+                t1 = clip['t1']  # End time in original VOD
 
-            print(f"   ✓ Chat overlay rendered: {overlay_path}")
+                # Add pre/post roll to match video clips
+                t0_with_preroll = max(0, t0 - self.config.export.clip_preroll)
+                t1_with_postroll = t1 + self.config.export.clip_postroll
 
-        except Exception as e:
-            print(f"   ⚠️ Failed to render chat overlay: {e}")
-            import traceback
-            traceback.print_exc()
-            return input_video
+                # Extract chat segment
+                print(f"   Extracting chat for clip {i+1}/{len(clips)} ({t0_with_preroll:.1f}s - {t1_with_postroll:.1f}s)...")
 
-        # Composite chat overlay onto video using ffmpeg overlay filter
-        part_suffix = f"_part{part_number}" if part_number else ""
-        output_file = output_dir / input_video.name.replace('.mp4', f'{part_suffix}_WITH_CHAT.mp4')
+                chat_segment = chat_overlay.extract_segment(
+                    start_time=t0_with_preroll,
+                    end_time=t1_with_postroll
+                )
 
-        # Remove suffix duplication if exists
-        if part_suffix and f'{part_suffix}_WITH_CHAT' in str(output_file):
-            output_file = output_dir / input_video.name.replace(
-                f'{part_suffix}.mp4',
-                f'{part_suffix}_WITH_CHAT.mp4'
-            )
+                if chat_segment and P(chat_segment).exists():
+                    chat_segments.append(chat_segment)
+                else:
+                    print(f"   ⚠️ Failed to extract chat for clip {i+1}, skipping chat overlay")
+                    return input_video
 
-        print(f"   Compositing chat overlay onto video...")
+            print(f"   ✓ Extracted {len(chat_segments)} chat segments")
 
-        try:
-            # Use overlay filter to composite chat on top of video
+            # Concatenate chat segments (same order as video clips)
+            concat_list_path = temp_dir / "chat_concat_list.txt"
+            with open(concat_list_path, 'w', encoding='utf-8') as f:
+                for seg in chat_segments:
+                    # Use forward slashes and absolute paths
+                    seg_abs = P(seg).absolute()
+                    f.write(f"file '{str(seg_abs).replace(chr(92), '/')}'\n")
+
+            print(f"   Concatenating {len(chat_segments)} chat segments...")
+
+            concatenated_chat = temp_dir / "chat_concatenated.mp4"
             cmd = [
                 'ffmpeg',
-                '-i', str(input_video),  # Main video
-                '-i', overlay_path,      # Chat overlay
-                '-filter_complex', '[0:v][1:v]overlay=0:0',  # Overlay at position 0,0 (chat already positioned)
-                '-c:v', self.config.export.video_codec,
-                '-preset', 'fast',
-                '-crf', str(self.config.export.crf),
-                '-c:a', 'copy',  # Copy audio without re-encoding
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', str(concat_list_path),
+                '-c', 'copy',
                 '-y',
-                str(output_file)
+                str(concatenated_chat)
             ]
 
             result = subprocess.run(
@@ -896,18 +883,52 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 errors='replace'
             )
 
-            print(f"   ✓ Chat overlay added: {output_file.name}")
+            print(f"   ✓ Chat segments concatenated")
 
-            # Clean up temporary overlay file
+            # Overlay concatenated chat onto video
+            part_suffix = f"_part{part_number}" if part_number else ""
+            output_file = output_dir / input_video.name.replace('.mp4', f'{part_suffix}_WITH_CHAT.mp4')
+
+            # Remove suffix duplication if exists
+            if part_suffix and f'{part_suffix}_WITH_CHAT' in str(output_file):
+                output_file = output_dir / input_video.name.replace(
+                    f'{part_suffix}.mp4',
+                    f'{part_suffix}_WITH_CHAT.mp4'
+                )
+
+            print(f"   Overlaying chat onto video...")
+
+            # Get overlay position
+            x_pos, y_pos = chat_overlay.get_overlay_position()
+
+            success = overlay_chat_on_video(
+                video_path=str(input_video),
+                chat_segment_path=str(concatenated_chat),
+                output_path=str(output_file),
+                x_pos=x_pos,
+                y_pos=y_pos
+            )
+
+            # Clean up temporary files
             try:
-                Path(overlay_path).unlink()
+                for seg in chat_segments:
+                    P(seg).unlink()
+                concatenated_chat.unlink()
+                concat_list_path.unlink()
             except:
                 pass
 
-            return output_file
+            if success:
+                print(f"   ✓ Chat overlay added: {output_file.name}")
+                return output_file
+            else:
+                print(f"   ⚠️ Chat overlay failed, returning original video")
+                return input_video
 
-        except subprocess.CalledProcessError as e:
-            print(f"   ❌ Failed to composite chat overlay: {e.stderr[:500]}")
+        except Exception as e:
+            print(f"   ⚠️ Failed to add chat overlay: {e}")
+            import traceback
+            traceback.print_exc()
             return input_video
 
     def cancel(self):

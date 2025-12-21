@@ -249,12 +249,12 @@ class ExportConfig:
     subtitle_fontsize: int = 28
     subtitle_style: str = "Bold=1,Outline=2,Shadow=1,MarginV=40"
 
-    # Chat Overlay (Long Videos Only)
+    # Chat Overlay (Long Videos Only) - Chat Render MP4 based
     chat_overlay_enabled: bool = False
-    chat_overlay_path: Optional[str] = None
-    chat_position: str = "top_right"  # top_right, top_left, bottom_right, bottom_left
-    chat_width_percent: int = 25  # 20-40
-    chat_opacity: float = 0.8  # 0.6-1.0
+    chat_overlay_path: Optional[str] = None  # Path to Chat Render MP4 (e.g., 700x1200)
+    chat_x_percent: int = 64  # Horizontal position 0-100% (0=left, 100=right)
+    chat_y_percent: int = 10  # Vertical position 0-100% (0=top, 100=bottom)
+    chat_scale_percent: int = 80  # Scale 50-100% of original size
 
     # Misc
     movflags: str = "+faststart"
