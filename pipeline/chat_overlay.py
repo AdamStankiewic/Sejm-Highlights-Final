@@ -214,7 +214,9 @@ def overlay_chat_on_video(
             'ffmpeg',
             '-i', video_path,
             '-i', chat_segment_path,
-            '-filter_complex', f'[0:v][1:v]overlay={x_pos}:{y_pos}',
+            '-filter_complex', f'[0:v][1:v]overlay={x_pos}:{y_pos}[outv]',
+            '-map', '[outv]',  # Use overlayed video
+            '-map', '0:a?',     # Copy audio from main video only (? = optional)
             '-c:v', 'libx264',
             '-preset', 'fast',
             '-crf', '21',
@@ -239,7 +241,12 @@ def overlay_chat_on_video(
         return True
 
     except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to overlay chat: {e.stderr[:500]}")
+        # Log full stderr to see actual error (not just banner)
+        stderr_lines = e.stderr.split('\n') if e.stderr else []
+        # Get last 20 lines which contain actual errors
+        relevant_errors = '\n'.join(stderr_lines[-20:])
+        logger.error(f"Failed to overlay chat (exit code {e.returncode}):")
+        logger.error(f"Error details:\n{relevant_errors}")
         return False
     except subprocess.TimeoutExpired:
         logger.error("Chat overlay timed out")

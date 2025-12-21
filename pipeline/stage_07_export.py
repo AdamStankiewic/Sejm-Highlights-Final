@@ -873,6 +873,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 '-preset', 'ultrafast',
                 '-crf', '23',
                 '-pix_fmt', 'yuv420p',
+                '-an',  # No audio stream (chat segments are video-only)
                 '-y',
                 str(concatenated_chat)
             ]
