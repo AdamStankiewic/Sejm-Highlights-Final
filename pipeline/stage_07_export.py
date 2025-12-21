@@ -890,17 +890,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             print(f"   ✓ Chat segments concatenated")
 
             # Overlay concatenated chat onto video
-            part_suffix = f"_part{part_number}" if part_number else ""
-            output_file = output_dir / input_video.name.replace('.mp4', f'{part_suffix}_WITH_CHAT.mp4')
+            # Create output filename with _CHAT suffix (avoid in-place editing)
+            base_name = input_video.stem  # Filename without extension
+            output_file = output_dir / f"{base_name}_CHAT.mp4"
 
-            # Remove suffix duplication if exists
-            if part_suffix and f'{part_suffix}_WITH_CHAT' in str(output_file):
-                output_file = output_dir / input_video.name.replace(
-                    f'{part_suffix}.mp4',
-                    f'{part_suffix}_WITH_CHAT.mp4'
-                )
+            # Ensure output is different from input (ffmpeg can't edit in-place)
+            if output_file == input_video:
+                output_file = output_dir / f"{base_name}_WITH_CHAT.mp4"
 
             print(f"   Overlaying chat onto video...")
+            print(f"   Input:  {input_video.name}")
+            print(f"   Output: {output_file.name}")
 
             # Get overlay position
             x_pos, y_pos = chat_overlay.get_overlay_position()
