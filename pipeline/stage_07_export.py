@@ -869,7 +869,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 '-f', 'concat',
                 '-safe', '0',
                 '-i', str(concat_list_path),
-                '-c', 'copy',
+                '-c:v', 'libx264',  # Re-encode to ensure consistent format
+                '-preset', 'ultrafast',
+                '-crf', '23',
+                '-pix_fmt', 'yuv420p',
                 '-y',
                 str(concatenated_chat)
             ]
