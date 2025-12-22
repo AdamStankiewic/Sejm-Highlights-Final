@@ -107,7 +107,9 @@ class ChatRenderOverlay:
             ]
 
             logger.info(f"Extracting chat segment: {start_time:.1f}s - {end_time:.1f}s")
+            logger.debug(f"Chat source: {self.chat_render_path}")
             logger.debug(f"Scaled to {scaled_width}x{scaled_height}, position ({x_pos}, {y_pos})")
+            logger.debug(f"Duration: {duration:.1f}s, Output: {temp_output}")
 
             result = subprocess.run(
                 cmd,
@@ -123,7 +125,13 @@ class ChatRenderOverlay:
             return str(temp_output)
 
         except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to extract chat segment: {e.stderr[:500]}")
+            # Log full stderr to see actual error (not just banner)
+            stderr_lines = e.stderr.split('\n') if e.stderr else []
+            # Get last 20 lines which contain actual errors
+            relevant_errors = '\n'.join(stderr_lines[-20:])
+            logger.error(f"Failed to extract chat segment (exit code {e.returncode}):")
+            logger.error(f"Command: {' '.join(cmd[:10])}")  # Log command (first 10 args)
+            logger.error(f"Error details:\n{relevant_errors}")
             return None
         except subprocess.TimeoutExpired:
             logger.error("Chat segment extraction timed out")
