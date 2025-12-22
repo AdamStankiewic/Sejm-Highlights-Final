@@ -84,6 +84,11 @@ class ChatRenderOverlay:
             scaled_width = int(self.chat_width * (self.scale_percent / 100.0))
             scaled_height = int(self.chat_height * (self.scale_percent / 100.0))
 
+            # Ensure dimensions are even (required by libx264 encoder)
+            # If odd, add 1 to make even
+            scaled_width = scaled_width + (scaled_width % 2)
+            scaled_height = scaled_height + (scaled_height % 2)
+
             # Calculate position in pixels
             x_pos = int((video_width - scaled_width) * (self.x_percent / 100.0))
             y_pos = int((video_height - scaled_height) * (self.y_percent / 100.0))
