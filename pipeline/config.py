@@ -268,8 +268,14 @@ class HighlightPackerConfig:
 
     UWAGA: To NIE jest chunking materiału źródłowego.
            To jest pakowanie WYBRANYCH klipów (Stage 6) do części dla YouTube.
+
+    CRITICAL DESIGN FLAW (disabled by default):
+    - Dzieli materiał bazując na długości ŹRÓDŁA zamiast SELECTED clips
+    - Nadpisuje user target duration bez pytania
+    - Wymusza split nawet gdy selected clips mieszczą się w 1 filmie
+    Przykład: 6.3h source → forced 2 parts, ale selected tylko 24 min → should be 1 part!
     """
-    enabled: bool = True
+    enabled: bool = False  # DISABLED: fixes unwanted splits until logic refactored
     premiere_hour: int = 18
     premiere_minute: int = 0
     min_duration_for_split: float = 3600.0  # Min długość źródła aby pakować do części

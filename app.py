@@ -1143,7 +1143,7 @@ class SejmHighlightsApp(QMainWindow):
         
         # Enable/Disable
         self.splitter_enabled = QCheckBox("✅ Włącz Smart Splitter")
-        self.splitter_enabled.setChecked(True)
+        self.splitter_enabled.setChecked(False)  # DISABLED by default - has design flaw (splits based on source duration, not selected clips)
         self.splitter_enabled.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         layout.addWidget(self.splitter_enabled)
         
