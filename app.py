@@ -871,6 +871,33 @@ class SejmHighlightsApp(QMainWindow):
 
         layout.addLayout(chat_pos_row)
 
+        # Transparency controls (second row)
+        chat_transparency_row = QHBoxLayout()
+
+        # Transparent background checkbox
+        self.chat_transparent_bg = QCheckBox("🎨 Transparentne tło")
+        self.chat_transparent_bg.setChecked(True)  # Default: enabled
+        self.chat_transparent_bg.setToolTip("Usuń czarne tło chatu (colorkey filter)")
+        chat_transparency_row.addWidget(self.chat_transparent_bg)
+
+        chat_transparency_row.addSpacing(20)  # Add space
+
+        # Opacity slider
+        chat_transparency_row.addWidget(QLabel("  Opacity:"))
+        self.chat_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.chat_opacity_slider.setRange(50, 100)  # 50-100%
+        self.chat_opacity_slider.setValue(90)  # Default: 90% (readable but slightly transparent)
+        self.chat_opacity_slider.setToolTip("Przezroczystość tekstu i emotek (50-100%)")
+        chat_transparency_row.addWidget(self.chat_opacity_slider)
+        self.chat_opacity_label = QLabel("90%")
+        self.chat_opacity_label.setMinimumWidth(45)
+        self.chat_opacity_slider.valueChanged.connect(
+            lambda v: self.chat_opacity_label.setText(f"{v}%")
+        )
+        chat_transparency_row.addWidget(self.chat_opacity_label)
+
+        layout.addLayout(chat_transparency_row)
+
         layout.addStretch()
         return tab
 
@@ -2126,6 +2153,8 @@ class SejmHighlightsApp(QMainWindow):
         self.config.export.chat_x_percent = int(self.chat_x_slider.value())
         self.config.export.chat_y_percent = int(self.chat_y_slider.value())
         self.config.export.chat_scale_percent = int(self.chat_scale_slider.value())
+        self.config.export.chat_transparent_bg = bool(self.chat_transparent_bg.isChecked())
+        self.config.export.chat_opacity_percent = int(self.chat_opacity_slider.value())
 
         # Shorts settings
         if hasattr(self.config, 'shorts'):

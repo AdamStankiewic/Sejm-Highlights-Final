@@ -255,6 +255,8 @@ class ExportConfig:
     chat_x_percent: int = 64  # Horizontal position 0-100% (0=left, 100=right)
     chat_y_percent: int = 10  # Vertical position 0-100% (0=top, 100=bottom)
     chat_scale_percent: int = 80  # Scale 50-100% of original size
+    chat_transparent_bg: bool = True  # Remove black background (colorkey filter)
+    chat_opacity_percent: int = 90  # Text/emote opacity 50-100%
 
     # Misc
     movflags: str = "+faststart"

@@ -910,7 +910,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 chat_segment_path=str(concatenated_chat),
                 output_path=str(output_file),
                 x_pos=x_pos,
-                y_pos=y_pos
+                y_pos=y_pos,
+                transparent_bg=self.config.export.chat_transparent_bg,
+                opacity_percent=self.config.export.chat_opacity_percent
             )
 
             # Clean up temporary files

@@ -207,7 +207,9 @@ def overlay_chat_on_video(
     chat_segment_path: str,
     output_path: str,
     x_pos: int,
-    y_pos: int
+    y_pos: int,
+    transparent_bg: bool = True,
+    opacity_percent: int = 90
 ) -> bool:
     """
     Overlay chat segment onto video.
@@ -218,16 +220,34 @@ def overlay_chat_on_video(
         output_path: Path for output video
         x_pos: X position in pixels
         y_pos: Y position in pixels
+        transparent_bg: Remove black background using colorkey filter
+        opacity_percent: Text/emote opacity (50-100%)
 
     Returns:
         True if successful, False otherwise
     """
     try:
+        # Build filter_complex based on transparency settings
+        if transparent_bg:
+            # Apply colorkey to remove black background + opacity
+            opacity_alpha = opacity_percent / 100.0
+            filter_complex = (
+                f'[1:v]colorkey=0x000000:0.3:0.1,'  # Remove black (similarity=0.3, blend=0.1)
+                f'format=yuva420p,'  # Enable alpha channel
+                f'colorchannelmixer=aa={opacity_alpha}[chat];'  # Apply opacity
+                f'[0:v][chat]overlay={x_pos}:{y_pos}[outv]'  # Overlay on video
+            )
+            logger.info(f"Overlaying chat with transparent background (opacity={opacity_percent}%)")
+        else:
+            # Simple overlay without transparency
+            filter_complex = f'[0:v][1:v]overlay={x_pos}:{y_pos}[outv]'
+            logger.info(f"Overlaying chat without transparency")
+
         cmd = [
             'ffmpeg',
             '-i', video_path,
             '-i', chat_segment_path,
-            '-filter_complex', f'[0:v][1:v]overlay={x_pos}:{y_pos}[outv]',
+            '-filter_complex', filter_complex,
             '-map', '[outv]',  # Use overlayed video
             '-map', '0:a?',     # Copy audio from main video only (? = optional)
             '-c:v', 'libx264',
