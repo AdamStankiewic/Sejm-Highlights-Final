@@ -191,10 +191,21 @@ FORMAT: Return description in format:
             prompt_parts.append("PRZYKŁADY DOBRYCH TYTUŁÓW:" if self.language == "pl" else "EXAMPLES OF GOOD TITLES:")
             for i, example in enumerate(examples[:3], 1):  # Max 3 examples
                 prompt_parts.append(f"\nPrzykład {i}:" if self.language == "pl" else f"\nExample {i}:")
-                prompt_parts.append(f"Tytuł: {example.get('title', 'N/A')}")
-                if 'metadata' in example:
-                    meta = example['metadata']
-                    prompt_parts.append(f"Typ: {meta.get('content_type', 'N/A')}, Ton: {meta.get('emotional_tone', 'N/A')}")
+
+                # Handle both dict and SeedExample/Pydantic objects
+                if isinstance(example, dict):
+                    title = example.get('title', 'N/A')
+                    metadata = example.get('metadata', {})
+                else:
+                    # Pydantic model
+                    title = example.title
+                    metadata = example.metadata or {}
+
+                prompt_parts.append(f"Tytuł: {title}")
+                if metadata:
+                    content_type = metadata.get('content_type', 'N/A') if isinstance(metadata, dict) else 'N/A'
+                    emotional_tone = metadata.get('emotional_tone', 'N/A') if isinstance(metadata, dict) else 'N/A'
+                    prompt_parts.append(f"Typ: {content_type}, Ton: {emotional_tone}")
             prompt_parts.append("")
 
         # Add current video context
@@ -258,9 +269,15 @@ FORMAT: Return description in format:
         if examples:
             prompt_parts.append("PRZYKŁADY DOBRYCH OPISÓW:" if self.language == "pl" else "EXAMPLES OF GOOD DESCRIPTIONS:")
             for i, example in enumerate(examples[:2], 1):  # Max 2 examples for descriptions
-                if 'description' in example:
+                # Handle both dict and SeedExample/Pydantic objects
+                if isinstance(example, dict):
+                    desc = example.get('description')
+                else:
+                    # Pydantic model
+                    desc = example.description
+
+                if desc:
                     prompt_parts.append(f"\nPrzykład {i}:" if self.language == "pl" else f"\nExample {i}:")
-                    desc = example['description']
                     # Truncate long examples
                     if len(desc) > 200:
                         desc = desc[:200] + "..."

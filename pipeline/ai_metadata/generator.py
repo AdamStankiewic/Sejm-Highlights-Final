@@ -322,18 +322,34 @@ class MetadataGenerator:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
 
+            # Check if content_type column exists (backwards compatibility)
+            cursor.execute("PRAGMA table_info(streamer_learned_examples)")
+            columns = [row[1] for row in cursor.fetchall()]
+            has_content_type = 'content_type' in columns
+
             # Build query with optional content_type filter
-            query = """
-                SELECT title, description, brief_json, content_type
-                FROM streamer_learned_examples
-                WHERE streamer_id = ?
-                AND platform = ?
-                AND is_active = 1
-            """
+            if has_content_type:
+                query = """
+                    SELECT title, description, brief_json, content_type
+                    FROM streamer_learned_examples
+                    WHERE streamer_id = ?
+                    AND platform = ?
+                    AND is_active = 1
+                """
+            else:
+                # Fallback for old schema
+                query = """
+                    SELECT title, description, brief_json
+                    FROM streamer_learned_examples
+                    WHERE streamer_id = ?
+                    AND platform = ?
+                    AND is_active = 1
+                """
+
             params = [streamer_id, platform]
 
-            # Filter by content_type if specified
-            if content_type:
+            # Filter by content_type if specified AND column exists
+            if content_type and has_content_type:
                 query += " AND content_type = ?"
                 params.append(content_type)
 
@@ -349,7 +365,7 @@ class MetadataGenerator:
                     "title": row[0],
                     "description": row[1],
                     "metadata": {
-                        "content_type": row[3] if len(row) > 3 else brief.get("content_type", "default"),
+                        "content_type": row[3] if (has_content_type and len(row) > 3) else brief.get("content_type", "default"),
                         "emotional_tone": brief.get("emotional_state", "neutral")
                     }
                 })
