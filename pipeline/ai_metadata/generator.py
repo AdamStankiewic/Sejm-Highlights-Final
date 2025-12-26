@@ -254,7 +254,7 @@ class MetadataGenerator:
         start = time.time()
 
         # Use LLM for context if configured
-        use_llm = profile.generation.get("context_model") == "gpt-4o-mini"
+        use_llm = profile.generation.context_model == "gpt-4o-mini"
 
         brief = self.context_builder.build_from_clips(
             clips,
@@ -382,12 +382,12 @@ class MetadataGenerator:
         )
 
         title_response = self.openai_client.chat.completions.create(
-            model=profile.generation.get("title_model", "gpt-4o"),
+            model=profile.generation.title_model,
             messages=[
                 {"role": "system", "content": title_prompts["system"]},
                 {"role": "user", "content": title_prompts["user"]}
             ],
-            temperature=profile.generation.get("temperature", 0.8),
+            temperature=profile.generation.temperature,
             max_tokens=150
         )
 
@@ -399,7 +399,7 @@ class MetadataGenerator:
         # Track title generation cost
         self._track_cost(
             operation="title_generation",
-            model=profile.generation.get("title_model", "gpt-4o"),
+            model=profile.generation.title_model,
             input_tokens=title_tokens.prompt_tokens,
             output_tokens=title_tokens.completion_tokens,
             latency_ms=title_latency_ms
@@ -412,12 +412,12 @@ class MetadataGenerator:
         )
 
         desc_response = self.openai_client.chat.completions.create(
-            model=profile.generation.get("description_model", "gpt-4o"),
+            model=profile.generation.description_model,
             messages=[
                 {"role": "system", "content": desc_prompts["system"]},
                 {"role": "user", "content": desc_prompts["user"]}
             ],
-            temperature=profile.generation.get("temperature", 0.8),
+            temperature=profile.generation.temperature,
             max_tokens=500
         )
 
@@ -429,7 +429,7 @@ class MetadataGenerator:
         # Track description generation cost
         self._track_cost(
             operation="description_generation",
-            model=profile.generation.get("description_model", "gpt-4o"),
+            model=profile.generation.description_model,
             input_tokens=desc_tokens.prompt_tokens,
             output_tokens=desc_tokens.completion_tokens,
             latency_ms=desc_latency_ms
@@ -439,14 +439,14 @@ class MetadataGenerator:
         total_cost = self._estimate_cost(
             title_tokens.prompt_tokens + desc_tokens.prompt_tokens,
             title_tokens.completion_tokens + desc_tokens.completion_tokens,
-            profile.generation.get("title_model", "gpt-4o")
+            profile.generation.title_model
         )
 
         return {
             "title": title,
             "description": description,
             "cost": total_cost,
-            "model": profile.generation.get("title_model", "gpt-4o"),
+            "model": profile.generation.title_model,
             "examples_used": len(examples)
         }
 
