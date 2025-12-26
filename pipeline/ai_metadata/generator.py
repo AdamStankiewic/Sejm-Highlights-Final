@@ -481,43 +481,84 @@ class MetadataGenerator:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
 
+            # Check if content_type column exists (backwards compatibility)
+            cursor.execute("PRAGMA table_info(video_generation_cache)")
+            columns = [row[1] for row in cursor.fetchall()]
+            has_content_type = 'content_type' in columns
+
             # Generate video_id from facts hash
             video_id = f"{streamer_id}_{facts_hash}"
 
-            cursor.execute("""
-                INSERT OR REPLACE INTO video_generation_cache (
+            if has_content_type:
+                # New schema with content_type
+                cursor.execute("""
+                    INSERT OR REPLACE INTO video_generation_cache (
+                        video_id,
+                        streamer_id,
+                        platform,
+                        content_type,
+                        video_facts_hash,
+                        video_facts_json,
+                        streaming_brief_json,
+                        brief_generated_at,
+                        brief_model,
+                        generated_metadata_json,
+                        metadata_generated_at,
+                        metadata_model,
+                        metadata_cost
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
                     video_id,
                     streamer_id,
                     platform,
                     content_type,
-                    video_facts_hash,
-                    video_facts_json,
-                    streaming_brief_json,
-                    brief_generated_at,
-                    brief_model,
-                    generated_metadata_json,
-                    metadata_generated_at,
-                    metadata_model,
-                    metadata_cost
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                video_id,
-                streamer_id,
-                platform,
-                content_type,
-                facts_hash,
-                json.dumps(video_facts),
-                json.dumps(brief.to_dict()),
-                datetime.now().isoformat(),
-                "gpt-4o-mini",
-                json.dumps({
-                    "title": metadata["title"],
-                    "description": metadata["description"]
-                }),
-                datetime.now().isoformat(),
-                metadata.get("model", "gpt-4o"),
-                metadata.get("cost", 0.0)
-            ))
+                    facts_hash,
+                    json.dumps(video_facts),
+                    json.dumps(brief.to_dict()),
+                    datetime.now().isoformat(),
+                    "gpt-4o-mini",
+                    json.dumps({
+                        "title": metadata["title"],
+                        "description": metadata["description"]
+                    }),
+                    datetime.now().isoformat(),
+                    metadata.get("model", "gpt-4o"),
+                    metadata.get("cost", 0.0)
+                ))
+            else:
+                # Old schema without content_type
+                cursor.execute("""
+                    INSERT OR REPLACE INTO video_generation_cache (
+                        video_id,
+                        streamer_id,
+                        platform,
+                        video_facts_hash,
+                        video_facts_json,
+                        streaming_brief_json,
+                        brief_generated_at,
+                        brief_model,
+                        generated_metadata_json,
+                        metadata_generated_at,
+                        metadata_model,
+                        metadata_cost
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    video_id,
+                    streamer_id,
+                    platform,
+                    facts_hash,
+                    json.dumps(video_facts),
+                    json.dumps(brief.to_dict()),
+                    datetime.now().isoformat(),
+                    "gpt-4o-mini",
+                    json.dumps({
+                        "title": metadata["title"],
+                        "description": metadata["description"]
+                    }),
+                    datetime.now().isoformat(),
+                    metadata.get("model", "gpt-4o"),
+                    metadata.get("cost", 0.0)
+                ))
 
             conn.commit()
             conn.close()

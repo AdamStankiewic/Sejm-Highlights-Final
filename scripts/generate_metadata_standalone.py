@@ -305,9 +305,9 @@ def main():
     )
 
     if metadata:
-        # Save to file
+        # Save to file (with UTF-8 encoding for emojis on Windows)
         output_file = Path("generated_metadata.json")
-        with open(output_file, 'w') as f:
+        with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
 
         print(f"💾 Metadata saved to: {output_file}\n")
