@@ -174,10 +174,10 @@ def generate_metadata(
             print(f"\n❌ Streamer profile not found: {streamer_id}")
             print("\nAvailable profiles:")
             for p in manager.list_all():
-                print(f"  - {p.streamer_id} ({p.display_name})")
+                print(f"  - {p.streamer_id} ({p.name})")
             return None
 
-        print(f"✅ Using streamer: {profile.display_name} ({streamer_id})")
+        print(f"✅ Using streamer: {profile.name} ({streamer_id})")
 
         # Initialize metadata generator
         print("🤖 Initializing MetadataGenerator...")
@@ -191,7 +191,7 @@ def generate_metadata(
         print(f"\n{'='*60}")
         print(f"🎬 GENERATING AI METADATA")
         print(f"{'='*60}")
-        print(f"  Streamer: {profile.display_name}")
+        print(f"  Streamer: {profile.name}")
         print(f"  Platform: {platform}")
         print(f"  Video type: {video_type}")
         print(f"  Clips: {len(clips)}")
