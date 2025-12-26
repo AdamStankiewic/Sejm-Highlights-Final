@@ -2212,7 +2212,34 @@ class SejmHighlightsApp(QMainWindow):
         self.config.language = "pl" if self.language_combo.currentIndex() == 0 else "en"
         self.config.asr.language = self.config.language
         self.config.features.spacy_model = "pl_core_news_lg" if self.config.language == "pl" else "en_core_web_sm"
-        
+
+        # AUTO-DETECT LANGUAGE FROM STREAMER PROFILE (overrides GUI if different)
+        if hasattr(self, 'current_profile') and self.current_profile:
+            try:
+                profile_lang = self.current_profile.primary_language
+                gui_lang = self.config.language
+
+                if profile_lang != gui_lang:
+                    self.log(f"🌐 Auto-detected language from profile: {profile_lang.upper()}", "INFO")
+                    self.log(f"   Overriding GUI language ({gui_lang.upper()}) → {profile_lang.upper()}", "INFO")
+
+                    # Override language settings
+                    self.config.language = profile_lang
+                    self.config.asr.language = profile_lang
+                    self.config.features.keywords_file = f"models/keywords_{profile_lang}.csv"
+                    self.config.features.spacy_model = (
+                        "pl_core_news_lg" if profile_lang == "pl" else "en_core_web_sm"
+                    )
+
+                    self.log(f"   ✓ ASR language: {profile_lang}", "INFO")
+                    self.log(f"   ✓ Keywords file: keywords_{profile_lang}.csv", "INFO")
+                    self.log(f"   ✓ NLP model: {self.config.features.spacy_model}", "INFO")
+                else:
+                    self.log(f"🌐 Language: {profile_lang.upper()} (from profile, matches GUI)", "INFO")
+            except AttributeError as e:
+                self.log(f"⚠️ Could not auto-detect language from profile: {e}", "WARNING")
+                self.log(f"   Using GUI setting: {self.config.language.upper()}", "WARNING")
+
         # Smart Splitter settings (NOWE!)
         if hasattr(self.config, 'splitter'):
             self.config.splitter.enabled = bool(self.splitter_enabled.isChecked())

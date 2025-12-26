@@ -538,8 +538,11 @@ class YouTubeStage:
 
             logger.info(f"🤖 Generating AI metadata for {profile.name}...")
 
-            # Get language from config
-            language = self.config.youtube.language or "pl"
+            # Get language from profile (primary source) or config (fallback)
+            language = profile.primary_language if hasattr(profile, 'primary_language') else (
+                self.config.language if hasattr(self.config, 'language') else "pl"
+            )
+            logger.info(f"   Language: {language.upper()} (from profile)")
 
             # Generate metadata
             result = self.ai_metadata_generator.generate_metadata(
