@@ -1,0 +1,123 @@
+streamer_id: "asmongold"
+name: "Asmongold"
+aliases: ["Asmon", "Zack", "Zackrawrr"]
+
+# Platform accounts (Asmongold streams on multiple platforms)
+platforms:
+  twitch:
+    channel_id: "asmongold"  # Main Twitch (rarely streams here now)
+    channel_url: "https://www.twitch.tv/asmongold"
+
+  twitch_alt:
+    channel_id: "zackrawrr"  # Alt Twitch (main streaming channel)
+    channel_url: "https://www.twitch.tv/zackrawrr"
+
+  kick:
+    channel_id: "asmongold"
+    channel_url: "https://kick.com/asmongold"
+
+  youtube:
+    channel_id: "UCQeRaTukNYft1_6AZPACnog"  # Asmongold TV (highlights channel)
+    channel_url: "https://www.youtube.com/@AsmonTV"
+
+# Content metadata
+content:
+  primary_platform: "twitch"  # or "kick" if you're processing Kick VODs
+  channel_type: "gaming"
+  primary_language: "en"
+  categories: ["gaming", "mmo", "wow", "react", "commentary"]
+
+# AI generation settings
+generation:
+  context_model: "gpt-4o-mini"  # Cheaper for context extraction
+  title_model: "gpt-4o"          # Best for clickbait titles
+  description_model: "gpt-4o"     # Best for structured descriptions
+  temperature: 0.9               # Higher = more creative/varied titles
+  enable_research: false
+
+# Seed examples (high-performing content patterns)
+# Based on Asmongold's actual YouTube style
+seed_examples:
+  # React content (very popular for Asmon)
+  - title: "Asmon Reacts to Insane Gaming Drama 😂"
+    description: |
+      Asmongold reacts to the latest gaming controversy with hilarious commentary.
+
+      🎮 What Happened:
+      • Major game studio announces controversial changes
+      • Community backlash and memes
+      • Asmon's hot takes and predictions
+
+      Watch as Asmon breaks down the drama and shares his unfiltered opinions!
+    metadata:
+      content_type: "asmongold_react"
+      emotional_tone: "humorous"
+      video_type: "long"
+
+  # Gameplay content
+  - title: "This New Game is Actually INSANE - Asmongold First Impressions"
+    description: |
+      Asmongold tries out the newest game release and shares his first impressions.
+
+      🎮 Game: [Game Name]
+      ⏱️ Highlights:
+      0:00 - First reactions
+      2:30 - Character creation
+      8:45 - First combat encounter
+      15:20 - Asmon's verdict
+
+      Is this the next big game? Watch Asmon find out!
+    metadata:
+      content_type: "asmongold_gaming"
+      emotional_tone: "excited"
+      video_type: "long"
+
+  # Rant/Commentary (also very popular)
+  - title: "Asmon GOES OFF on Game Developers 💀"
+    description: |
+      Asmongold explains why modern game development is broken.
+
+      🔥 Topics:
+      • Microtransactions and predatory monetization
+      • Rushed releases and broken launches
+      • What developers should learn from classic games
+
+      Asmon doesn't hold back in this one!
+    metadata:
+      content_type: "asmongold_commentary"
+      emotional_tone: "critical"
+      video_type: "long"
+
+  # IRL/Just Chatting
+  - title: "Asmon Answers Your Questions - Reddit Recap"
+    description: |
+      Asmongold reads and reacts to questions from his subreddit.
+
+      📋 Topics Covered:
+      • Gaming hot takes
+      • Life advice
+      • Upcoming streams and content
+      • Hilarious memes and comments
+
+      Chill stream with the best community on Twitch!
+    metadata:
+      content_type: "asmongold_irl"
+      emotional_tone: "casual"
+      video_type: "long"
+
+  # Shorts/TikTok style (for YouTube Shorts)
+  - title: "Asmon's WORST Take Ever 😭 #shorts"
+    description: "Asmongold with the hottest take you'll hear all day 💀"
+    metadata:
+      content_type: "asmongold_shorts"
+      emotional_tone: "humorous"
+      video_type: "shorts"
+
+# Notes:
+# - Asmongold primarily streams on Zackrawrr (Twitch alt) now
+# - Also streams on Kick: https://kick.com/asmongold
+# - Main Twitch (asmongold) is rarely used
+# - YouTube channel "Asmongold TV" posts highlights
+# - Content is mix of: gameplay, reactions, commentary, IRL
+# - Very meme-heavy, casual, unfiltered style
+# - Popular titles use: "INSANE", "ACTUALLY", caps lock, emojis (😂💀🔥)
