@@ -28,6 +28,17 @@ import os
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Load .env file if it exists
+try:
+    from dotenv import load_dotenv
+    env_path = Path(__file__).parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+        print(f"✅ Loaded environment variables from: {env_path}")
+except ImportError:
+    print("⚠️  python-dotenv not installed - using system environment variables only")
+    print("   Install with: pip install python-dotenv")
+
 
 def load_clips(clips_path: str) -> List[Dict]:
     """Load clips from selected_clips.json"""
