@@ -2237,7 +2237,14 @@ class SejmHighlightsApp(QMainWindow):
                     self.log(f"   ✓ Keywords file: keywords_{profile_lang}.csv", "INFO")
                     self.log(f"   ✓ NLP model: {self.config.features.spacy_model}", "INFO")
                 else:
+                    # Language matches GUI, but still need to ensure keywords_file uses language-specific file
                     self.log(f"🌐 Language: {profile_lang.upper()} (from profile, matches GUI)", "INFO")
+
+                    # CRITICAL FIX: Update keywords_file even when language matches
+                    self.config.features.keywords_file = f"models/keywords_{profile_lang}.csv"
+                    self.config.features.spacy_model = (
+                        "pl_core_news_lg" if profile_lang == "pl" else "en_core_web_sm"
+                    )
             except AttributeError as e:
                 self.log(f"⚠️ Could not auto-detect language from profile: {e}", "WARNING")
                 self.log(f"   Using GUI setting: {self.config.language.upper()}", "WARNING")
