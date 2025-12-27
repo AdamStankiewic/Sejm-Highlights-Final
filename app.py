@@ -2406,24 +2406,51 @@ class SejmHighlightsApp(QMainWindow):
             self.config.splitter.use_politicians_in_titles = bool(self.use_politicians.isChecked())
         
         # YouTube settings (ROZSZERZONE!)
+        # Safe access - widgets may be deleted during profile changes
         if hasattr(self.config, 'youtube'):
-            self.config.youtube.enabled = bool(self.youtube_upload.isChecked())
-            self.config.youtube.schedule_as_premiere = bool(self.youtube_premiere.isChecked())
-            
-            privacy_map = {0: "unlisted", 1: "private", 2: "public"}
-            self.config.youtube.privacy_status = privacy_map.get(
-                self.youtube_privacy.currentIndex(), "unlisted"
-            )
-            
-            if self.youtube_creds.text():
-                self.config.youtube.credentials_path = Path(self.youtube_creds.text())
+            if hasattr(self, 'youtube_upload') and self.youtube_upload is not None:
+                try:
+                    self.config.youtube.enabled = bool(self.youtube_upload.isChecked())
+                except RuntimeError:
+                    pass  # Widget deleted by Qt
+
+            if hasattr(self, 'youtube_premiere') and self.youtube_premiere is not None:
+                try:
+                    self.config.youtube.schedule_as_premiere = bool(self.youtube_premiere.isChecked())
+                except RuntimeError:
+                    pass  # Widget deleted by Qt
+
+            if hasattr(self, 'youtube_privacy') and self.youtube_privacy is not None:
+                try:
+                    privacy_map = {0: "unlisted", 1: "private", 2: "public"}
+                    self.config.youtube.privacy_status = privacy_map.get(
+                        self.youtube_privacy.currentIndex(), "unlisted"
+                    )
+                except RuntimeError:
+                    pass  # Widget deleted by Qt
+
+            if hasattr(self, 'youtube_creds') and self.youtube_creds is not None:
+                try:
+                    if self.youtube_creds.text():
+                        self.config.youtube.credentials_path = Path(self.youtube_creds.text())
+                except RuntimeError:
+                    pass  # Widget deleted by Qt
         
         # Advanced settings
-        self.config.output_dir = Path(self.output_dir.text())
-        self.config.keep_intermediate = bool(self.keep_intermediate.isChecked())
-        
-        # Ensure paths exist
-        self.config.output_dir.mkdir(parents=True, exist_ok=True)
+        # Safe access - widgets may be deleted during profile changes
+        if hasattr(self, 'output_dir') and self.output_dir is not None:
+            try:
+                self.config.output_dir = Path(self.output_dir.text())
+                # Ensure paths exist
+                self.config.output_dir.mkdir(parents=True, exist_ok=True)
+            except RuntimeError:
+                pass  # Widget deleted by Qt
+
+        if hasattr(self, 'keep_intermediate') and self.keep_intermediate is not None:
+            try:
+                self.config.keep_intermediate = bool(self.keep_intermediate.isChecked())
+            except RuntimeError:
+                pass  # Widget deleted by Qt
     
     def update_splitter_label(self):
         """Aktualizuj label z czasem w godzinach"""
