@@ -589,10 +589,24 @@ class YouTubeStage:
         # Authorize
         self.authorize()
 
-        # Try AI metadata generation first (if enabled)
+        # Try loading AI metadata from Stage 7 first, then generate if needed
         ai_metadata = None
         if self.config.youtube.auto_title or self.config.youtube.auto_description:
-            ai_metadata = self._generate_ai_metadata(clips)
+            # Check for saved metadata file from Stage 7
+            metadata_file = output_dir / "ai_metadata.json"
+            if metadata_file.exists():
+                try:
+                    with open(metadata_file, 'r', encoding='utf-8') as f:
+                        ai_metadata = json.load(f)
+                    logger.info(f"✅ Loaded AI metadata from Stage 7: {metadata_file}")
+                except Exception as e:
+                    logger.warning(f"Failed to load ai_metadata.json: {e}")
+                    ai_metadata = None
+
+            # Fallback: generate if not loaded from file
+            if not ai_metadata:
+                logger.info("AI metadata not found in Stage 7, generating now...")
+                ai_metadata = self._generate_ai_metadata(clips)
 
         # Generate title
         if self.config.youtube.auto_title:

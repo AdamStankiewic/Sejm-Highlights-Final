@@ -19,11 +19,14 @@ from openai import OpenAI
 from .config import Config
 load_dotenv()
 
+import logging
+logger = logging.getLogger(__name__)
+
 class ExportStage:
     def __init__(self, config: Config):
         self.config = config
         self._check_ffmpeg()
-        
+
         # Initialize GPT
         self.openai_client = None
         api_key = os.getenv("OPENAI_API_KEY")
@@ -32,6 +35,37 @@ class ExportStage:
                 self.openai_client = OpenAI(api_key=api_key)
             except:
                 pass
+
+        # Initialize AI metadata generator (for title/description generation)
+        self.ai_metadata_generator = None
+        self.streamer_manager = None
+
+        if self.openai_client:
+            try:
+                from .ai_metadata.generator import MetadataGenerator
+                from .streamers import get_manager
+
+                self.streamer_manager = get_manager()
+
+                # Platform-specific config (default to YouTube)
+                platform_config = {
+                    "youtube": {
+                        "title_max_length": 100,
+                        "description_max_length": 5000
+                    }
+                }
+
+                self.ai_metadata_generator = MetadataGenerator(
+                    openai_client=self.openai_client,
+                    streamer_manager=self.streamer_manager,
+                    platform_config=platform_config
+                )
+
+                logger.info("✅ AI metadata generator initialized")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not initialize AI metadata generator: {e}")
+                self.ai_metadata_generator = None
+                self.streamer_manager = None
     
     def _generate_gpt_title(self, clips: List[Dict]) -> str:
         """Generuj clickbait z GPT-4o-mini"""
@@ -88,7 +122,79 @@ class ExportStage:
         except Exception as e:
             print(f"   ⚠️ Błąd GPT API: {e}")
             return f"NAJLEPSZE MOMENTY! 🔥 | Sejm Highlights {date}"
-    
+
+    def _generate_ai_metadata(
+        self,
+        clips: list,
+        streamer_profile=None,
+        platform: str = "youtube",
+        video_type: str = "long"
+    ) -> Optional[Dict]:
+        """
+        Generate title and description using AI metadata generator.
+
+        Args:
+            clips: List of selected clips
+            streamer_profile: StreamerProfile object (if None, will try to detect)
+            platform: Target platform (youtube, tiktok, etc.)
+            video_type: Type of video (long, shorts)
+
+        Returns:
+            Dict with 'title', 'description', 'cached', 'cost' or None if AI not available
+        """
+        if not self.ai_metadata_generator or not self.streamer_manager:
+            logger.debug("AI metadata not available")
+            return None
+
+        try:
+            # Use provided profile or try to detect
+            if not streamer_profile:
+                # Try to detect from config
+                if hasattr(self.config, 'youtube') and hasattr(self.config.youtube, 'channel_id'):
+                    channel_id = self.config.youtube.channel_id
+                    streamer_profile = self.streamer_manager.detect_from_youtube(channel_id)
+
+            if not streamer_profile:
+                logger.warning("No streamer profile available for AI metadata generation")
+                return None
+
+            logger.info(f"🤖 Generating AI metadata for {streamer_profile.name}...")
+
+            # Get language from profile (primary source) or config (fallback)
+            language = streamer_profile.primary_language if hasattr(streamer_profile, 'primary_language') else (
+                self.config.language if hasattr(self.config, 'language') else "pl"
+            )
+            logger.info(f"   Language: {language.upper()} (from profile)")
+
+            # Generate metadata
+            result = self.ai_metadata_generator.generate_metadata(
+                clips=clips,
+                streamer_id=streamer_profile.streamer_id,
+                platform=platform,
+                video_type=video_type,
+                language=language
+            )
+
+            if result:
+                cached_status = "💾 (cached)" if result.get("cached") else "✨ (new)"
+                cost = result.get("cost", 0.0)
+                logger.info(f"✅ AI metadata generated {cached_status} (cost: ${cost:.4f})")
+
+                return {
+                    "title": result["title"],
+                    "description": result["description"],
+                    "cached": result.get("cached", False),
+                    "cost": cost
+                }
+
+            return None
+
+        except Exception as e:
+            logger.warning(f"AI metadata generation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
     def _check_ffmpeg(self):
         """Sprawdź ffmpeg"""
         try:
@@ -216,13 +322,38 @@ class ExportStage:
             except Exception as e:
                 print(f"   ⚠️ Błąd hardsub: {e}")
 
+        # STEP 7: Generate AI metadata (title/description)
+        ai_metadata = None
+        if self.ai_metadata_generator:
+            if progress_callback:
+                progress_callback(0.95, "Generowanie AI metadata (tytuł/opis)...")
+
+            try:
+                ai_metadata = self._generate_ai_metadata(
+                    clips=clips,
+                    platform="youtube",
+                    video_type="long"
+                )
+
+                # Save metadata to file for later use (YouTube upload, etc.)
+                if ai_metadata:
+                    metadata_file = output_dir / "ai_metadata.json"
+                    with open(metadata_file, 'w', encoding='utf-8') as f:
+                        json.dump(ai_metadata, f, indent=2, ensure_ascii=False)
+                    print(f"   💾 AI metadata saved to: {metadata_file}")
+            except Exception as e:
+                print(f"   ⚠️ Błąd AI metadata generation: {e}")
+                import traceback
+                traceback.print_exc()
+
         print("✅ Stage 7 zakończony")
 
         return {
             'output_file': str(output_with_chat),
             'output_file_hardsub': str(output_file_hardsub) if output_file_hardsub else None,
             'num_clips': len(clips),
-            'chat_overlay_applied': self.config.export.chat_overlay_enabled
+            'chat_overlay_applied': self.config.export.chat_overlay_enabled,
+            'ai_metadata': ai_metadata
         }
     
     def _extract_clips(

@@ -2240,6 +2240,36 @@ class SejmHighlightsApp(QMainWindow):
                 self.log(f"⚠️ Could not auto-detect language from profile: {e}", "WARNING")
                 self.log(f"   Using GUI setting: {self.config.language.upper()}", "WARNING")
 
+        # SMART WARNING: Check if profile might be wrong based on input filename
+        if hasattr(self, 'current_profile') and self.current_profile and hasattr(self, 'input_file') and self.input_file:
+            try:
+                from pathlib import Path
+                input_filename = Path(self.input_file.text()).name.lower()
+                profile_id = self.current_profile.streamer_id
+
+                # Known streamer keywords in filenames
+                streamer_hints = {
+                    'asmongold': ['asmongold', 'asmon', 'zackrawrr', 'zack'],
+                    'sejm': ['sejm', 'parlament', 'obrady']
+                }
+
+                # Check if filename suggests different streamer
+                for expected_id, keywords in streamer_hints.items():
+                    if any(kw in input_filename for kw in keywords):
+                        if expected_id != profile_id:
+                            self.log(f"⚠️ WARNING: Profile mismatch detected!", "WARNING")
+                            self.log(f"   Current profile: {profile_id} ({self.current_profile.name})", "WARNING")
+                            self.log(f"   Filename suggests: {expected_id}", "WARNING")
+                            filename_display = Path(self.input_file.text()).name
+                            if len(filename_display) > 80:
+                                filename_display = filename_display[:80] + "..."
+                            self.log(f"   Filename: {filename_display}", "WARNING")
+                            self.log(f"   → If this is wrong, click 'Change Profile' to select correct one!", "WARNING")
+                            break
+            except Exception as e:
+                # Silently ignore errors in profile mismatch detection
+                pass
+
         # Smart Splitter settings (NOWE!)
         if hasattr(self.config, 'splitter'):
             self.config.splitter.enabled = bool(self.splitter_enabled.isChecked())
@@ -2449,7 +2479,7 @@ class SejmHighlightsApp(QMainWindow):
             logger.error(f"Profile detection error: {e}", exc_info=True)
 
     def show_profile_selector(self):
-        """Show simple profile selection dialog"""
+        """Show enhanced profile selection dialog with context and warnings"""
         try:
             from pipeline.streamers import get_manager
             from PyQt6.QtWidgets import QInputDialog
@@ -2467,13 +2497,22 @@ class SejmHighlightsApp(QMainWindow):
                 )
                 return
 
-            # Simple selection dialog
-            items = [f"{p.name} ({p.streamer_id})" for p in profiles]
+            # Enhanced selection dialog with more context
+            items = []
+            for p in profiles:
+                # Show name, language, and content type
+                lang_flag = "🇵🇱" if p.primary_language == "pl" else "🇺🇸" if p.primary_language == "en" else "🌐"
+                type_emoji = "🏛️" if p.streamer_id == "sejm" else "🎮"
+                items.append(f"{type_emoji} {p.name} ({p.streamer_id}) {lang_flag} {p.primary_language.upper()}")
 
             selected, ok = QInputDialog.getItem(
                 self,
-                "Select Streamer Profile",
-                "Choose profile:",
+                "🔄 Select Streamer Profile",
+                "⚠️  IMPORTANT: Profile determines language & AI metadata style!\n\n"
+                "Choose profile that matches your content:\n"
+                "• 🏛️ Sejm = Polish political content (formal)\n"
+                "• 🎮 Asmongold/Streamers = English gaming/react content (casual)\n\n"
+                "Profile:",
                 items,
                 0,
                 False
@@ -2481,18 +2520,41 @@ class SejmHighlightsApp(QMainWindow):
 
             if ok and selected:
                 # Extract streamer_id from selection
-                streamer_id = selected.split('(')[1].split(')')[0]
+                streamer_id = selected.split('(')[1].split(')')[0].strip()
                 profile = manager.get(streamer_id)
 
                 if profile:
-                    self.current_profile = profile
-                    self.profile_info_label.setText(
-                        f"✅ Selected: {profile.name}\n"
-                        f"Language: {profile.primary_language.upper()} | "
-                        f"Type: {profile.channel_type.title()}"
+                    # Show confirmation with profile details
+                    confirm = QMessageBox.question(
+                        self,
+                        "Confirm Profile Selection",
+                        f"Selected Profile: {profile.name}\n\n"
+                        f"This will:\n"
+                        f"• Use {profile.primary_language.upper()} for AI metadata\n"
+                        f"• Use {profile.primary_language.upper()} keywords for clip detection\n"
+                        f"• Apply {profile.channel_type} content style\n\n"
+                        f"Is this correct for your content?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
                     )
-                    self.profile_info_label.setStyleSheet("padding: 8px; background-color: #e8f5e9; border-radius: 4px;")
-                    logger.info(f"User selected profile: {streamer_id}")
+
+                    if confirm == QMessageBox.StandardButton.Yes:
+                        self.current_profile = profile
+                        self.profile_info_label.setText(
+                            f"✅ Selected: {profile.name}\n"
+                            f"Language: {profile.primary_language.upper()} | "
+                            f"Type: {profile.channel_type.title()}"
+                        )
+                        self.profile_info_label.setStyleSheet("padding: 8px; background-color: #e8f5e9; border-radius: 4px;")
+                        logger.info(f"User confirmed profile: {streamer_id}")
+
+                        # Show success message with reminder
+                        QMessageBox.information(
+                            self,
+                            "✅ Profile Updated",
+                            f"Profile set to: {profile.name}\n\n"
+                            f"⚠️  REMINDER: Make sure this matches your input video!\n"
+                            f"Wrong profile = wrong language = gibberish transcripts!"
+                        )
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load profiles: {e}")

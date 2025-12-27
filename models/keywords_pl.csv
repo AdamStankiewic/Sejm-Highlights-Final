@@ -1,0 +1,179 @@
+token,weight,category
+# === Osoby (Politycy) ===
+Tusk,2.0,person
+Kaczyński,2.0,person
+Hołownia,1.8,person
+Bosak,1.8,person
+Kosiniak-Kamysz,1.8,person
+Czarnek,1.8,person
+Budka,1.5,person
+Sienkiewicz,1.5,person
+Fogiel,1.5,person
+Morawiecki,1.8,person
+Duda,1.8,person
+Trzaskowski,1.7,person
+Ziobro,1.9,person
+Szydło,1.6,person
+Schetyna,1.5,person
+Kidawa-Błońska,1.5,person
+Mentzen,1.6,person
+
+# === Partie polityczne ===
+PiS,1.8,party
+Prawo i Sprawiedliwość,1.8,party
+PO,1.8,party
+Platforma Obywatelska,1.8,party
+Koalicja Obywatelska,1.7,party
+Lewica,1.5,party
+PSL,1.5,party
+Konfederacja,1.7,party
+Trzecia Droga,1.6,party
+opozycja,1.6,party
+koalicja,1.5,party
+rząd,1.6,party
+
+# === Emocje i konflikty ===
+skandal,2.2,emotion
+afera,2.2,emotion
+korupcja,2.0,emotion
+kradzież,1.9,emotion
+kłamstwo,2.0,emotion
+oszustwo,1.9,emotion
+manipulacja,1.8,emotion
+kłamca,2.1,emotion
+złodziej,2.1,emotion
+zdrajca,2.0,emotion
+wstyd,1.7,emotion
+hańba,1.8,emotion
+kompromitacja,1.9,emotion
+dramat,1.6,emotion
+katastrofa,1.7,emotion
+tragedia,1.6,emotion
+absurd,1.7,emotion
+szok,1.7,emotion
+oburzenie,1.6,emotion
+protest,1.5,emotion
+kryzys,1.7,emotion
+
+# === Oskarżenia i ataki ===
+oskarżam,2.0,accusation
+obwiniam,1.8,accusation
+zarzucam,1.8,accusation
+prokuratura,1.7,accusation
+śledztwo,1.8,accusation
+postępowanie,1.5,accusation
+zarzuty,1.8,accusation
+odpowiedzialność,1.4,accusation
+winny,1.7,accusation
+przestępstwo,1.9,accusation
+łamie prawo,1.9,accusation
+nielegalnie,1.8,accusation
+
+# === Tematy gorące ===
+budżet,1.6,topic
+deficyt,1.5,topic
+dług,1.5,topic
+podatki,1.6,topic
+inflacja,1.7,topic
+drożyzna,1.6,topic
+bezrobocie,1.5,topic
+emerytury,1.5,topic
+500+,1.4,topic
+TVP,1.8,topic
+media,1.5,topic
+sądy,1.7,topic
+Trybunał Konstytucyjny,1.7,topic
+praworządność,1.7,topic
+demokracja,1.5,topic
+Unia Europejska,1.6,topic
+UE,1.6,topic
+fundusze,1.6,topic
+KPO,1.7,topic
+NATO,1.5,topic
+Ukraina,1.7,topic
+Rosja,1.7,topic
+Putin,1.8,topic
+Białoruś,1.5,topic
+Łukaszenka,1.6,topic
+migracja,1.6,topic
+uchodźcy,1.5,topic
+granica,1.6,topic
+służba zdrowia,1.5,topic
+NFZ,1.4,topic
+szpitale,1.4,topic
+lekarze,1.3,topic
+edukacja,1.4,topic
+nauczyciele,1.4,topic
+strajk,1.7,topic
+Pegasus,2.0,topic
+inwigilacja,1.8,topic
+podsłuchy,1.8,topic
+
+# === Pytania retoryczne i zaczepki ===
+pytam pana,1.5,question
+pytam panią,1.5,question
+odpowiedz,1.6,question
+dlaczego,1.4,question
+jak pan śmie,1.9,question
+jak pani śmie,1.9,question
+wyjaśnij,1.5,question
+tłumacz się,1.7,question
+gdzie,1.3,question
+kiedy,1.3,question
+
+# === Procedury (PENALTY - formalne, nudne) ===
+dziękuję,-2.0,formality
+podziękowanie,-1.8,formality
+regulamin,-2.5,formality
+pani marszałek,-1.5,formality
+panie marszałku,-1.5,formality
+wysoka izbo,-2.0,formality
+szanowni państwo,-1.7,formality
+proszę o głos,-1.5,formality
+głosowanie,-1.2,formality
+porządek obrad,-2.0,formality
+interpelacja,-1.3,formality
+zapytanie poselskie,-1.5,formality
+poprawka,-1.2,formality
+punkt porządku,-2.0,formality
+protokół,-2.0,formality
+zatwierdzam,-1.5,formality
+
+# === Konkretne dane i liczby (boost) ===
+milion,1.3,data
+miliard,1.4,data
+procent,1.2,data
+wzrost,1.2,data
+spadek,1.2,data
+rekord,1.4,data
+najwyższy,1.3,data
+najniższy,1.3,data
+
+# === Humor i viralowe momenty ===
+śmiech,1.6,humor
+oklaski,1.4,humor
+buczenie,1.7,humor
+gwizdy,1.6,humor
+żart,1.5,humor
+ironia,1.6,humor
+sarkazm,1.7,humor
+
+# === Przerywanie i reakcje ===
+przerwa,1.5,interruption
+cisza,1.6,interruption
+uciszam,1.7,interruption
+przerwę,1.6,interruption
+wycofuję,1.5,interruption
+sprzeciw,1.6,interruption
+nie zgadzam się,1.5,interruption
+protest,1.6,interruption
+
+# === Wulgaryzmy / Mocne słowa ===
+kretyn,2.0,strong
+idiota,2.1,strong
+głupiec,1.9,strong
+debil,2.1,strong
+łajdak,2.0,strong
+łotr,1.9,strong
+bandzior,1.9,strong
+# (rozszerz według potrzeb, ale ostrożnie z moderacją)

@@ -1,0 +1,210 @@
+token,weight,category
+# === Gaming Keywords ===
+boss,1.8,gaming
+raid,1.7,gaming
+pvp,1.6,gaming
+pve,1.4,gaming
+loot,1.5,gaming
+legendary,1.7,gaming
+epic,1.6,gaming
+mythic,1.7,gaming
+world first,2.0,gaming
+speedrun,1.8,gaming
+glitch,1.6,gaming
+bug,1.5,gaming
+exploit,1.7,gaming
+nerf,1.6,gaming
+buff,1.5,gaming
+patch,1.4,gaming
+meta,1.5,gaming
+broken,1.7,gaming
+overpowered,1.6,gaming
+op,1.6,gaming
+insane,1.8,gaming
+crazy,1.7,gaming
+impossible,1.7,gaming
+clutch,1.9,gaming
+carry,1.5,gaming
+noob,1.4,gaming
+pro,1.5,gaming
+god tier,1.8,gaming
+challenge,1.6,gaming
+achievement,1.5,gaming
+
+# === Streaming Culture ===
+chat,1.6,stream
+react,1.7,stream
+reacts,1.7,stream
+reaction,1.7,stream
+watch,1.4,stream
+stream,1.5,stream
+live,1.5,stream
+vod,1.3,stream
+clip,1.5,stream
+donate,1.5,stream
+sub,1.4,stream
+subscriber,1.4,stream
+gifted,1.5,stream
+emote,1.4,stream
+poggers,1.6,stream
+copium,1.7,stream
+hopium,1.6,stream
+malding,1.8,stream
+mald,1.8,stream
+salty,1.6,stream
+toxic,1.7,stream
+drama,1.9,stream
+controversy,1.8,stream
+banned,1.9,stream
+ban,1.8,stream
+suspended,1.7,stream
+tos,1.6,stream
+
+# === Emotional Reactions (High Weight) ===
+shocked,2.0,emotion
+stunned,1.9,emotion
+unbelievable,2.0,emotion
+incredible,1.9,emotion
+amazing,1.7,emotion
+destroyed,1.9,emotion
+obliterated,1.9,emotion
+demolished,1.8,emotion
+annihilated,1.8,emotion
+rekt,1.8,emotion
+owned,1.7,emotion
+destroyed,1.8,emotion
+humiliated,1.8,emotion
+outplayed,1.7,emotion
+embarrassed,1.7,emotion
+mad,1.7,emotion
+angry,1.7,emotion
+furious,1.8,emotion
+rage,1.9,emotion
+raging,1.9,emotion
+tilted,1.8,emotion
+malding,1.8,emotion
+crying,1.6,emotion
+laughing,1.6,emotion
+hilarious,1.7,emotion
+funny,1.5,emotion
+
+# === Content Types ===
+gameplay,1.4,content
+playthrough,1.3,content
+walkthrough,1.3,content
+tutorial,1.3,content
+guide,1.3,content
+review,1.4,content
+analysis,1.3,content
+breakdown,1.4,content
+tier list,1.5,content
+ranking,1.4,content
+comparison,1.4,content
+versus,1.5,content
+vs,1.5,content
+best,1.6,content
+worst,1.5,content
+top,1.5,content
+irl,1.5,content
+just chatting,1.4,content
+cooking,1.3,content
+react,1.6,content
+reacts,1.6,content
+
+# === Popular Games & Terms ===
+wow,1.6,game
+world of warcraft,1.6,game
+ff14,1.5,game
+final fantasy,1.5,game
+lost ark,1.5,game
+elden ring,1.6,game
+dark souls,1.5,game
+league,1.5,game
+lol,1.5,game
+dota,1.5,game
+valorant,1.5,game
+cs,1.4,game
+counter strike,1.4,game
+fortnite,1.5,game
+minecraft,1.5,game
+baldurs gate,1.6,game
+baldur's gate,1.6,game
+diablo,1.5,game
+poe,1.5,game
+path of exile,1.5,game
+
+# === Drama & Controversy ===
+exposed,2.0,drama
+called out,1.9,drama
+canceled,1.9,drama
+cancelled,1.9,drama
+scandal,2.0,drama
+scam,2.0,drama
+scammer,2.0,drama
+fraud,1.9,drama
+fake,1.7,drama
+liar,1.8,drama
+lying,1.7,drama
+cheater,1.9,drama
+cheating,1.9,drama
+hacker,1.8,drama
+hacking,1.8,drama
+exploit,1.7,drama
+exploiter,1.8,drama
+
+# === Community & Interaction ===
+community,1.4,social
+guild,1.4,social
+clan,1.4,social
+team,1.4,social
+party,1.3,social
+group,1.3,social
+alliance,1.4,social
+faction,1.4,social
+server,1.4,social
+discord,1.4,social
+reddit,1.4,social
+twitter,1.4,social
+youtube,1.3,social
+twitch,1.4,social
+kick,1.4,social
+
+# === Achievements & Records ===
+record,1.8,achievement
+first,1.7,achievement
+fastest,1.7,achievement
+slowest,1.5,achievement
+biggest,1.6,achievement
+smallest,1.4,achievement
+rarest,1.7,achievement
+hardest,1.6,achievement
+easiest,1.4,achievement
+new,1.5,achievement
+update,1.5,achievement
+release,1.5,achievement
+announcement,1.5,achievement
+
+# === Questions & Engagement ===
+why,1.4,question
+how,1.4,question
+what,1.4,question
+when,1.4,question
+where,1.4,question
+explain,1.4,question
+show,1.3,question
+prove,1.5,question
+wrong,1.5,question
+right,1.4,question
+
+# === Negative (Boring/Formal) - Penalty ===
+thanks,-1.5,formality
+thank you,-1.5,formality
+subscribe,-1.8,formality
+follow,-1.6,formality
+like,-1.7,formality
+outro,-2.0,formality
+intro,-1.8,formality
+sponsored,-2.0,formality
+ad,-2.0,formality
+advertisement,-2.0,formality
+promotion,-1.8,formality
