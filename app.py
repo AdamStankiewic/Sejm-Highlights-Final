@@ -34,6 +34,7 @@ from pipeline.config import CompositeWeights, Config
 from pipeline.chat_burst import parse_chat_json
 from utils.chat_parser import load_chat_robust
 from utils.copyright_protection import CopyrightProtector, CopyrightSettings
+from pipeline.streamers import get_profile_loader
 
 if TYPE_CHECKING:  # import dla type checkera, bez twardej zależności przy runtime
     from shorts.generator import ShortsGenerator, Segment
@@ -499,6 +500,46 @@ class SejmHighlightsApp(QMainWindow):
         lang_layout.addWidget(self.language_combo)
         lang_layout.addStretch()
         layout.addLayout(lang_layout)
+
+        # Profile selection
+        profile_layout = QHBoxLayout()
+        profile_layout.addWidget(QLabel("👤 Profil streamera:"))
+        self.profile_combo = QComboBox()
+
+        # Load available profiles
+        self.profile_loader = get_profile_loader()
+        available_profiles = self.profile_loader.list_profiles()
+
+        # Add profiles to combo box with display names
+        self.profile_map = {}  # Map display name -> profile key
+        for profile_key in available_profiles:
+            profile = self.profile_loader.get_profile(profile_key)
+            if profile:
+                display_name = f"{profile.display_name} ({profile.language.upper()})"
+                self.profile_combo.addItem(display_name)
+                self.profile_map[display_name] = profile_key
+
+        # Set default to Sejm if available
+        default_idx = 0
+        for idx, (display_name, key) in enumerate(self.profile_map.items()):
+            if key == "sejm":
+                default_idx = idx
+                break
+        self.profile_combo.setCurrentIndex(default_idx)
+
+        profile_layout.addWidget(self.profile_combo)
+
+        # Add warning label (hidden by default)
+        self.profile_warning = QLabel("⚠️ Detected profile mismatch!")
+        self.profile_warning.setStyleSheet("color: orange; font-weight: bold;")
+        self.profile_warning.setVisible(False)
+        profile_layout.addWidget(self.profile_warning)
+
+        profile_layout.addStretch()
+        layout.addLayout(profile_layout)
+
+        # Connect profile change
+        self.profile_combo.currentIndexChanged.connect(self.on_profile_changed)
 
         layout.addStretch()
 
@@ -1528,17 +1569,21 @@ class SejmHighlightsApp(QMainWindow):
             str(Path.home()),
             "Video Files (*.mp4 *.mkv *.avi)"
         )
-        
+
         if file_path:
             self.file_path_label.setText(file_path)
             self.start_btn.setEnabled(True)
-            
+
             # Pokaż info o pliku
             file_size = Path(file_path).stat().st_size / (1024**3)  # GB
             self.file_info_label.setText(
                 f"📊 Rozmiar: {file_size:.2f} GB | Naciśnij 'Start Processing' aby rozpocząć"
             )
             self.file_info_label.setVisible(True)
+
+            # Auto-detect profile from filename
+            if hasattr(self, 'profile_loader'):
+                self.auto_detect_profile(file_path)
             
             self.log(f"Wybrano plik: {Path(file_path).name}", "INFO")
             
@@ -1591,7 +1636,81 @@ class SejmHighlightsApp(QMainWindow):
         )
         if dir_path:
             self.output_dir.setText(dir_path)
-    
+
+    def on_profile_changed(self):
+        """Handle profile selection change"""
+        if not hasattr(self, 'profile_combo'):
+            return
+
+        display_name = self.profile_combo.currentText()
+        profile_key = self.profile_map.get(display_name)
+
+        if profile_key:
+            profile = self.profile_loader.get_profile(profile_key)
+            if profile:
+                self.log(f"✓ User confirmed profile: {profile_key}", "INFO")
+
+                # Update config with profile settings
+                self.config.language = profile.language
+                self.config.asr.language = profile.language
+
+                # Update keywords file
+                if profile.data.get('features', {}).get('keywords_file'):
+                    self.config.features.keywords_file = profile.data['features']['keywords_file']
+
+                # Update spaCy model
+                if profile.data.get('features', {}).get('spacy_model'):
+                    self.config.features.spacy_model = profile.data['features']['spacy_model']
+
+                # Update YouTube channel ID (CRITICAL for AI metadata)
+                if profile.channel_id:
+                    self.config.youtube.channel_id = profile.channel_id
+                    self.log(f"  Updated config.youtube.channel_id to: {profile.channel_id}", "INFO")
+
+                # Update language combo to match profile
+                lang_idx = 0 if profile.language == "pl" else 1
+                self.language_combo.setCurrentIndex(lang_idx)
+                self.log(f"  Updated GUI language to: {profile.language.upper()}", "INFO")
+
+                # Hide warning when user manually selects
+                if hasattr(self, 'profile_warning'):
+                    self.profile_warning.setVisible(False)
+
+    def auto_detect_profile(self, video_path: str):
+        """Auto-detect profile based on video filename"""
+        filename = Path(video_path).name
+        detected_profile = self.profile_loader.auto_detect_profile(filename)
+
+        if detected_profile:
+            self.log(f"🔍 Auto-detected profile: {detected_profile.display_name}", "INFO")
+
+            # Find the combo box index for this profile
+            target_display_name = f"{detected_profile.display_name} ({detected_profile.language.upper()})"
+            for idx in range(self.profile_combo.count()):
+                if self.profile_combo.itemText(idx) == target_display_name:
+                    current_selection = self.profile_combo.currentText()
+
+                    # Check if user has different profile selected
+                    if current_selection != target_display_name:
+                        # Show warning
+                        if hasattr(self, 'profile_warning'):
+                            self.profile_warning.setText(
+                                f"⚠️ Detected {detected_profile.display_name} but you selected {current_selection.split(' ')[0]}"
+                            )
+                            self.profile_warning.setVisible(True)
+                        self.log(
+                            f"⚠️ Profile mismatch! Detected: {detected_profile.display_name}, "
+                            f"Selected: {current_selection.split(' ')[0]}",
+                            "WARNING"
+                        )
+                    else:
+                        # Profiles match, no warning needed
+                        if hasattr(self, 'profile_warning'):
+                            self.profile_warning.setVisible(False)
+                    break
+        else:
+            self.log(f"ℹ️ Could not auto-detect profile from filename: {filename}", "INFO")
+
     def start_processing(self):
         """Rozpocznij przetwarzanie"""
         # === OCHRONA PRZED WIELOKROTNYM URUCHOMIENIEM ===
@@ -2200,6 +2319,17 @@ class SejmHighlightsApp(QMainWindow):
     
     def update_config_from_gui(self):
         """Aktualizuj obiekt Config wartościami z GUI"""
+        # Apply selected profile settings first
+        if hasattr(self, 'profile_combo') and hasattr(self, 'profile_map'):
+            display_name = self.profile_combo.currentText()
+            profile_key = self.profile_map.get(display_name)
+            if profile_key:
+                profile = self.profile_loader.get_profile(profile_key)
+                if profile:
+                    profile.apply_to_config(self.config)
+                    self.log(f"🌐 Language: {self.config.language.upper()} (from profile, matches GUI)", "INFO")
+                    self.log(f"📚 Keywords file: {self.config.features.keywords_file}", "INFO")
+
         # Selection settings
         self.config.selection.target_total_duration = float(self.target_duration.value()) * 60.0
         self.config.selection.max_clips = int(self.num_clips.value())
