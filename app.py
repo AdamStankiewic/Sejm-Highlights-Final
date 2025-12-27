@@ -1683,8 +1683,6 @@ class SejmHighlightsApp(QMainWindow):
             self.log(f"ℹ️ Could not auto-detect profile from filename: {filename}", "INFO")
 
     def browse_file(self):
-
-    def browse_file(self):
         """Wybór pliku MP4"""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
