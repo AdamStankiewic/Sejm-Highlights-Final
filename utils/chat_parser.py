@@ -181,3 +181,130 @@ def load_chat_robust(path: str) -> Dict[float, int]:
 
     return counts
 
+
+_MESSAGE_TEXT_KEYS = [
+    "message",
+    "text",
+    "body",
+    "content",
+    "msg",
+]
+
+_AUTHOR_KEYS = [
+    "author",
+    "username",
+    "user",
+    "name",
+    "display_name",
+    "displayName",
+    "from",
+    "sender",
+]
+
+
+def _extract_message_text(msg: dict) -> str | None:
+    """Extract message text from various formats."""
+    # Direct keys
+    for key in _MESSAGE_TEXT_KEYS:
+        if key in msg:
+            val = msg[key]
+            if isinstance(val, str):
+                return val.strip()
+
+    # Twitch: comment.message.body
+    if "comment" in msg and isinstance(msg["comment"], dict):
+        comment = msg["comment"]
+        if "message" in comment and isinstance(comment["message"], dict):
+            body = comment["message"].get("body")
+            if body:
+                return str(body).strip()
+
+    # Nested structures
+    for nested_key in ("payload", "data"):
+        nested = msg.get(nested_key)
+        if isinstance(nested, dict):
+            text = _extract_message_text(nested)
+            if text:
+                return text
+
+    return None
+
+
+def _extract_author(msg: dict) -> str | None:
+    """Extract author/username from various formats."""
+    # Direct keys
+    for key in _AUTHOR_KEYS:
+        if key in msg:
+            val = msg[key]
+            if isinstance(val, str):
+                return val.strip()
+
+    # Twitch: comment.commenter.display_name
+    if "comment" in msg and isinstance(msg["comment"], dict):
+        comment = msg["comment"]
+        if "commenter" in comment and isinstance(comment["commenter"], dict):
+            name = comment["commenter"].get("display_name") or comment["commenter"].get("name")
+            if name:
+                return str(name).strip()
+
+    # Nested structures
+    for nested_key in ("payload", "data"):
+        nested = msg.get(nested_key)
+        if isinstance(nested, dict):
+            author = _extract_author(nested)
+            if author:
+                return author
+
+    return "Anonymous"
+
+
+def load_chat_messages(path: str) -> List[Dict]:
+    """Load full chat messages with timestamps, authors, and text.
+
+    Returns list of dicts:
+        [
+            {
+                "time": 120.5,  # seconds into video
+                "author": "Username",
+                "message": "Epic moment!"
+            },
+            ...
+        ]
+
+    Sorted by timestamp (oldest first).
+    """
+    chat_path = Path(path)
+    if not chat_path.exists():
+        logger.warning("Chat file not found: %s", chat_path)
+        return []
+
+    raw = _load_raw(chat_path)
+    messages = []
+
+    for msg in _iter_messages(raw):
+        ts = _extract_timestamp(msg)
+        if ts is None:
+            continue
+
+        text = _extract_message_text(msg)
+        if not text:
+            continue  # Skip messages without text
+
+        author = _extract_author(msg)
+
+        messages.append({
+            "time": float(ts),
+            "author": author,
+            "message": text
+        })
+
+    # Sort by timestamp
+    messages.sort(key=lambda m: m["time"])
+
+    if not messages:
+        logger.warning("No messages parsed from %s", chat_path.name)
+    else:
+        logger.info("Loaded %d chat messages from %s", len(messages), chat_path.name)
+
+    return messages
+

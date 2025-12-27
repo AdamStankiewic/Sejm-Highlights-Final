@@ -1,0 +1,41 @@
+# Copy this file and rename to create new streamer profile
+# Example: graczx.yaml
+
+streamer_id: "example_streamer"  # lowercase, no spaces, used as filename
+name: "Example Streamer"
+aliases: ["ES", "Example"]  # Short names for title variation
+
+# Platform accounts
+platforms:
+  youtube:
+    channel_id: "UCxxxxxxxxxxxxx"
+    channel_url: "https://youtube.com/@example"
+  twitch:
+    username: "example_streamer"
+  kick:
+    username: "example_streamer"
+
+# Content metadata
+content:
+  primary_platform: "youtube"  # Main upload platform
+  channel_type: "gaming"       # gaming/irl/music/talk/variety/political
+  primary_language: "pl"       # pl/en (matches existing language selection)
+  categories: ["fps", "strategy"]  # Optional content tags
+
+# AI generation settings (can override defaults)
+generation:
+  context_model: "gpt-4o-mini"
+  title_model: "gpt-4o"
+  description_model: "gpt-4o"
+  temperature: 0.8
+  enable_research: false  # Perplexity integration
+
+# Seed examples (manually curated high-quality examples)
+# These will be used until we have learned examples from real data
+seed_examples: []
+# Example:
+# - title: "GraczX ginie 5 razy i RAGE QUIT 😂"
+#   description: "Epic fail compilation..."
+#   metadata:
+#     content_type: "boss_fight"
+#     emotional_tone: "frustrated"

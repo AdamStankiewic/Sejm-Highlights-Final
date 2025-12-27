@@ -17,6 +17,14 @@ from video_downloader import VideoDownloader
 from pathlib import Path
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from dotenv import load_dotenv
+
+# Load environment variables from .env file (for OPENAI_API_KEY, etc.)
+load_dotenv()
+
+# Module-level logger
+logger = logging.getLogger(__name__)
+
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QProgressBar, QTextEdit, QFileDialog,
@@ -34,6 +42,8 @@ from pipeline.config import CompositeWeights, Config
 from pipeline.chat_burst import parse_chat_json
 from utils.chat_parser import load_chat_robust
 from utils.copyright_protection import CopyrightProtector, CopyrightSettings
+from pipeline.streamers import get_profile_loader
+
 
 if TYPE_CHECKING:  # import dla type checkera, bez twardej zależności przy runtime
     from shorts.generator import ShortsGenerator, Segment
@@ -246,6 +256,12 @@ class SejmHighlightsApp(QMainWindow):
 
         self.init_ui()
         self.setup_styles()
+
+        # Detect streamer after UI is initialized
+        try:
+            self.detect_streamer()
+        except Exception as e:
+            logger.warning(f"Failed to detect streamer on init: {e}")
 
     def _t(self, key: str) -> str:
         lang = getattr(self.config, "language", "pl")
@@ -500,7 +516,48 @@ class SejmHighlightsApp(QMainWindow):
         lang_layout.addStretch()
         layout.addLayout(lang_layout)
 
+        # Profile selection
+        profile_layout = QHBoxLayout()
+        profile_layout.addWidget(QLabel("👤 Profil streamera:"))
+        self.profile_combo = QComboBox()
+
+        # Load available profiles
+        self.profile_loader = get_profile_loader()
+        available_profiles = self.profile_loader.list_profiles()
+
+        # Add profiles to combo box with display names
+        self.profile_map = {}
+        for profile_key in available_profiles:
+            profile = self.profile_loader.get_profile(profile_key)
+            if profile:
+                display_name = f"{profile.display_name} ({profile.language.upper()})"
+                self.profile_combo.addItem(display_name)
+                self.profile_map[display_name] = profile_key
+
+        # Set default to Sejm if available
+        default_idx = 0
+        for idx, (display_name, key) in enumerate(self.profile_map.items()):
+            if key == "sejm":
+                default_idx = idx
+                break
+        self.profile_combo.setCurrentIndex(default_idx)
+
+        profile_layout.addWidget(self.profile_combo)
+
+        # Add warning label (hidden by default)
+        self.profile_warning = QLabel("⚠️ Detected profile mismatch!")
+        self.profile_warning.setStyleSheet("color: orange; font-weight: bold;")
+        self.profile_warning.setVisible(False)
+        profile_layout.addWidget(self.profile_warning)
+
+        profile_layout.addStretch()
+        layout.addLayout(profile_layout)
+
+        # Connect profile change
+        self.profile_combo.currentIndexChanged.connect(self.on_profile_changed)
+
         layout.addStretch()
+
 
         # Initialize weight visibility and values
         self.toggle_weight_override(self.override_weights_cb.isChecked(), init=True)
@@ -650,6 +707,17 @@ class SejmHighlightsApp(QMainWindow):
             self.chat_path_edit.setText(file_path)
             self._refresh_chat_status()
 
+    def _browse_chat_file(self):
+        """Browse Chat Render MP4 file for overlay (long videos)."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Wybierz Chat Render MP4",
+            "",
+            "Chat Render MP4 (*.mp4);;All Files (*)",
+        )
+        if file_path:
+            self.chat_file_path.setText(file_path)
+
     def test_chat_file(self):
         """Przetestuj parsowanie chat.json i pokaż wynik w popupie."""
 
@@ -795,6 +863,95 @@ class SejmHighlightsApp(QMainWindow):
         self.add_hardsub = QCheckBox("📝 Dodaj napisy (hardsub)")
         self.add_hardsub.setChecked(False)
         layout.addWidget(self.add_hardsub)
+
+        # === CHAT OVERLAY (Simplified - MP4 Render based) ===
+        self.chat_overlay_enabled = QCheckBox("💬 Dodaj czat (Chat Render MP4)")
+        self.chat_overlay_enabled.setChecked(False)
+        layout.addWidget(self.chat_overlay_enabled)
+
+        # Chat file path
+        chat_file_row = QHBoxLayout()
+        chat_file_row.addWidget(QLabel("Plik:"))
+        self.chat_file_path = QLineEdit()
+        self.chat_file_path.setPlaceholderText("Chat Render MP4 (700x1200)...")
+        chat_file_row.addWidget(self.chat_file_path)
+
+        browse_chat_btn = QPushButton("📂")
+        browse_chat_btn.setMaximumWidth(40)
+        browse_chat_btn.clicked.connect(self._browse_chat_file)
+        chat_file_row.addWidget(browse_chat_btn)
+        layout.addLayout(chat_file_row)
+
+        # Position X, Y, Scale in one row (cleaner UI)
+        chat_pos_row = QHBoxLayout()
+
+        # X position (horizontal - left to right)
+        chat_pos_row.addWidget(QLabel("X:"))
+        self.chat_x_slider = QSlider(Qt.Orientation.Horizontal)
+        self.chat_x_slider.setRange(0, 100)
+        self.chat_x_slider.setValue(64)  # Right side default (good for facecam left)
+        chat_pos_row.addWidget(self.chat_x_slider)
+        self.chat_x_label = QLabel("64%")
+        self.chat_x_label.setMinimumWidth(45)
+        self.chat_x_slider.valueChanged.connect(
+            lambda v: self.chat_x_label.setText(f"{v}%")
+        )
+        chat_pos_row.addWidget(self.chat_x_label)
+
+        # Y position (vertical - top to bottom)
+        chat_pos_row.addWidget(QLabel("  Y:"))
+        self.chat_y_slider = QSlider(Qt.Orientation.Horizontal)
+        self.chat_y_slider.setRange(0, 100)
+        self.chat_y_slider.setValue(10)  # Top default
+        chat_pos_row.addWidget(self.chat_y_slider)
+        self.chat_y_label = QLabel("10%")
+        self.chat_y_label.setMinimumWidth(45)
+        self.chat_y_slider.valueChanged.connect(
+            lambda v: self.chat_y_label.setText(f"{v}%")
+        )
+        chat_pos_row.addWidget(self.chat_y_label)
+
+        # Scale (resize chat render)
+        chat_pos_row.addWidget(QLabel("  Skala:"))
+        self.chat_scale_slider = QSlider(Qt.Orientation.Horizontal)
+        self.chat_scale_slider.setRange(50, 100)
+        self.chat_scale_slider.setValue(80)  # 80% of original size
+        chat_pos_row.addWidget(self.chat_scale_slider)
+        self.chat_scale_label = QLabel("80%")
+        self.chat_scale_label.setMinimumWidth(45)
+        self.chat_scale_slider.valueChanged.connect(
+            lambda v: self.chat_scale_label.setText(f"{v}%")
+        )
+        chat_pos_row.addWidget(self.chat_scale_label)
+
+        layout.addLayout(chat_pos_row)
+
+        # Transparency controls (second row)
+        chat_transparency_row = QHBoxLayout()
+
+        # Transparent background checkbox
+        self.chat_transparent_bg = QCheckBox("🎨 Transparentne tło")
+        self.chat_transparent_bg.setChecked(True)  # Default: enabled
+        self.chat_transparent_bg.setToolTip("Usuń czarne tło chatu (colorkey filter)")
+        chat_transparency_row.addWidget(self.chat_transparent_bg)
+
+        chat_transparency_row.addSpacing(20)  # Add space
+
+        # Opacity slider
+        chat_transparency_row.addWidget(QLabel("  Opacity:"))
+        self.chat_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.chat_opacity_slider.setRange(50, 100)  # 50-100%
+        self.chat_opacity_slider.setValue(90)  # Default: 90% (readable but slightly transparent)
+        self.chat_opacity_slider.setToolTip("Przezroczystość tekstu i emotek (50-100%)")
+        chat_transparency_row.addWidget(self.chat_opacity_slider)
+        self.chat_opacity_label = QLabel("90%")
+        self.chat_opacity_label.setMinimumWidth(45)
+        self.chat_opacity_slider.valueChanged.connect(
+            lambda v: self.chat_opacity_label.setText(f"{v}%")
+        )
+        chat_transparency_row.addWidget(self.chat_opacity_label)
+
+        layout.addLayout(chat_transparency_row)
 
         layout.addStretch()
         return tab
@@ -1116,7 +1273,7 @@ class SejmHighlightsApp(QMainWindow):
         
         # Enable/Disable
         self.splitter_enabled = QCheckBox("✅ Włącz Smart Splitter")
-        self.splitter_enabled.setChecked(True)
+        self.splitter_enabled.setChecked(False)  # DISABLED by default - has design flaw (splits based on source duration, not selected clips)
         self.splitter_enabled.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         layout.addWidget(self.splitter_enabled)
         
@@ -1277,7 +1434,39 @@ class SejmHighlightsApp(QMainWindow):
         cred_info = QLabel("📘 Pobierz z: Google Cloud Console → APIs & Services → Credentials")
         cred_info.setStyleSheet("color: #2196F3; font-style: italic; padding-left: 25px;")
         layout.addWidget(cred_info)
-        
+
+        layout.addSpacing(20)
+
+        # === STREAMER PROFILE DETECTION (NEW!) ===
+        profile_group = QGroupBox("🎭 Streamer Profile")
+        profile_layout = QVBoxLayout()
+
+        # Info label
+        self.profile_info_label = QLabel("Detecting...")
+        self.profile_info_label.setWordWrap(True)
+        self.profile_info_label.setStyleSheet("padding: 8px; background-color: #f5f5f5; border-radius: 4px;")
+        profile_layout.addWidget(self.profile_info_label)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+
+        self.change_profile_btn = QPushButton("🔄 Change Profile")
+        self.change_profile_btn.clicked.connect(self.show_profile_selector)
+        button_layout.addWidget(self.change_profile_btn)
+
+        self.refresh_detection_btn = QPushButton("🔍 Refresh")
+        self.refresh_detection_btn.clicked.connect(self.detect_streamer)
+        button_layout.addWidget(self.refresh_detection_btn)
+
+        button_layout.addStretch()
+        profile_layout.addLayout(button_layout)
+
+        profile_group.setLayout(profile_layout)
+        layout.addWidget(profile_group)
+
+        # Initialize current_profile
+        self.current_profile = None
+
         layout.addStretch()
         return tab
     
@@ -1519,7 +1708,67 @@ class SejmHighlightsApp(QMainWindow):
         """)
     
     # === EVENT HANDLERS ===
-    
+    def on_profile_changed(self):
+        """Handle profile selection change"""
+        if not hasattr(self, 'profile_combo'):
+            return
+
+        display_name = self.profile_combo.currentText()
+        profile_key = self.profile_map.get(display_name)
+
+        if profile_key:
+            profile = self.profile_loader.get_profile(profile_key)
+            if profile:
+                self.log(f"✓ User confirmed profile: {profile_key}", "INFO")
+                self.config.language = profile.language
+                self.config.asr.language = profile.language
+
+                if profile.data.get('features', {}).get('keywords_file'):
+                    self.config.features.keywords_file = profile.data['features']['keywords_file']
+
+                if profile.data.get('features', {}).get('spacy_model'):
+                    self.config.features.spacy_model = profile.data['features']['spacy_model']
+
+                if profile.channel_id:
+                    self.config.youtube.channel_id = profile.channel_id
+                    self.log(f"  Updated config.youtube.channel_id to: {profile.channel_id}", "INFO")
+
+                lang_idx = 0 if profile.language == "pl" else 1
+                self.language_combo.setCurrentIndex(lang_idx)
+                self.log(f"  Updated GUI language to: {profile.language.upper()}", "INFO")
+
+                if hasattr(self, 'profile_warning'):
+                    self.profile_warning.setVisible(False)
+
+    def auto_detect_profile(self, video_path: str):
+        """Auto-detect profile based on video filename"""
+        filename = Path(video_path).name
+        detected_profile = self.profile_loader.auto_detect_profile(filename)
+
+        if detected_profile:
+            self.log(f"🔍 Auto-detected profile: {detected_profile.display_name}", "INFO")
+            target_display_name = f"{detected_profile.display_name} ({detected_profile.language.upper()})"
+            for idx in range(self.profile_combo.count()):
+                if self.profile_combo.itemText(idx) == target_display_name:
+                    current_selection = self.profile_combo.currentText()
+                    if current_selection != target_display_name:
+                        if hasattr(self, 'profile_warning'):
+                            self.profile_warning.setText(
+                                f"⚠️ Detected {detected_profile.display_name} but you selected {current_selection.split(' ')[0]}"
+                            )
+                            self.profile_warning.setVisible(True)
+                        self.log(
+                            f"⚠️ Profile mismatch! Detected: {detected_profile.display_name}, "
+                            f"Selected: {current_selection.split(' ')[0]}",
+                            "WARNING"
+                        )
+                    else:
+                        if hasattr(self, 'profile_warning'):
+                            self.profile_warning.setVisible(False)
+                    break
+        else:
+            self.log(f"ℹ️ Could not auto-detect profile from filename: {filename}", "INFO")
+
     def browse_file(self):
         """Wybór pliku MP4"""
         file_path, _ = QFileDialog.getOpenFileName(
@@ -1539,7 +1788,11 @@ class SejmHighlightsApp(QMainWindow):
                 f"📊 Rozmiar: {file_size:.2f} GB | Naciśnij 'Start Processing' aby rozpocząć"
             )
             self.file_info_label.setVisible(True)
-            
+
+            # Auto-detect profile from filename
+            if hasattr(self, 'profile_loader'):
+                self.auto_detect_profile(file_path)
+
             self.log(f"Wybrano plik: {Path(file_path).name}", "INFO")
             
             # Detect file duration and suggest split strategy
@@ -2200,6 +2453,19 @@ class SejmHighlightsApp(QMainWindow):
     
     def update_config_from_gui(self):
         """Aktualizuj obiekt Config wartościami z GUI"""
+        # Apply selected profile settings first
+        if hasattr(self, 'profile_combo') and hasattr(self, 'profile_map'):
+            display_name = self.profile_combo.currentText()
+            profile_key = self.profile_map.get(display_name)
+            if profile_key:
+                profile = self.profile_loader.get_profile(profile_key)
+                if profile:
+                    profile.apply_to_config(self.config)
+                    self.log(f"🌐 Language: {self.config.language.upper()} (from profile)", "INFO")
+                    self.log(f"📚 Keywords file: {self.config.features.keywords_file}", "INFO")
+        from pathlib import Path  # Import at method start to avoid UnboundLocalError
+
+
         # Selection settings
         self.config.selection.target_total_duration = float(self.target_duration.value()) * 60.0
         self.config.selection.max_clips = int(self.num_clips.value())
@@ -2211,6 +2477,15 @@ class SejmHighlightsApp(QMainWindow):
         # Export settings
         self.config.export.add_transitions = bool(self.add_transitions.isChecked())
         self.config.export.generate_hardsub = bool(self.add_hardsub.isChecked())
+
+        # Chat overlay settings (Chat Render MP4 based)
+        self.config.export.chat_overlay_enabled = bool(self.chat_overlay_enabled.isChecked())
+        self.config.export.chat_overlay_path = self.chat_file_path.text().strip() or None
+        self.config.export.chat_x_percent = int(self.chat_x_slider.value())
+        self.config.export.chat_y_percent = int(self.chat_y_slider.value())
+        self.config.export.chat_scale_percent = int(self.chat_scale_slider.value())
+        self.config.export.chat_transparent_bg = bool(self.chat_transparent_bg.isChecked())
+        self.config.export.chat_opacity_percent = int(self.chat_opacity_slider.value())
 
         # Shorts settings
         if hasattr(self.config, 'shorts'):
@@ -2268,7 +2543,70 @@ class SejmHighlightsApp(QMainWindow):
         self.config.language = "pl" if self.language_combo.currentIndex() == 0 else "en"
         self.config.asr.language = self.config.language
         self.config.features.spacy_model = "pl_core_news_lg" if self.config.language == "pl" else "en_core_web_sm"
-        
+
+        # AUTO-DETECT LANGUAGE FROM STREAMER PROFILE (overrides GUI if different)
+        if hasattr(self, 'current_profile') and self.current_profile:
+            try:
+                profile_lang = self.current_profile.primary_language
+                gui_lang = self.config.language
+
+                if profile_lang != gui_lang:
+                    self.log(f"🌐 Auto-detected language from profile: {profile_lang.upper()}", "INFO")
+                    self.log(f"   Overriding GUI language ({gui_lang.upper()}) → {profile_lang.upper()}", "INFO")
+
+                    # Override language settings
+                    self.config.language = profile_lang
+                    self.config.asr.language = profile_lang
+                    self.config.features.keywords_file = f"models/keywords_{profile_lang}.csv"
+                    self.config.features.spacy_model = (
+                        "pl_core_news_lg" if profile_lang == "pl" else "en_core_web_sm"
+                    )
+
+                    self.log(f"   ✓ ASR language: {profile_lang}", "INFO")
+                    self.log(f"   ✓ Keywords file: keywords_{profile_lang}.csv", "INFO")
+                    self.log(f"   ✓ NLP model: {self.config.features.spacy_model}", "INFO")
+                else:
+                    # Language matches GUI, but still need to ensure keywords_file uses language-specific file
+                    self.log(f"🌐 Language: {profile_lang.upper()} (from profile, matches GUI)", "INFO")
+
+                    # CRITICAL FIX: Update keywords_file even when language matches
+                    self.config.features.keywords_file = f"models/keywords_{profile_lang}.csv"
+                    self.config.features.spacy_model = (
+                        "pl_core_news_lg" if profile_lang == "pl" else "en_core_web_sm"
+                    )
+            except AttributeError as e:
+                self.log(f"⚠️ Could not auto-detect language from profile: {e}", "WARNING")
+                self.log(f"   Using GUI setting: {self.config.language.upper()}", "WARNING")
+
+        # SMART WARNING: Check if profile might be wrong based on input filename
+        if hasattr(self, 'current_profile') and self.current_profile and hasattr(self, 'input_file') and self.input_file:
+            try:
+                input_filename = Path(self.input_file.text()).name.lower()
+                profile_id = self.current_profile.streamer_id
+
+                # Known streamer keywords in filenames
+                streamer_hints = {
+                    'asmongold': ['asmongold', 'asmon', 'zackrawrr', 'zack'],
+                    'sejm': ['sejm', 'parlament', 'obrady']
+                }
+
+                # Check if filename suggests different streamer
+                for expected_id, keywords in streamer_hints.items():
+                    if any(kw in input_filename for kw in keywords):
+                        if expected_id != profile_id:
+                            self.log(f"⚠️ WARNING: Profile mismatch detected!", "WARNING")
+                            self.log(f"   Current profile: {profile_id} ({self.current_profile.name})", "WARNING")
+                            self.log(f"   Filename suggests: {expected_id}", "WARNING")
+                            filename_display = Path(self.input_file.text()).name
+                            if len(filename_display) > 80:
+                                filename_display = filename_display[:80] + "..."
+                            self.log(f"   Filename: {filename_display}", "WARNING")
+                            self.log(f"   → If this is wrong, click 'Change Profile' to select correct one!", "WARNING")
+                            break
+            except Exception as e:
+                # Silently ignore errors in profile mismatch detection
+                pass
+
         # Smart Splitter settings (NOWE!)
         if hasattr(self.config, 'splitter'):
             self.config.splitter.enabled = bool(self.splitter_enabled.isChecked())
@@ -2279,24 +2617,51 @@ class SejmHighlightsApp(QMainWindow):
             self.config.splitter.use_politicians_in_titles = bool(self.use_politicians.isChecked())
         
         # YouTube settings (ROZSZERZONE!)
+        # Safe access - widgets may be deleted during profile changes
         if hasattr(self.config, 'youtube'):
-            self.config.youtube.enabled = bool(self.youtube_upload.isChecked())
-            self.config.youtube.schedule_as_premiere = bool(self.youtube_premiere.isChecked())
-            
-            privacy_map = {0: "unlisted", 1: "private", 2: "public"}
-            self.config.youtube.privacy_status = privacy_map.get(
-                self.youtube_privacy.currentIndex(), "unlisted"
-            )
-            
-            if self.youtube_creds.text():
-                self.config.youtube.credentials_path = Path(self.youtube_creds.text())
+            if hasattr(self, 'youtube_upload') and self.youtube_upload is not None:
+                try:
+                    self.config.youtube.enabled = bool(self.youtube_upload.isChecked())
+                except RuntimeError:
+                    pass  # Widget deleted by Qt
+
+            if hasattr(self, 'youtube_premiere') and self.youtube_premiere is not None:
+                try:
+                    self.config.youtube.schedule_as_premiere = bool(self.youtube_premiere.isChecked())
+                except RuntimeError:
+                    pass  # Widget deleted by Qt
+
+            if hasattr(self, 'youtube_privacy') and self.youtube_privacy is not None:
+                try:
+                    privacy_map = {0: "unlisted", 1: "private", 2: "public"}
+                    self.config.youtube.privacy_status = privacy_map.get(
+                        self.youtube_privacy.currentIndex(), "unlisted"
+                    )
+                except RuntimeError:
+                    pass  # Widget deleted by Qt
+
+            if hasattr(self, 'youtube_creds') and self.youtube_creds is not None:
+                try:
+                    if self.youtube_creds.text():
+                        self.config.youtube.credentials_path = Path(self.youtube_creds.text())
+                except RuntimeError:
+                    pass  # Widget deleted by Qt
         
         # Advanced settings
-        self.config.output_dir = Path(self.output_dir.text())
-        self.config.keep_intermediate = bool(self.keep_intermediate.isChecked())
-        
-        # Ensure paths exist
-        self.config.output_dir.mkdir(parents=True, exist_ok=True)
+        # Safe access - widgets may be deleted during profile changes
+        if hasattr(self, 'output_dir') and self.output_dir is not None:
+            try:
+                self.config.output_dir = Path(self.output_dir.text())
+                # Ensure paths exist
+                self.config.output_dir.mkdir(parents=True, exist_ok=True)
+            except RuntimeError:
+                pass  # Widget deleted by Qt
+
+        if hasattr(self, 'keep_intermediate') and self.keep_intermediate is not None:
+            try:
+                self.config.keep_intermediate = bool(self.keep_intermediate.isChecked())
+            except RuntimeError:
+                pass  # Widget deleted by Qt
     
     def update_splitter_label(self):
         """Aktualizuj label z czasem w godzinach"""
@@ -2426,6 +2791,154 @@ class SejmHighlightsApp(QMainWindow):
             # Update config with dialog values
             dialog.apply_to_config(self.config)
             self.log(f"Shorts template: {self.shorts_template_selection}", "INFO")
+
+    def detect_streamer(self):
+        """Auto-detect streamer from config"""
+        try:
+            from pipeline.streamers import get_manager
+            manager = get_manager()
+
+            # Get channel_id from config
+            channel_id = self.config.youtube.channel_id if hasattr(self.config, 'youtube') else None
+
+            if not channel_id:
+                self.profile_info_label.setText("⚠️ No YouTube channel_id in config.yml")
+                self.profile_info_label.setStyleSheet("padding: 8px; background-color: #fff3e0; border-radius: 4px;")
+                self.current_profile = None
+                return
+
+            # Try auto-detection
+            profile = manager.detect_from_youtube(channel_id)
+
+            if profile:
+                # Success
+                self.profile_info_label.setText(
+                    f"✅ Detected: {profile.name}\n"
+                    f"Language: {profile.primary_language.upper()} | "
+                    f"Type: {profile.channel_type.title()}"
+                )
+                self.profile_info_label.setStyleSheet("padding: 8px; background-color: #e8f5e9; border-radius: 4px;")
+                self.current_profile = profile
+                logger.info(f"Auto-detected streamer: {profile.streamer_id}")
+            else:
+                # Not found
+                self.profile_info_label.setText(
+                    f"⚠️ No profile found for channel: {channel_id}\n"
+                    f"Click 'Change Profile' to select one."
+                )
+                self.profile_info_label.setStyleSheet("padding: 8px; background-color: #fff3e0; border-radius: 4px;")
+                self.current_profile = None
+                logger.warning(f"No profile found for channel_id: {channel_id}")
+
+        except ImportError:
+            # StreamerManager not available
+            self.profile_info_label.setText("ℹ️ Streamer profiles not available (legacy mode)")
+            self.profile_info_label.setStyleSheet("padding: 8px; background-color: #e3f2fd; border-radius: 4px;")
+            self.current_profile = None
+
+        except Exception as e:
+            self.profile_info_label.setText(f"❌ Error detecting profile: {e}")
+            self.profile_info_label.setStyleSheet("padding: 8px; background-color: #ffebee; border-radius: 4px;")
+            self.current_profile = None
+            logger.error(f"Profile detection error: {e}", exc_info=True)
+
+    def show_profile_selector(self):
+        """Show enhanced profile selection dialog with context and warnings"""
+        try:
+            from pipeline.streamers import get_manager
+            from PyQt6.QtWidgets import QInputDialog
+            manager = get_manager()
+
+            profiles = manager.list_all()
+
+            if not profiles:
+                QMessageBox.warning(
+                    self,
+                    "No Profiles",
+                    "No streamer profiles found.\n\n"
+                    "Create one in: pipeline/streamers/profiles/\n"
+                    "Use _TEMPLATE.yaml as starting point."
+                )
+                return
+
+            # Enhanced selection dialog with more context
+            items = []
+            for p in profiles:
+                # Show name, language, and content type
+                lang_flag = "🇵🇱" if p.primary_language == "pl" else "🇺🇸" if p.primary_language == "en" else "🌐"
+                type_emoji = "🏛️" if p.streamer_id == "sejm" else "🎮"
+                items.append(f"{type_emoji} {p.name} ({p.streamer_id}) {lang_flag} {p.primary_language.upper()}")
+
+            selected, ok = QInputDialog.getItem(
+                self,
+                "🔄 Select Streamer Profile",
+                "⚠️  IMPORTANT: Profile determines language & AI metadata style!\n\n"
+                "Choose profile that matches your content:\n"
+                "• 🏛️ Sejm = Polish political content (formal)\n"
+                "• 🎮 Asmongold/Streamers = English gaming/react content (casual)\n\n"
+                "Profile:",
+                items,
+                0,
+                False
+            )
+
+            if ok and selected:
+                # Extract streamer_id from selection
+                streamer_id = selected.split('(')[1].split(')')[0].strip()
+                profile = manager.get(streamer_id)
+
+                if profile:
+                    # Show confirmation with profile details
+                    confirm = QMessageBox.question(
+                        self,
+                        "Confirm Profile Selection",
+                        f"Selected Profile: {profile.name}\n\n"
+                        f"This will:\n"
+                        f"• Use {profile.primary_language.upper()} for AI metadata\n"
+                        f"• Use {profile.primary_language.upper()} keywords for clip detection\n"
+                        f"• Apply {profile.channel_type} content style\n\n"
+                        f"Is this correct for your content?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                    )
+
+                    if confirm == QMessageBox.StandardButton.Yes:
+                        self.current_profile = profile
+                        self.profile_info_label.setText(
+                            f"✅ Selected: {profile.name}\n"
+                            f"Language: {profile.primary_language.upper()} | "
+                            f"Type: {profile.channel_type.title()}"
+                        )
+                        self.profile_info_label.setStyleSheet("padding: 8px; background-color: #e8f5e9; border-radius: 4px;")
+                        logger.info(f"User confirmed profile: {streamer_id}")
+
+                        # CRITICAL: Update config.youtube.channel_id to match selected profile
+                        # This ensures Stage 7 (AI metadata) uses the correct profile
+                        if hasattr(self.config, 'youtube') and hasattr(profile, 'platforms'):
+                            youtube_platform = profile.platforms.get('youtube')
+                            if youtube_platform and hasattr(youtube_platform, 'channel_id'):
+                                self.config.youtube.channel_id = youtube_platform.channel_id
+                                logger.info(f"Updated config.youtube.channel_id to: {youtube_platform.channel_id}")
+                            else:
+                                logger.warning(f"Profile {streamer_id} has no YouTube channel_id")
+
+                        # Update GUI language dropdown to match profile
+                        if hasattr(profile, 'primary_language'):
+                            lang_index = 0 if profile.primary_language == "pl" else 1
+                            self.language_combo.setCurrentIndex(lang_index)
+                            logger.info(f"Updated GUI language to: {profile.primary_language.upper()}")
+
+                        # Show success message with reminder
+                        QMessageBox.information(
+                            self,
+                            "✅ Profile Updated",
+                            f"Profile set to: {profile.name}\n\n"
+                            f"⚠️  REMINDER: Make sure this matches your input video!\n"
+                            f"Wrong profile = wrong language = gibberish transcripts!"
+                        )
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load profiles: {e}")
+            logger.error(f"Profile selector error: {e}", exc_info=True)
 
 
 class ShortsTemplateDialog(QDialog):

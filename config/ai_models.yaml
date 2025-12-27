@@ -1,0 +1,20 @@
+# AI provider configuration
+providers:
+  openai:
+    api_key_env: "OPENAI_API_KEY"  # Already exists in .env
+    models:
+      context_extraction: "gpt-4o-mini"
+      title_generation: "gpt-4o"
+      description_generation: "gpt-4o"
+    defaults:
+      temperature: 0.8
+      max_tokens: 1000
+
+  perplexity:
+    api_key_env: "PERPLEXITY_API_KEY"
+    enabled: false  # Enable later if needed
+
+# Cost control
+limits:
+  max_cost_per_video: 0.15  # USD
+  max_retries: 1

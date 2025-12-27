@@ -40,6 +40,10 @@ class ThumbnailStage:
         """Get translated text based on config language"""
         translations = {
             "part": {"pl": "Część", "en": "Part"},
+            "hot_moments": {"pl": "GORĄCE MOMENTY!", "en": "HOT MOMENTS!"},
+            "explodes": {"pl": "EKSPLODUJE!", "en": "EXPLODES!"},
+            "must_see": {"pl": "MUSISZ TO ZOBACZYĆ!", "en": "YOU MUST SEE THIS!"},
+            "sejm": {"pl": "SEJM:", "en": "PARLIAMENT:"},
         }
         language = getattr(self.config, 'language', 'pl')
         return translations.get(key, {}).get(language, key)
@@ -448,28 +452,28 @@ class ThumbnailStage:
     
     def _generate_title_from_clip(self, clip: Dict) -> str:
         """
-        Generuj clickbaitowy tytuł z danych klipu
+        Generuj clickbaitowy tytuł z danych klipu (language-aware)
         """
         keywords = clip.get('keywords', [])
-        
+
         if not keywords:
-            return "GORĄCE MOMENTY!"
-        
-        # Różne templates
+            return self._translate("hot_moments")
+
+        # Language-aware templates
         templates = [
-            f"{keywords[0].upper()} EKSPLODUJE!",
-            f"SEJM: {keywords[0].upper()}!",
-            f"{keywords[0].upper()} - MUSISZ TO ZOBACZYĆ!",
+            f"{keywords[0].upper()} {self._translate('explodes')}",
+            f"{self._translate('sejm')} {keywords[0].upper()}!",
+            f"{keywords[0].upper()} - {self._translate('must_see')}",
             f"🔥 {keywords[0].upper()} 🔥",
         ]
-        
+
         # Wybierz najkrótszy (żeby się zmieścił)
         templates.sort(key=len)
-        
+
         for template in templates:
             if len(template) <= 30:  # Max długość
                 return template
-        
+
         return templates[0][:30]
     
     def generate_with_part_number(
