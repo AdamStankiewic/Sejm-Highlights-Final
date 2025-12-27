@@ -837,6 +837,95 @@ class SejmHighlightsApp(QMainWindow):
         self.add_hardsub.setChecked(False)
         layout.addWidget(self.add_hardsub)
 
+        # === CHAT OVERLAY (Simplified - MP4 Render based) ===
+        self.chat_overlay_enabled = QCheckBox("💬 Dodaj czat (Chat Render MP4)")
+        self.chat_overlay_enabled.setChecked(False)
+        layout.addWidget(self.chat_overlay_enabled)
+
+        # Chat file path
+        chat_file_row = QHBoxLayout()
+        chat_file_row.addWidget(QLabel("Plik:"))
+        self.chat_file_path = QLineEdit()
+        self.chat_file_path.setPlaceholderText("Chat Render MP4 (700x1200)...")
+        chat_file_row.addWidget(self.chat_file_path)
+
+        browse_chat_btn = QPushButton("📂")
+        browse_chat_btn.setMaximumWidth(40)
+        browse_chat_btn.clicked.connect(self._browse_chat_file)
+        chat_file_row.addWidget(browse_chat_btn)
+        layout.addLayout(chat_file_row)
+
+        # Position X, Y, Scale in one row (cleaner UI)
+        chat_pos_row = QHBoxLayout()
+
+        # X position (horizontal - left to right)
+        chat_pos_row.addWidget(QLabel("X:"))
+        self.chat_x_slider = QSlider(Qt.Orientation.Horizontal)
+        self.chat_x_slider.setRange(0, 100)
+        self.chat_x_slider.setValue(64)  # Right side default (good for facecam left)
+        chat_pos_row.addWidget(self.chat_x_slider)
+        self.chat_x_label = QLabel("64%")
+        self.chat_x_label.setMinimumWidth(45)
+        self.chat_x_slider.valueChanged.connect(
+            lambda v: self.chat_x_label.setText(f"{v}%")
+        )
+        chat_pos_row.addWidget(self.chat_x_label)
+
+        # Y position (vertical - top to bottom)
+        chat_pos_row.addWidget(QLabel("  Y:"))
+        self.chat_y_slider = QSlider(Qt.Orientation.Horizontal)
+        self.chat_y_slider.setRange(0, 100)
+        self.chat_y_slider.setValue(10)  # Top default
+        chat_pos_row.addWidget(self.chat_y_slider)
+        self.chat_y_label = QLabel("10%")
+        self.chat_y_label.setMinimumWidth(45)
+        self.chat_y_slider.valueChanged.connect(
+            lambda v: self.chat_y_label.setText(f"{v}%")
+        )
+        chat_pos_row.addWidget(self.chat_y_label)
+
+        # Scale (resize chat render)
+        chat_pos_row.addWidget(QLabel("  Skala:"))
+        self.chat_scale_slider = QSlider(Qt.Orientation.Horizontal)
+        self.chat_scale_slider.setRange(50, 100)
+        self.chat_scale_slider.setValue(80)  # 80% of original size
+        chat_pos_row.addWidget(self.chat_scale_slider)
+        self.chat_scale_label = QLabel("80%")
+        self.chat_scale_label.setMinimumWidth(45)
+        self.chat_scale_slider.valueChanged.connect(
+            lambda v: self.chat_scale_label.setText(f"{v}%")
+        )
+        chat_pos_row.addWidget(self.chat_scale_label)
+
+        layout.addLayout(chat_pos_row)
+
+        # Transparency controls (second row)
+        chat_transparency_row = QHBoxLayout()
+
+        # Transparent background checkbox
+        self.chat_transparent_bg = QCheckBox("🎨 Transparentne tło")
+        self.chat_transparent_bg.setChecked(True)  # Default: enabled
+        self.chat_transparent_bg.setToolTip("Usuń czarne tło chatu (colorkey filter)")
+        chat_transparency_row.addWidget(self.chat_transparent_bg)
+
+        chat_transparency_row.addSpacing(20)  # Add space
+
+        # Opacity slider
+        chat_transparency_row.addWidget(QLabel("  Opacity:"))
+        self.chat_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.chat_opacity_slider.setRange(50, 100)  # 50-100%
+        self.chat_opacity_slider.setValue(90)  # Default: 90% (readable but slightly transparent)
+        self.chat_opacity_slider.setToolTip("Przezroczystość tekstu i emotek (50-100%)")
+        chat_transparency_row.addWidget(self.chat_opacity_slider)
+        self.chat_opacity_label = QLabel("90%")
+        self.chat_opacity_label.setMinimumWidth(45)
+        self.chat_opacity_slider.valueChanged.connect(
+            lambda v: self.chat_opacity_label.setText(f"{v}%")
+        )
+        chat_transparency_row.addWidget(self.chat_opacity_label)
+
+        layout.addLayout(chat_transparency_row)
+
         layout.addStretch()
         return tab
 
@@ -1560,7 +1649,18 @@ class SejmHighlightsApp(QMainWindow):
         """)
     
     # === EVENT HANDLERS ===
-    
+
+    def _browse_chat_file(self):
+        """Browse Chat Render MP4 file for overlay (long videos)."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Wybierz Chat Render MP4",
+            "",
+            "Chat Render MP4 (*.mp4);;All Files (*)",
+        )
+        if file_path:
+            self.chat_file_path.setText(file_path)
+
     def browse_file(self):
         """Wybór pliku MP4"""
         file_path, _ = QFileDialog.getOpenFileName(
