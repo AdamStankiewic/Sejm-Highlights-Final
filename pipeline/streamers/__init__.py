@@ -1,3 +1,7 @@
-from .manager import StreamerManager, StreamerProfile, get_manager
+"""
+Streamer profiles and configuration management
+"""
 
-__all__ = ['StreamerManager', 'StreamerProfile', 'get_manager']
+from .profile_loader import StreamerProfile, ProfileLoader, get_profile_loader
+
+__all__ = ['StreamerProfile', 'ProfileLoader', 'get_profile_loader']

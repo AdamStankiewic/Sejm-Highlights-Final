@@ -1,54 +1,44 @@
-streamer_id: "sejm"
-name: "Sejm RP"
-aliases: ["Sejm", "Parlament"]
+# Sejm Profile - Polish Political Streams
+# Channel: Sejm RP official streams
+# Content: Parliamentary sessions, political debates
+# Language: Polish
 
-# Platform accounts
-platforms:
-  youtube:
-    channel_id: "UCSlsIpJrotOvA1wbA4Z46zA"
-    channel_url: "https://youtube.com/@SejmRP"
+name: "Sejm"
+display_name: "Sejm RP"
+language: "pl"
+content_type: "politics"
 
-# Content metadata
-content:
-  primary_platform: "youtube"
-  channel_type: "political"
-  primary_language: "pl"
-  categories: ["polityka", "sejm", "parlament"]
+# YouTube Channel Info
+youtube:
+  channel_id: "UCZdXP8DGK0FNqhWfMk7_U-A"  # Sejm RP official channel (example)
+  channel_name: "Sejm Rzeczypospolitej Polskiej"
 
-# AI generation settings
-generation:
-  context_model: "gpt-4o-mini"
-  title_model: "gpt-4o"
-  description_model: "gpt-4o"
-  temperature: 0.8
-  enable_research: false
+# Language & Keywords
+features:
+  keywords_file: "models/keywords_pl.csv"
+  spacy_model: "pl_core_news_lg"
 
-# Seed examples (high-performing content patterns)
-seed_examples:
-  - title: "🔥 SEJM: Tusk vs Kaczyński - Najgorętsze Momenty Debaty!"
-    description: "Ostra wymiana zdań podczas posiedzenia Sejmu RP. Zobacz najbardziej kontrowersyjne fragmenty debaty o budżecie państwa."
-    metadata:
-      content_type: "sejm_meeting_pl"
-      emotional_tone: "heated"
-      video_type: "long"
+# ASR Configuration
+asr:
+  language: "pl"
+  model: "large-v3"
 
-  - title: "💥 Konferencja Prasowa - Minister Odpowiada na Oskarżenia!"
-    description: "Minister finansów na konferencji prasowej odnosi się do zarzutów opozycji. Gorąca atmosfera i nieprzewidziane pytania."
-    metadata:
-      content_type: "sejm_press_conference_pl"
-      emotional_tone: "professional"
-      video_type: "long"
+# Thumbnail Configuration
+thumbnail:
+  language: "pl"
+  hot_moments_text: "GORĄCE MOMENTY!"
 
-  - title: "⚡ PILNY Briefing - Marszałek Wydaje Oświadczenie"
-    description: "Marszałek Sejmu w pilnym komunikacie odnosi się do najnowszych wydarzeń politycznych."
-    metadata:
-      content_type: "sejm_briefing_pl"
-      emotional_tone: "urgent"
-      video_type: "long"
+# Shorts Configuration
+shorts:
+  template: "universal"
+  subtitle_lang: "pl"
 
-  - title: "🏛️ Posiedzenie Komisji - Ustawa o Ochronie Środowiska"
-    description: "Komisja Ochrony Środowiska debatuje nad kontrowersyjnymi zapisami nowej ustawy."
-    metadata:
-      content_type: "sejm_committee_pl"
-      emotional_tone: "professional"
-      video_type: "long"
+# Content Detection (for auto-profile detection)
+detection:
+  filename_patterns:
+    - "sejm"
+    - "posiedzenie"
+    - "parlament"
+  channel_indicators:
+    - "UCZdXP8DGK0FNqhWfMk7_U-A"
+  language_hint: "pl"
