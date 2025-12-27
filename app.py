@@ -2548,6 +2548,22 @@ class SejmHighlightsApp(QMainWindow):
                         self.profile_info_label.setStyleSheet("padding: 8px; background-color: #e8f5e9; border-radius: 4px;")
                         logger.info(f"User confirmed profile: {streamer_id}")
 
+                        # CRITICAL: Update config.youtube.channel_id to match selected profile
+                        # This ensures Stage 7 (AI metadata) uses the correct profile
+                        if hasattr(self.config, 'youtube') and hasattr(profile, 'platforms'):
+                            youtube_platform = profile.platforms.get('youtube')
+                            if youtube_platform and hasattr(youtube_platform, 'channel_id'):
+                                self.config.youtube.channel_id = youtube_platform.channel_id
+                                logger.info(f"Updated config.youtube.channel_id to: {youtube_platform.channel_id}")
+                            else:
+                                logger.warning(f"Profile {streamer_id} has no YouTube channel_id")
+
+                        # Update GUI language dropdown to match profile
+                        if hasattr(profile, 'primary_language'):
+                            lang_index = 0 if profile.primary_language == "pl" else 1
+                            self.language_combo.setCurrentIndex(lang_index)
+                            logger.info(f"Updated GUI language to: {profile.primary_language.upper()}")
+
                         # Show success message with reminder
                         QMessageBox.information(
                             self,
