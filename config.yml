@@ -195,7 +195,7 @@ splitter:
 
 # config.yml
 youtube:
-  enabled: true  # Zmień na true gdy chcesz uploadować
+  enabled: false  # Zmień na true gdy chcesz uploadować
   privacy_status: "unlisted"
   schedule_as_premiere: true
   credentials_path: "client_secret.json"
