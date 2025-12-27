@@ -2135,6 +2135,8 @@ class SejmHighlightsApp(QMainWindow):
     
     def update_config_from_gui(self):
         """Aktualizuj obiekt Config wartościami z GUI"""
+        from pathlib import Path  # Import at method start to avoid UnboundLocalError
+
         # Selection settings
         self.config.selection.target_total_duration = float(self.target_duration.value()) * 60.0
         self.config.selection.max_clips = int(self.num_clips.value())
@@ -2243,7 +2245,6 @@ class SejmHighlightsApp(QMainWindow):
         # SMART WARNING: Check if profile might be wrong based on input filename
         if hasattr(self, 'current_profile') and self.current_profile and hasattr(self, 'input_file') and self.input_file:
             try:
-                from pathlib import Path
                 input_filename = Path(self.input_file.text()).name.lower()
                 profile_id = self.current_profile.streamer_id
 
