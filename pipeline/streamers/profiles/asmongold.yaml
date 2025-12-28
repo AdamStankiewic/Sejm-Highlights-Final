@@ -1,0 +1,46 @@
+# Asmongold Profile - English Gaming Streamer
+# Main Channel: Asmongold (UCQeRaTukNYft1_6AZPACnog)
+# Streams: WoW, FF14, variety gaming
+# Language: English
+# Content: Gaming, reactions, commentary
+
+streamer_id: "asmongold"
+name: "Asmongold"
+display_name: "Asmongold"
+language: "en"
+content_type: "gaming"
+
+# YouTube Channel Info
+youtube:
+  channel_id: "UCQeRaTukNYft1_6AZPACnog"  # Asmongold main channel
+  channel_name: "Asmongold"
+
+# Language & Keywords
+features:
+  keywords_file: "models/keywords_en.csv"
+  spacy_model: "en_core_web_sm"
+
+# ASR Configuration
+asr:
+  language: "en"
+  model: "large-v3"
+
+# Thumbnail Configuration
+thumbnail:
+  language: "en"
+  hot_moments_text: "HOT MOMENTS!"
+
+# Shorts Configuration
+shorts:
+  template: "gaming"
+  subtitle_lang: "en"
+
+# Content Detection (for auto-profile detection)
+detection:
+  filename_patterns:
+    - "asmongold"
+    - "zackrawrr"
+    - "asmon"
+  channel_indicators:
+    - "UCQeRaTukNYft1_6AZPACnog"
+  language_hint: "en"

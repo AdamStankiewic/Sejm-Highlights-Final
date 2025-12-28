@@ -19,11 +19,14 @@ from openai import OpenAI
 from .config import Config
 load_dotenv()
 
+import logging
+logger = logging.getLogger(__name__)
+
 class ExportStage:
     def __init__(self, config: Config):
         self.config = config
         self._check_ffmpeg()
-        
+
         # Initialize GPT
         self.openai_client = None
         api_key = os.getenv("OPENAI_API_KEY")
@@ -32,7 +35,84 @@ class ExportStage:
                 self.openai_client = OpenAI(api_key=api_key)
             except:
                 pass
-    
+
+        # Initialize AI metadata generator (for title/description generation)
+        self.ai_metadata_generator = None
+        self.streamer_manager = None
+
+        if self.openai_client:
+            try:
+                from .ai_metadata.generator import MetadataGenerator
+                from .streamers import get_manager
+
+                self.streamer_manager = get_manager()
+
+                # Platform-specific config (default to YouTube)
+                platform_config = {
+                    "youtube": {
+                        "title_max_length": 100,
+                        "description_max_length": 5000
+                    }
+                }
+
+                self.ai_metadata_generator = MetadataGenerator(
+                    openai_client=self.openai_client,
+                    streamer_manager=self.streamer_manager,
+                    platform_config=platform_config
+                )
+
+                logger.info("✅ AI metadata generator initialized")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not initialize AI metadata generator: {e}")
+                self.ai_metadata_generator = None
+                self.streamer_manager = None
+
+        # Detect NVENC availability
+        self.nvenc_available = self._check_nvenc() if self.config.export.use_gpu_encoding else False
+        if self.nvenc_available:
+            logger.info("✅ NVENC (GPU encoding) available - will use for faster exports")
+        else:
+            logger.info("ℹ️ NVENC not available - using CPU encoding (libx264)")
+
+    def _check_nvenc(self) -> bool:
+        """Check if NVENC hardware encoder is available"""
+        try:
+            result = subprocess.run(
+                ['ffmpeg', '-hide_banner', '-encoders'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            return 'h264_nvenc' in result.stdout
+        except:
+            return False
+
+    def _get_encoder_params(self, fast_mode: bool = False) -> dict:
+        """Get appropriate encoder parameters (CPU or GPU)
+
+        Args:
+            fast_mode: Use faster settings (for intermediate files)
+
+        Returns:
+            dict with 'codec', 'preset', 'quality' keys
+        """
+        if self.nvenc_available:
+            # GPU encoding (NVENC)
+            preset = "p2" if fast_mode else self.config.export.nvenc_preset
+            return {
+                'codec': 'h264_nvenc',
+                'preset': preset,
+                'quality': ['-cq', str(self.config.export.nvenc_cq)]
+            }
+        else:
+            # CPU encoding (libx264)
+            preset = "ultrafast" if fast_mode else self.config.export.video_preset
+            return {
+                'codec': self.config.export.video_codec,
+                'preset': preset,
+                'quality': ['-crf', str(self.config.export.crf)]
+            }
+
     def _generate_gpt_title(self, clips: List[Dict]) -> str:
         """Generuj clickbait z GPT-4o-mini"""
         
@@ -88,7 +168,79 @@ class ExportStage:
         except Exception as e:
             print(f"   ⚠️ Błąd GPT API: {e}")
             return f"NAJLEPSZE MOMENTY! 🔥 | Sejm Highlights {date}"
-    
+
+    def _generate_ai_metadata(
+        self,
+        clips: list,
+        streamer_profile=None,
+        platform: str = "youtube",
+        video_type: str = "long"
+    ) -> Optional[Dict]:
+        """
+        Generate title and description using AI metadata generator.
+
+        Args:
+            clips: List of selected clips
+            streamer_profile: StreamerProfile object (if None, will try to detect)
+            platform: Target platform (youtube, tiktok, etc.)
+            video_type: Type of video (long, shorts)
+
+        Returns:
+            Dict with 'title', 'description', 'cached', 'cost' or None if AI not available
+        """
+        if not self.ai_metadata_generator or not self.streamer_manager:
+            logger.debug("AI metadata not available")
+            return None
+
+        try:
+            # Use provided profile or try to detect
+            if not streamer_profile:
+                # Try to detect from config
+                if hasattr(self.config, 'youtube') and hasattr(self.config.youtube, 'channel_id'):
+                    channel_id = self.config.youtube.channel_id
+                    streamer_profile = self.streamer_manager.detect_from_youtube(channel_id)
+
+            if not streamer_profile:
+                logger.warning("No streamer profile available for AI metadata generation")
+                return None
+
+            logger.info(f"🤖 Generating AI metadata for {streamer_profile.name}...")
+
+            # Get language from profile (primary source) or config (fallback)
+            language = streamer_profile.primary_language if hasattr(streamer_profile, 'primary_language') else (
+                self.config.language if hasattr(self.config, 'language') else "pl"
+            )
+            logger.info(f"   Language: {language.upper()} (from profile)")
+
+            # Generate metadata
+            result = self.ai_metadata_generator.generate_metadata(
+                clips=clips,
+                streamer_id=streamer_profile.streamer_id,
+                platform=platform,
+                video_type=video_type,
+                language=language
+            )
+
+            if result:
+                cached_status = "💾 (cached)" if result.get("cached") else "✨ (new)"
+                cost = result.get("cost", 0.0)
+                logger.info(f"✅ AI metadata generated {cached_status} (cost: ${cost:.4f})")
+
+                return {
+                    "title": result["title"],
+                    "description": result["description"],
+                    "cached": result.get("cached", False),
+                    "cost": cost
+                }
+
+            return None
+
+        except Exception as e:
+            logger.warning(f"AI metadata generation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
     def _check_ffmpeg(self):
         """Sprawdź ffmpeg"""
         try:
@@ -181,28 +333,73 @@ class ExportStage:
             part_number=part_number  # ✅ Przekazanie part_number
         )
         
-        # STEP 5: Generate hardsub version (optional)
+        # STEP 5: Add chat overlay (optional, long videos only)
+        output_with_chat = output_file
+        if self.config.export.chat_overlay_enabled:
+            if progress_callback:
+                progress_callback(0.85, "Dodawanie Chat Render overlay...")
+
+            try:
+                output_with_chat = self._add_chat_overlay(
+                    input_video=output_file,
+                    output_dir=output_dir,
+                    clips=clips,  # Pass clips for timestamp extraction
+                    part_number=part_number
+                )
+            except Exception as e:
+                print(f"   ⚠️ Błąd chat overlay (kontynuuję bez czatu): {e}")
+                import traceback
+                traceback.print_exc()
+                output_with_chat = output_file
+
+        # STEP 6: Generate hardsub version (optional)
         output_file_hardsub = None
         if self.config.export.generate_hardsub:
             if progress_callback:
                 progress_callback(0.9, "Generowanie wersji z napisami...")
-            
+
             try:
                 output_file_hardsub = self._generate_hardsub(
-                    output_file,
+                    output_with_chat,  # Use chat overlay version if available
                     clips,
                     segments,
                     output_dir
                 )
             except Exception as e:
                 print(f"   ⚠️ Błąd hardsub: {e}")
-        
+
+        # STEP 7: Generate AI metadata (title/description)
+        ai_metadata = None
+        if self.ai_metadata_generator:
+            if progress_callback:
+                progress_callback(0.95, "Generowanie AI metadata (tytuł/opis)...")
+
+            try:
+                ai_metadata = self._generate_ai_metadata(
+                    clips=clips,
+                    platform="youtube",
+                    video_type="long"
+                )
+
+                # Save metadata to file for later use (YouTube upload, etc.)
+                if ai_metadata:
+                    metadata_file = output_dir / "ai_metadata.json"
+                    with open(metadata_file, 'w', encoding='utf-8') as f:
+                        json.dump(ai_metadata, f, indent=2, ensure_ascii=False)
+                    print(f"   💾 AI metadata saved to: {metadata_file}")
+            except Exception as e:
+                print(f"   ⚠️ Błąd AI metadata generation: {e}")
+                import traceback
+                traceback.print_exc()
+
         print("✅ Stage 7 zakończony")
-        
+
         return {
-            'output_file': str(output_file),
+            'output_file': str(output_with_chat),
             'output_file_hardsub': str(output_file_hardsub) if output_file_hardsub else None,
-            'num_clips': len(clips)
+            'num_clips': len(clips),
+            'chat_overlay_applied': self.config.export.chat_overlay_enabled,
+            'ai_metadata': ai_metadata
         }
     
     def _extract_clips(
@@ -213,23 +410,26 @@ class ExportStage:
     ):
         """Extract individual clips from source video"""
         print(f"   Wycinanie {len(clips)} klipów...")
-        
+
+        # Get encoder params (GPU or CPU)
+        encoder = self._get_encoder_params(fast_mode=True)  # Fast mode for clip extraction
+
         for i, clip in enumerate(clips):
             # Pre/post roll
             t0 = max(0, clip['t0'] - self.config.export.clip_preroll)
             t1 = clip['t1'] + self.config.export.clip_postroll
-            
+
             output_file = output_dir / f"clip_{i+1:03d}.mp4"
-            
+
             # ffmpeg precise cut (re-encode needed for B-frames)
             cmd = [
                 'ffmpeg',
                 '-ss', str(t0),
                 '-to', str(t1),
                 '-i', str(input_file),
-                '-c:v', self.config.export.video_codec,
-                '-preset', self.config.export.video_preset,
-                '-crf', str(self.config.export.crf),
+                '-c:v', encoder['codec'],
+                '-preset', encoder['preset'],
+                *encoder['quality'],  # -crf XX or -cq XX
                 '-c:a', self.config.export.audio_codec,
                 '-b:a', self.config.export.audio_bitrate,
                 '-movflags', self.config.export.movflags,
@@ -315,32 +515,35 @@ class ExportStage:
     ) -> List[str]:
         """Add fade in/out transitions to clips"""
         print(f"   Dodawanie przejść do {len(clips)} klipów...")
-        
+
         fade_in = self.config.export.fade_in_duration
         fade_out = self.config.export.fade_out_duration
-        
+
+        # Get encoder params (GPU or CPU)
+        encoder = self._get_encoder_params(fast_mode=True)  # Fast mode for transitions
+
         faded_files = []
-        
+
         for i, clip in enumerate(clips):
             if 'clip_file' not in clip:
                 continue
-            
+
             input_file = Path(clip['clip_file'])
             output_file = clips_dir / f"clip_{i+1:03d}_faded.mp4"
-            
+
             # Get clip duration for fade out timing
             duration = clip['duration'] + self.config.export.clip_preroll + self.config.export.clip_postroll
             fade_out_start = max(0, duration - fade_out)
-            
+
             # Fade video and audio
             cmd = [
                 'ffmpeg',
                 '-i', str(input_file),
                 '-vf', f"fade=t=in:st=0:d={fade_in},fade=t=out:st={fade_out_start}:d={fade_out}",
                 '-af', f"afade=t=in:st=0:d={fade_in},afade=t=out:st={fade_out_start}:d={fade_out}",
-                '-c:v', self.config.export.video_codec,
-                '-preset', 'fast',
-                '-crf', str(self.config.export.crf),
+                '-c:v', encoder['codec'],
+                '-preset', encoder['preset'],
+                *encoder['quality'],  # -crf XX or -cq XX
                 '-c:a', self.config.export.audio_codec,
                 '-b:a', self.config.export.audio_bitrate,
                 '-y',
@@ -484,17 +687,20 @@ class ExportStage:
         # Burn subtitles using subtitles filter
         # Convert Windows path to escaped format for ffmpeg
         srt_path_escaped = str(srt_file.absolute()).replace('\\', '/').replace(':', '\\:')
-        
+
         fontsize = self.config.export.subtitle_fontsize
-        
+
+        # Get encoder params (GPU or CPU) - normal mode for final output
+        encoder = self._get_encoder_params(fast_mode=False)
+
         # Use subtitles filter with proper escaping
         cmd = [
             'ffmpeg',
             '-i', str(input_file.absolute()),
             '-vf', f"subtitles='{srt_path_escaped}':force_style='Fontsize={fontsize},Bold=1,Outline=2,Shadow=1,MarginV=40'",
-            '-c:v', self.config.export.video_codec,
-            '-preset', 'medium',
-            '-crf', str(self.config.export.crf),
+            '-c:v', encoder['codec'],
+            '-preset', encoder['preset'],
+            *encoder['quality'],  # -crf XX or -cq XX
             '-c:a', 'copy',
             '-y',
             str(output_file.absolute())
@@ -757,7 +963,173 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         secs = int(seconds % 60)
         millis = int((seconds % 1) * 1000)
         return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
-    
+
+    def _add_chat_overlay(
+        self,
+        input_video: Path,
+        output_dir: Path,
+        clips: List[Dict],
+        part_number: Optional[int] = None
+    ) -> Path:
+        """
+        Add chat overlay from Chat Render MP4 to long video.
+
+        Extracts chat segments matching clip timestamps and overlays them.
+
+        Args:
+            input_video: Path to concatenated video file (without chat)
+            output_dir: Output directory
+            clips: List of clip dicts with t0, t1 timestamps from original VOD
+            part_number: Part number (for multi-part export)
+
+        Returns:
+            Path to video with chat overlay
+        """
+        print("   Dodawanie Chat Render overlay...")
+
+        chat_path = self.config.export.chat_overlay_path
+        if not chat_path or not Path(chat_path).exists():
+            print(f"   ⚠️ Chat Render MP4 not found: {chat_path}")
+            print("   Skipping chat overlay")
+            return input_video
+
+        try:
+            from pipeline.chat_overlay import ChatRenderOverlay, overlay_chat_on_video
+            from pathlib import Path as P
+            import tempfile
+
+            # Initialize chat render overlay
+            chat_overlay = ChatRenderOverlay(
+                chat_render_path=chat_path,
+                x_percent=self.config.export.chat_x_percent,
+                y_percent=self.config.export.chat_y_percent,
+                scale_percent=self.config.export.chat_scale_percent
+            )
+
+            print(f"   Chat dimensions: {chat_overlay.chat_width}x{chat_overlay.chat_height}")
+            print(f"   Position: X={self.config.export.chat_x_percent}%, Y={self.config.export.chat_y_percent}%")
+            print(f"   Scale: {self.config.export.chat_scale_percent}%")
+
+            # Extract chat segments for each clip
+            chat_segments = []
+            temp_dir = P(tempfile.gettempdir())
+
+            for i, clip in enumerate(clips):
+                # Get original timestamps from VOD
+                t0 = clip['t0']  # Start time in original VOD
+                t1 = clip['t1']  # End time in original VOD
+
+                # Add pre/post roll to match video clips
+                t0_with_preroll = max(0, t0 - self.config.export.clip_preroll)
+                t1_with_postroll = t1 + self.config.export.clip_postroll
+
+                # Extract chat segment
+                print(f"   Extracting chat for clip {i+1}/{len(clips)} ({t0_with_preroll:.1f}s - {t1_with_postroll:.1f}s)...")
+
+                chat_segment = chat_overlay.extract_segment(
+                    start_time=t0_with_preroll,
+                    end_time=t1_with_postroll
+                )
+
+                if chat_segment and P(chat_segment).exists():
+                    chat_segments.append(chat_segment)
+                else:
+                    print(f"   ⚠️ Failed to extract chat for clip {i+1}, skipping chat overlay")
+                    return input_video
+
+            print(f"   ✓ Extracted {len(chat_segments)} chat segments")
+
+            # Concatenate chat segments (same order as video clips)
+            concat_list_path = temp_dir / "chat_concat_list.txt"
+            with open(concat_list_path, 'w', encoding='utf-8') as f:
+                for seg in chat_segments:
+                    # Use forward slashes and absolute paths
+                    seg_abs = P(seg).absolute()
+                    f.write(f"file '{str(seg_abs).replace(chr(92), '/')}'\n")
+
+            print(f"   Concatenating {len(chat_segments)} chat segments...")
+
+            # Get encoder params for chat concat (GPU or CPU)
+            encoder = self._get_encoder_params(fast_mode=True)
+
+            concatenated_chat = temp_dir / "chat_concatenated.mp4"
+            cmd = [
+                'ffmpeg',
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', str(concat_list_path),
+                '-c:v', encoder['codec'],  # Use GPU or CPU encoder
+                '-preset', encoder['preset'],
+                *encoder['quality'],  # -crf XX or -cq XX
+                '-pix_fmt', 'yuv420p',
+                '-an',  # No audio stream (chat segments are video-only)
+                '-y',
+                str(concatenated_chat)
+            ]
+
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+                encoding='utf-8',
+                errors='replace'
+            )
+
+            print(f"   ✓ Chat segments concatenated")
+
+            # Overlay concatenated chat onto video
+            # Create output filename with _CHAT suffix (avoid in-place editing)
+            base_name = input_video.stem  # Filename without extension
+            output_file = output_dir / f"{base_name}_CHAT.mp4"
+
+            # Ensure output is different from input (ffmpeg can't edit in-place)
+            if output_file == input_video:
+                output_file = output_dir / f"{base_name}_WITH_CHAT.mp4"
+
+            print(f"   Overlaying chat onto video...")
+            print(f"   Input:  {input_video.name}")
+            print(f"   Output: {output_file.name}")
+
+            # Get overlay position
+            x_pos, y_pos = chat_overlay.get_overlay_position()
+
+            # Get encoder params (GPU or CPU) - fast mode for chat overlay
+            encoder = self._get_encoder_params(fast_mode=True)
+
+            success = overlay_chat_on_video(
+                video_path=str(input_video),
+                chat_segment_path=str(concatenated_chat),
+                output_path=str(output_file),
+                x_pos=x_pos,
+                y_pos=y_pos,
+                transparent_bg=self.config.export.chat_transparent_bg,
+                opacity_percent=self.config.export.chat_opacity_percent,
+                encoder_params=encoder  # Pass GPU or CPU encoder
+            )
+
+            # Clean up temporary files
+            try:
+                for seg in chat_segments:
+                    P(seg).unlink()
+                concatenated_chat.unlink()
+                concat_list_path.unlink()
+            except:
+                pass
+
+            if success:
+                print(f"   ✓ Chat overlay added: {output_file.name}")
+                return output_file
+            else:
+                print(f"   ⚠️ Chat overlay failed, returning original video")
+                return input_video
+
+        except Exception as e:
+            print(f"   ⚠️ Failed to add chat overlay: {e}")
+            import traceback
+            traceback.print_exc()
+            return input_video
+
     def cancel(self):
         """Anuluj operację"""
         pass

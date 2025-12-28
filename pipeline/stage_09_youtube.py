@@ -8,6 +8,7 @@ import pickle
 from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
+import logging
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -15,6 +16,17 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
+
+# Try to import AI metadata generation (backwards compatible)
+try:
+    from pipeline.ai_metadata import MetadataGenerator
+    from pipeline.streamers import get_manager
+    import yaml
+    AI_METADATA_AVAILABLE = True
+except ImportError:
+    AI_METADATA_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
 
 
 class YouTubeStage:
@@ -33,6 +45,45 @@ class YouTubeStage:
         self.config = config
         self.credentials = None
         self.youtube_service = None
+
+        # Initialize AI metadata components if available
+        self.ai_metadata_generator = None
+        self.streamer_manager = None
+        if AI_METADATA_AVAILABLE:
+            try:
+                self._initialize_ai_metadata()
+            except Exception as e:
+                logger.warning(f"Failed to initialize AI metadata: {e}")
+
+    def _initialize_ai_metadata(self):
+        """Initialize AI metadata generation components"""
+        # Load platform config
+        platform_config_path = Path("config/platforms.yaml")
+        if not platform_config_path.exists():
+            logger.warning("Platform config not found, AI metadata disabled")
+            return
+
+        with open(platform_config_path, 'r') as f:
+            platform_config = yaml.safe_load(f)
+
+        # Get OpenAI client (if available)
+        openai_client = None
+        try:
+            import openai
+            openai_client = openai.OpenAI()
+        except Exception as e:
+            logger.warning(f"OpenAI client not available: {e}")
+            return
+
+        # Initialize managers
+        self.streamer_manager = get_manager()
+        self.ai_metadata_generator = MetadataGenerator(
+            openai_client=openai_client,
+            streamer_manager=self.streamer_manager,
+            platform_config=platform_config
+        )
+
+        logger.info("✅ AI metadata generation initialized")
 
     def _generate_clickbait_title(self, clips: list) -> str:
         """Generuj clickbaitowy tytuł"""
@@ -460,6 +511,64 @@ class YouTubeStage:
                 print(f"   ⚠️ Błąd uploadu napisów: {e}")
             return False
     
+    def _generate_ai_metadata(
+        self,
+        clips: list,
+        platform: str = "youtube",
+        video_type: str = "long"
+    ) -> Optional[Dict]:
+        """
+        Generate title and description using AI metadata generator.
+
+        Returns:
+            Dict with 'title', 'description' or None if AI not available
+        """
+        if not self.ai_metadata_generator or not self.streamer_manager:
+            logger.debug("AI metadata not available")
+            return None
+
+        try:
+            # Detect streamer from channel ID
+            channel_id = self.config.youtube.channel_id
+            profile = self.streamer_manager.detect_from_youtube(channel_id)
+
+            if not profile:
+                logger.warning(f"No streamer profile for channel {channel_id}")
+                return None
+
+            logger.info(f"🤖 Generating AI metadata for {profile.name}...")
+
+            # Get language from profile (primary source) or config (fallback)
+            language = profile.primary_language if hasattr(profile, 'primary_language') else (
+                self.config.language if hasattr(self.config, 'language') else "pl"
+            )
+            logger.info(f"   Language: {language.upper()} (from profile)")
+
+            # Generate metadata
+            result = self.ai_metadata_generator.generate_metadata(
+                clips=clips,
+                streamer_id=profile.streamer_id,
+                platform=platform,
+                video_type=video_type,
+                language=language
+            )
+
+            if result:
+                cached_status = "💾 (cached)" if result.get("cached") else "✨ (new)"
+                cost = result.get("cost", 0.0)
+                logger.info(f"✅ AI metadata generated {cached_status} (cost: ${cost:.4f})")
+
+                return {
+                    "title": result["title"],
+                    "description": result["description"]
+                }
+
+            return None
+
+        except Exception as e:
+            logger.warning(f"AI metadata generation failed: {e}")
+            return None
+
     def process(
         self,
         video_file: str,
@@ -476,21 +585,53 @@ class YouTubeStage:
         print("\n" + "="*60)
         print("STAGE 9: YouTube Upload")
         print("="*60)
-        
+
         # Authorize
         self.authorize()
-        
-        # Generate metadata if auto-enabled
-        if self.config.youtube.auto_title:
-            title = self._generate_clickbait_title(clips)  # ← ZMIENIONE
-        else:
-            title = title  # użyj przekazanego tytułu
 
+        # Try loading AI metadata from Stage 7 first, then generate if needed
+        ai_metadata = None
+        if self.config.youtube.auto_title or self.config.youtube.auto_description:
+            # Check for saved metadata file from Stage 7
+            metadata_file = output_dir / "ai_metadata.json"
+            if metadata_file.exists():
+                try:
+                    with open(metadata_file, 'r', encoding='utf-8') as f:
+                        ai_metadata = json.load(f)
+                    logger.info(f"✅ Loaded AI metadata from Stage 7: {metadata_file}")
+                except Exception as e:
+                    logger.warning(f"Failed to load ai_metadata.json: {e}")
+                    ai_metadata = None
+
+            # Fallback: generate if not loaded from file
+            if not ai_metadata:
+                logger.info("AI metadata not found in Stage 7, generating now...")
+                ai_metadata = self._generate_ai_metadata(clips)
+
+        # Generate title
+        if self.config.youtube.auto_title:
+            if ai_metadata and ai_metadata.get("title"):
+                title = ai_metadata["title"]
+                logger.info(f"Using AI-generated title: {title}")
+            else:
+                title = self._generate_clickbait_title(clips)  # Fallback to legacy
+                logger.info(f"Using legacy title: {title}")
+        # else: use provided title
+
+        # Generate description
         if self.config.youtube.auto_description:
-            description = self._generate_description(clips, segments)
+            if ai_metadata and ai_metadata.get("description"):
+                description = ai_metadata["description"]
+                logger.info("Using AI-generated description")
+            else:
+                description = self._generate_description(clips, segments)  # Fallback to legacy
+                logger.info("Using legacy description")
         else:
             description = "Najciekawsze momenty z Sejmu RP"
-        
+
+        # Generate tags
+        tags = self._generate_tags(clips)
+
         # Use config privacy status if not specified
         if privacy_status is None:
             privacy_status = self.config.youtube.privacy_status

@@ -220,10 +220,15 @@ class ModeWeights:
 class ExportConfig:
     """Video export settings"""
     # Video codec
-    video_codec: str = "libx264"
-    video_preset: str = "medium"  # ultrafast, fast, medium, slow
+    video_codec: str = "libx264"  # libx264 (CPU), h264_nvenc (GPU)
+    video_preset: str = "medium"  # ultrafast, fast, medium, slow (for libx264)
     crf: int = 21  # Quality (18-28, lower=better)
-    
+
+    # GPU encoding (NVENC) - 5-10x faster if available
+    use_gpu_encoding: bool = True  # Auto-detect and use h264_nvenc if available
+    nvenc_preset: str = "p4"  # p1 (fastest) to p7 (slowest, best quality)
+    nvenc_cq: int = 23  # Constant Quality for NVENC (lower=better, 0-51)
+
     # Audio codec
     audio_codec: str = "aac"
     audio_bitrate: str = "192k"
@@ -248,7 +253,16 @@ class ExportConfig:
     generate_hardsub: bool = False
     subtitle_fontsize: int = 28
     subtitle_style: str = "Bold=1,Outline=2,Shadow=1,MarginV=40"
-    
+
+    # Chat Overlay (Long Videos Only) - Chat Render MP4 based
+    chat_overlay_enabled: bool = False
+    chat_overlay_path: Optional[str] = None  # Path to Chat Render MP4 (e.g., 700x1200)
+    chat_x_percent: int = 64  # Horizontal position 0-100% (0=left, 100=right)
+    chat_y_percent: int = 10  # Vertical position 0-100% (0=top, 100=bottom)
+    chat_scale_percent: int = 80  # Scale 50-100% of original size
+    chat_transparent_bg: bool = True  # Remove black background (colorkey filter)
+    chat_opacity_percent: int = 90  # Text/emote opacity 50-100%
+
     # Misc
     movflags: str = "+faststart"
 
@@ -259,8 +273,14 @@ class HighlightPackerConfig:
 
     UWAGA: To NIE jest chunking materiału źródłowego.
            To jest pakowanie WYBRANYCH klipów (Stage 6) do części dla YouTube.
+
+    CRITICAL DESIGN FLAW (disabled by default):
+    - Dzieli materiał bazując na długości ŹRÓDŁA zamiast SELECTED clips
+    - Nadpisuje user target duration bez pytania
+    - Wymusza split nawet gdy selected clips mieszczą się w 1 filmie
+    Przykład: 6.3h source → forced 2 parts, ale selected tylko 24 min → should be 1 part!
     """
-    enabled: bool = True
+    enabled: bool = False  # DISABLED: fixes unwanted splits until logic refactored
     premiere_hour: int = 18
     premiere_minute: int = 0
     min_duration_for_split: float = 3600.0  # Min długość źródła aby pakować do części

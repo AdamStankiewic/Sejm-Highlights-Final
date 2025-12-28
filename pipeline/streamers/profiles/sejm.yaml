@@ -1,0 +1,45 @@
+# Sejm Profile - Polish Political Streams
+# Channel: Sejm RP official streams
+# Content: Parliamentary sessions, political debates
+# Language: Polish
+
+streamer_id: "sejm"
+name: "Sejm"
+display_name: "Sejm RP"
+language: "pl"
+content_type: "politics"
+
+# YouTube Channel Info
+youtube:
+  channel_id: "UCZdXP8DGK0FNqhWfMk7_U-A"  # Sejm RP official channel (example)
+  channel_name: "Sejm Rzeczypospolitej Polskiej"
+
+# Language & Keywords
+features:
+  keywords_file: "models/keywords_pl.csv"
+  spacy_model: "pl_core_news_lg"
+
+# ASR Configuration
+asr:
+  language: "pl"
+  model: "large-v3"
+
+# Thumbnail Configuration
+thumbnail:
+  language: "pl"
+  hot_moments_text: "GORĄCE MOMENTY!"
+
+# Shorts Configuration
+shorts:
+  template: "universal"
+  subtitle_lang: "pl"
+
+# Content Detection (for auto-profile detection)
+detection:
+  filename_patterns:
+    - "sejm"
+    - "posiedzenie"
+    - "parlament"
+  channel_indicators:
+    - "UCZdXP8DGK0FNqhWfMk7_U-A"
+  language_hint: "pl"
