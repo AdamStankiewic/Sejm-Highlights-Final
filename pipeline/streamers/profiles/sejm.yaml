@@ -3,6 +3,7 @@
 # Content: Parliamentary sessions, political debates
 # Language: Polish
 
+streamer_id: "sejm"
 name: "Sejm"
 display_name: "Sejm RP"
 language: "pl"
