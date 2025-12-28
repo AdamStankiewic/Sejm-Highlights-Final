@@ -108,6 +108,34 @@ class StreamerManager:
                 with open(yaml_file, 'r', encoding='utf-8') as f:
                     data = yaml.safe_load(f)
 
+                # Convert simple YAML format to Pydantic format if needed
+                # Simple format: youtube: {channel_id: ...}
+                # Pydantic format: platforms: {youtube: {channel_id: ...}}
+                if 'platforms' not in data:
+                    platforms = {}
+
+                    # Convert youtube section
+                    if 'youtube' in data and isinstance(data['youtube'], dict):
+                        platforms['youtube'] = PlatformInfo(**data['youtube'])
+
+                    # Convert twitch section
+                    if 'twitch' in data and isinstance(data['twitch'], dict):
+                        platforms['twitch'] = PlatformInfo(**data['twitch'])
+
+                    # Convert kick section
+                    if 'kick' in data and isinstance(data['kick'], dict):
+                        platforms['kick'] = PlatformInfo(**data['kick'])
+
+                    data['platforms'] = platforms
+
+                # Convert content fields to content dict if needed
+                if 'content' not in data:
+                    data['content'] = {
+                        'primary_language': data.get('language', 'pl'),
+                        'channel_type': data.get('content_type', 'generic'),
+                        'primary_platform': 'youtube'  # Default
+                    }
+
                 profile = StreamerProfile(**data)
                 self._profiles[profile.streamer_id] = profile
 
