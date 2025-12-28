@@ -209,7 +209,8 @@ def overlay_chat_on_video(
     x_pos: int,
     y_pos: int,
     transparent_bg: bool = True,
-    opacity_percent: int = 90
+    opacity_percent: int = 90,
+    encoder_params: dict = None
 ) -> bool:
     """
     Overlay chat segment onto video.
@@ -222,11 +223,21 @@ def overlay_chat_on_video(
         y_pos: Y position in pixels
         transparent_bg: Remove black background using colorkey filter
         opacity_percent: Text/emote opacity (50-100%)
+        encoder_params: Optional encoder params dict with 'codec', 'preset', 'quality'
+                       If None, uses libx264 ultrafast (default)
 
     Returns:
         True if successful, False otherwise
     """
     try:
+        # Default encoder params if not provided
+        if encoder_params is None:
+            encoder_params = {
+                'codec': 'libx264',
+                'preset': 'ultrafast',
+                'quality': ['-crf', '23']
+            }
+
         # Build filter_complex based on transparency settings
         if transparent_bg:
             # Apply colorkey to remove black background + opacity
@@ -250,9 +261,9 @@ def overlay_chat_on_video(
             '-filter_complex', filter_complex,
             '-map', '[outv]',  # Use overlayed video
             '-map', '0:a?',     # Copy audio from main video only (? = optional)
-            '-c:v', 'libx264',
-            '-preset', 'ultrafast',  # Faster encoding for overlay (was 'fast')
-            '-crf', '23',  # Slightly lower quality for speed (was 21)
+            '-c:v', encoder_params['codec'],
+            '-preset', encoder_params['preset'],
+            *encoder_params['quality'],  # -crf XX or -cq XX
             '-c:a', 'copy',
             '-y',
             output_path

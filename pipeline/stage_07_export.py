@@ -66,7 +66,53 @@ class ExportStage:
                 logger.warning(f"⚠️ Could not initialize AI metadata generator: {e}")
                 self.ai_metadata_generator = None
                 self.streamer_manager = None
-    
+
+        # Detect NVENC availability
+        self.nvenc_available = self._check_nvenc() if self.config.export.use_gpu_encoding else False
+        if self.nvenc_available:
+            logger.info("✅ NVENC (GPU encoding) available - will use for faster exports")
+        else:
+            logger.info("ℹ️ NVENC not available - using CPU encoding (libx264)")
+
+    def _check_nvenc(self) -> bool:
+        """Check if NVENC hardware encoder is available"""
+        try:
+            result = subprocess.run(
+                ['ffmpeg', '-hide_banner', '-encoders'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            return 'h264_nvenc' in result.stdout
+        except:
+            return False
+
+    def _get_encoder_params(self, fast_mode: bool = False) -> dict:
+        """Get appropriate encoder parameters (CPU or GPU)
+
+        Args:
+            fast_mode: Use faster settings (for intermediate files)
+
+        Returns:
+            dict with 'codec', 'preset', 'quality' keys
+        """
+        if self.nvenc_available:
+            # GPU encoding (NVENC)
+            preset = "p2" if fast_mode else self.config.export.nvenc_preset
+            return {
+                'codec': 'h264_nvenc',
+                'preset': preset,
+                'quality': ['-cq', str(self.config.export.nvenc_cq)]
+            }
+        else:
+            # CPU encoding (libx264)
+            preset = "ultrafast" if fast_mode else self.config.export.video_preset
+            return {
+                'codec': self.config.export.video_codec,
+                'preset': preset,
+                'quality': ['-crf', str(self.config.export.crf)]
+            }
+
     def _generate_gpt_title(self, clips: List[Dict]) -> str:
         """Generuj clickbait z GPT-4o-mini"""
         
@@ -364,23 +410,26 @@ class ExportStage:
     ):
         """Extract individual clips from source video"""
         print(f"   Wycinanie {len(clips)} klipów...")
-        
+
+        # Get encoder params (GPU or CPU)
+        encoder = self._get_encoder_params(fast_mode=True)  # Fast mode for clip extraction
+
         for i, clip in enumerate(clips):
             # Pre/post roll
             t0 = max(0, clip['t0'] - self.config.export.clip_preroll)
             t1 = clip['t1'] + self.config.export.clip_postroll
-            
+
             output_file = output_dir / f"clip_{i+1:03d}.mp4"
-            
+
             # ffmpeg precise cut (re-encode needed for B-frames)
             cmd = [
                 'ffmpeg',
                 '-ss', str(t0),
                 '-to', str(t1),
                 '-i', str(input_file),
-                '-c:v', self.config.export.video_codec,
-                '-preset', self.config.export.video_preset,
-                '-crf', str(self.config.export.crf),
+                '-c:v', encoder['codec'],
+                '-preset', encoder['preset'],
+                *encoder['quality'],  # -crf XX or -cq XX
                 '-c:a', self.config.export.audio_codec,
                 '-b:a', self.config.export.audio_bitrate,
                 '-movflags', self.config.export.movflags,
@@ -466,32 +515,35 @@ class ExportStage:
     ) -> List[str]:
         """Add fade in/out transitions to clips"""
         print(f"   Dodawanie przejść do {len(clips)} klipów...")
-        
+
         fade_in = self.config.export.fade_in_duration
         fade_out = self.config.export.fade_out_duration
-        
+
+        # Get encoder params (GPU or CPU)
+        encoder = self._get_encoder_params(fast_mode=True)  # Fast mode for transitions
+
         faded_files = []
-        
+
         for i, clip in enumerate(clips):
             if 'clip_file' not in clip:
                 continue
-            
+
             input_file = Path(clip['clip_file'])
             output_file = clips_dir / f"clip_{i+1:03d}_faded.mp4"
-            
+
             # Get clip duration for fade out timing
             duration = clip['duration'] + self.config.export.clip_preroll + self.config.export.clip_postroll
             fade_out_start = max(0, duration - fade_out)
-            
+
             # Fade video and audio
             cmd = [
                 'ffmpeg',
                 '-i', str(input_file),
                 '-vf', f"fade=t=in:st=0:d={fade_in},fade=t=out:st={fade_out_start}:d={fade_out}",
                 '-af', f"afade=t=in:st=0:d={fade_in},afade=t=out:st={fade_out_start}:d={fade_out}",
-                '-c:v', self.config.export.video_codec,
-                '-preset', 'fast',
-                '-crf', str(self.config.export.crf),
+                '-c:v', encoder['codec'],
+                '-preset', encoder['preset'],
+                *encoder['quality'],  # -crf XX or -cq XX
                 '-c:a', self.config.export.audio_codec,
                 '-b:a', self.config.export.audio_bitrate,
                 '-y',
@@ -635,17 +687,20 @@ class ExportStage:
         # Burn subtitles using subtitles filter
         # Convert Windows path to escaped format for ffmpeg
         srt_path_escaped = str(srt_file.absolute()).replace('\\', '/').replace(':', '\\:')
-        
+
         fontsize = self.config.export.subtitle_fontsize
-        
+
+        # Get encoder params (GPU or CPU) - normal mode for final output
+        encoder = self._get_encoder_params(fast_mode=False)
+
         # Use subtitles filter with proper escaping
         cmd = [
             'ffmpeg',
             '-i', str(input_file.absolute()),
             '-vf', f"subtitles='{srt_path_escaped}':force_style='Fontsize={fontsize},Bold=1,Outline=2,Shadow=1,MarginV=40'",
-            '-c:v', self.config.export.video_codec,
-            '-preset', 'medium',
-            '-crf', str(self.config.export.crf),
+            '-c:v', encoder['codec'],
+            '-preset', encoder['preset'],
+            *encoder['quality'],  # -crf XX or -cq XX
             '-c:a', 'copy',
             '-y',
             str(output_file.absolute())
@@ -994,15 +1049,18 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
             print(f"   Concatenating {len(chat_segments)} chat segments...")
 
+            # Get encoder params for chat concat (GPU or CPU)
+            encoder = self._get_encoder_params(fast_mode=True)
+
             concatenated_chat = temp_dir / "chat_concatenated.mp4"
             cmd = [
                 'ffmpeg',
                 '-f', 'concat',
                 '-safe', '0',
                 '-i', str(concat_list_path),
-                '-c:v', 'libx264',  # Re-encode to ensure consistent format
-                '-preset', 'ultrafast',
-                '-crf', '23',
+                '-c:v', encoder['codec'],  # Use GPU or CPU encoder
+                '-preset', encoder['preset'],
+                *encoder['quality'],  # -crf XX or -cq XX
                 '-pix_fmt', 'yuv420p',
                 '-an',  # No audio stream (chat segments are video-only)
                 '-y',
@@ -1036,6 +1094,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             # Get overlay position
             x_pos, y_pos = chat_overlay.get_overlay_position()
 
+            # Get encoder params (GPU or CPU) - fast mode for chat overlay
+            encoder = self._get_encoder_params(fast_mode=True)
+
             success = overlay_chat_on_video(
                 video_path=str(input_video),
                 chat_segment_path=str(concatenated_chat),
@@ -1043,7 +1104,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 x_pos=x_pos,
                 y_pos=y_pos,
                 transparent_bg=self.config.export.chat_transparent_bg,
-                opacity_percent=self.config.export.chat_opacity_percent
+                opacity_percent=self.config.export.chat_opacity_percent,
+                encoder_params=encoder  # Pass GPU or CPU encoder
             )
 
             # Clean up temporary files

@@ -220,10 +220,15 @@ class ModeWeights:
 class ExportConfig:
     """Video export settings"""
     # Video codec
-    video_codec: str = "libx264"
-    video_preset: str = "medium"  # ultrafast, fast, medium, slow
+    video_codec: str = "libx264"  # libx264 (CPU), h264_nvenc (GPU)
+    video_preset: str = "medium"  # ultrafast, fast, medium, slow (for libx264)
     crf: int = 21  # Quality (18-28, lower=better)
-    
+
+    # GPU encoding (NVENC) - 5-10x faster if available
+    use_gpu_encoding: bool = True  # Auto-detect and use h264_nvenc if available
+    nvenc_preset: str = "p4"  # p1 (fastest) to p7 (slowest, best quality)
+    nvenc_cq: int = 23  # Constant Quality for NVENC (lower=better, 0-51)
+
     # Audio codec
     audio_codec: str = "aac"
     audio_bitrate: str = "192k"
