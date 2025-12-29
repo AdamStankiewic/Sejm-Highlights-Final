@@ -95,12 +95,18 @@ class FeaturesStage:
             try:
                 # Convert model_name to package name (e.g., en_core_web_sm -> en-core-web-sm)
                 model_package = model_name.replace('_', '-')
-                print(f"   Instaluję: pip install {model_package}")
+                print(f"   Instaluję: pip install {model_package} (from GitHub)")
                 import subprocess
-                # Use pip install instead of spacy download for better reliability
+
+                # Determine spaCy version-compatible URL
+                # For spaCy 3.8.x use release 3.8.0
+                model_url = f"https://github.com/explosion/spacy-models/releases/download/{model_name}-3.8.0/{model_package}-3.8.0-py3-none-any.whl"
+
+                # Use pip install from direct URL (spaCy models not on PyPI)
                 subprocess.check_call([
-                    "pip", "install", model_package, "--quiet"
-                ])
+                    "pip", "install", model_url, "--quiet"
+                ], timeout=180)
+
                 self.nlp = spacy.load(model_name)
                 print("   ✓ spaCy załadowany")
                 return
@@ -117,10 +123,15 @@ class FeaturesStage:
                 except OSError:
                     try:
                         fallback_package = fallback.replace('_', '-')
-                        print(f"   Instaluję fallback: pip install {fallback_package}")
+                        print(f"   Instaluję fallback: pip install {fallback_package} (from GitHub)")
+
+                        # Direct URL for fallback model
+                        fallback_url = f"https://github.com/explosion/spacy-models/releases/download/{fallback}-3.8.0/{fallback_package}-3.8.0-py3-none-any.whl"
+
                         subprocess.check_call([
-                            "pip", "install", fallback_package, "--quiet"
-                        ])
+                            "pip", "install", fallback_url, "--quiet"
+                        ], timeout=180)
+
                         self.nlp = spacy.load(fallback)
                         print(f"   ✓ Używam fallback model: {fallback}")
                         return
