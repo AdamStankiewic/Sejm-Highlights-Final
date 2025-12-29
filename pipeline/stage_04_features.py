@@ -93,10 +93,13 @@ class FeaturesStage:
 
             # Try to download and load primary model first
             try:
-                print(f"   Instaluję: python -m spacy download {model_name}")
+                # Convert model_name to package name (e.g., en_core_web_sm -> en-core-web-sm)
+                model_package = model_name.replace('_', '-')
+                print(f"   Instaluję: pip install {model_package}")
                 import subprocess
+                # Use pip install instead of spacy download for better reliability
                 subprocess.check_call([
-                    "python", "-m", "spacy", "download", model_name
+                    "pip", "install", model_package, "--quiet"
                 ])
                 self.nlp = spacy.load(model_name)
                 print("   ✓ spaCy załadowany")
@@ -113,9 +116,10 @@ class FeaturesStage:
                     return
                 except OSError:
                     try:
-                        print(f"   Instaluję fallback: python -m spacy download {fallback}")
+                        fallback_package = fallback.replace('_', '-')
+                        print(f"   Instaluję fallback: pip install {fallback_package}")
                         subprocess.check_call([
-                            "python", "-m", "spacy", "download", fallback
+                            "pip", "install", fallback_package, "--quiet"
                         ])
                         self.nlp = spacy.load(fallback)
                         print(f"   ✓ Używam fallback model: {fallback}")

@@ -74,6 +74,11 @@ class ExportStage:
         else:
             logger.info("ℹ️ NVENC not available - using CPU encoding (libx264)")
 
+        # Check fontconfig for title cards
+        self.fontconfig_available = self._check_fontconfig()
+        if not self.fontconfig_available and self.config.export.add_transitions:
+            logger.warning("⚠️ Fontconfig not available - title cards will be disabled (transitions still work)")
+
     def _check_nvenc(self) -> bool:
         """Check if NVENC hardware encoder is available"""
         try:
@@ -84,6 +89,25 @@ class ExportStage:
                 text=True
             )
             return 'h264_nvenc' in result.stdout
+        except:
+            return False
+
+    def _check_fontconfig(self) -> bool:
+        """Check if fontconfig is available for title cards"""
+        try:
+            # Try a simple drawtext command to check if fontconfig works
+            result = subprocess.run(
+                ['ffmpeg', '-f', 'lavfi', '-i', 'color=black:s=32x32:d=0.1',
+                 '-vf', 'drawtext=text=test:fontcolor=white:fontsize=12:x=0:y=0',
+                 '-f', 'null', '-'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=5
+            )
+            # Check if fontconfig error occurred
+            stderr = result.stderr.lower()
+            return not ('fontconfig' in stderr and 'error' in stderr)
         except:
             return False
 
@@ -298,12 +322,12 @@ class ExportStage:
         
         self._extract_clips(input_path, clips, clips_dir)
         
-        # STEP 2: Generate title cards (if enabled)
+        # STEP 2: Generate title cards (if enabled and fontconfig available)
         title_cards_generated = False
-        if self.config.export.add_transitions:
+        if self.config.export.add_transitions and self.fontconfig_available:
             if progress_callback:
                 progress_callback(0.3, "Generowanie title cards...")
-            
+
             try:
                 self._generate_title_cards(clips, titles_dir)
                 title_cards_generated = True
@@ -312,6 +336,10 @@ class ExportStage:
                 # Continue without title cards
                 for clip in clips:
                     clip['title_card_file'] = None
+        elif self.config.export.add_transitions and not self.fontconfig_available:
+            # Skip title cards if fontconfig not available
+            for clip in clips:
+                clip['title_card_file'] = None
         
         # STEP 3: Add transitions (fade in/out)
         if progress_callback:
