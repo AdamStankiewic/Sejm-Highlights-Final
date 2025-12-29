@@ -95,25 +95,55 @@ class FaceDetector:
         self._init_mediapipe()
 
     def _init_mediapipe(self):
-        """Initialize MediaPipe Face Detection"""
+        """Initialize MediaPipe Face Detection (supports both old and new API)"""
         try:
             import mediapipe as mp
             import cv2
 
             self.mp = mp
             self.cv2 = cv2
-            self.mp_face_detection = mp.solutions.face_detection
-            self.face_detector = self.mp_face_detection.FaceDetection(
-                model_selection=0,  # 0 = short-range (< 2m), suitable for webcams
-                min_detection_confidence=self.confidence_threshold
-            )
-            logger.info("MediaPipe Face Detection initialized successfully")
+
+            # Try new API first (MediaPipe 0.10.30+)
+            try:
+                from mediapipe.tasks import python
+                from mediapipe.tasks.python import vision
+
+                # New API uses BaseOptions and vision.FaceDetector
+                logger.info("Using MediaPipe new API (0.10.30+)")
+
+                # Create FaceDetector with new API
+                base_options = python.BaseOptions(
+                    model_asset_path=None  # Use default model
+                )
+                options = vision.FaceDetectorOptions(
+                    base_options=base_options,
+                    min_detection_confidence=self.confidence_threshold
+                )
+                self.face_detector = vision.FaceDetector.create_from_options(options)
+                self._use_new_api = True
+                logger.info("MediaPipe Face Detection (new API) initialized successfully")
+
+            except (ImportError, AttributeError) as e:
+                # Fallback to old API (MediaPipe < 0.10.30)
+                logger.info(f"New API not available ({e}), trying old API...")
+
+                if not hasattr(mp, 'solutions'):
+                    raise ImportError("MediaPipe 'solutions' module not available - incompatible version")
+
+                self.mp_face_detection = mp.solutions.face_detection
+                self.face_detector = self.mp_face_detection.FaceDetection(
+                    model_selection=0,  # 0 = short-range (< 2m), suitable for webcams
+                    min_detection_confidence=self.confidence_threshold
+                )
+                self._use_new_api = False
+                logger.info("MediaPipe Face Detection (old API) initialized successfully")
 
         except ImportError as e:
             logger.warning(
                 "MediaPipe or OpenCV not available: %s. Face detection disabled.", e
             )
             self.face_detector = None
+            self._use_new_api = False
 
     def detect(
         self,
@@ -298,10 +328,19 @@ class FaceDetector:
                 region_w = x2 - x1
                 region_h = y2 - y1
 
-                # Detect faces in this region
-                results = self.face_detector.process(region_frame)
+                # Detect faces in this region (supports both old and new API)
+                if self._use_new_api:
+                    # New MediaPipe API (0.10.30+)
+                    import mediapipe as mp
+                    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=region_frame)
+                    detection_result = self.face_detector.detect(mp_image)
+                    detections_list = detection_result.detections if detection_result else []
+                else:
+                    # Old MediaPipe API (< 0.10.30)
+                    results = self.face_detector.process(region_frame)
+                    detections_list = results.detections if results and results.detections else []
 
-                if not results or not results.detections:
+                if not detections_list:
                     logger.debug(
                         "  Region '%s': no faces detected",
                         region_name
@@ -310,19 +349,32 @@ class FaceDetector:
 
                 logger.debug(
                     "  Region '%s': found %d face(s)",
-                    region_name, len(results.detections)
+                    region_name, len(detections_list)
                 )
 
                 # Extract faces from this region
-                for detection in results.detections:
-                    bbox = detection.location_data.relative_bounding_box
-                    confidence = detection.score[0]
+                for detection in detections_list:
+                    # Get bounding box and confidence (API-dependent)
+                    if self._use_new_api:
+                        # New API: bounding_box is in absolute pixels
+                        bbox_abs = detection.bounding_box
+                        confidence = detection.categories[0].score if detection.categories else 0.5
 
-                    # Convert bbox from region coordinates to full frame coordinates
-                    face_x = x1 + max(int(bbox.xmin * region_w), 0)
-                    face_y = y1 + max(int(bbox.ymin * region_h), 0)
-                    face_w = int(bbox.width * region_w)
-                    face_h = int(bbox.height * region_h)
+                        # Convert to relative coordinates (0-1)
+                        face_x = x1 + int(bbox_abs.origin_x)
+                        face_y = y1 + int(bbox_abs.origin_y)
+                        face_w = int(bbox_abs.width)
+                        face_h = int(bbox_abs.height)
+                    else:
+                        # Old API: relative_bounding_box is in relative coords (0-1)
+                        bbox = detection.location_data.relative_bounding_box
+                        confidence = detection.score[0]
+
+                        # Convert bbox from region coordinates to full frame coordinates
+                        face_x = x1 + max(int(bbox.xmin * region_w), 0)
+                        face_y = y1 + max(int(bbox.ymin * region_h), 0)
+                        face_w = int(bbox.width * region_w)
+                        face_h = int(bbox.height * region_h)
 
                     logger.debug(
                         "    Face: confidence=%.3f, bbox=(%d,%d,%d,%d), size=%dx%d",
