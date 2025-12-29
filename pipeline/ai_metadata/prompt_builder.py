@@ -120,10 +120,10 @@ class PromptBuilder:
 
 ZASADY:
 - Maksymalna długość: {constraints.get('title_max', 100)} znaków
-- Używaj emocjonalnych słów kluczowych
-- Możesz używać emoji (🔥💥⚡) jeśli pasują do contentu
-- Tytuł musi być clickbait, ale NIE MOŻE kłamać o treści
-- Zachowaj autentyczny styl streamera
+- Używaj konkretnych, opisowych słów (nie ogólników)
+- Emoji są OPCJONALNE - używaj TYLKO jeśli naturalnie pasują (1-2 max)
+- Tytuł musi być dokładny i prawdziwy - opisuj CO SIĘ DZIEJE w wideo
+- Zachowaj autentyczny styl streamera (casual, bez sztywności)
 
 JĘZYK: Polski
 FORMAT: Zwróć TYLKO tytuł, bez cudzysłowów ani dodatkowego tekstu."""
@@ -132,10 +132,10 @@ FORMAT: Zwróć TYLKO tytuł, bez cudzysłowów ani dodatkowego tekstu."""
 
 RULES:
 - Maximum length: {constraints.get('title_max', 100)} characters
-- Use emotional keywords
-- You can use emoji (🔥💥⚡) if they fit the content
-- Title must be clickbait but CANNOT lie about content
-- Maintain authentic streamer style
+- Use specific, descriptive words (not generic terms)
+- Emoji are OPTIONAL - use ONLY if natural (1-2 max)
+- Title must be accurate and truthful - describe WHAT HAPPENS in video
+- Maintain authentic streamer style (casual, not stiff)
 
 LANGUAGE: English
 FORMAT: Return ONLY the title, without quotes or extra text."""
@@ -147,35 +147,35 @@ FORMAT: Return ONLY the title, without quotes or extra text."""
 
 ZASADY:
 - Maksymalna długość: {constraints.get('description_max', 5000)} znaków
-- Używaj hashtagów (max {constraints.get('hashtags_max', 15)})
-- Opisz kluczowe momenty z wideo
-- Dodaj timestamps jeśli dostępne
-- Zachowaj naturalny, autentyczny ton
+- Pisz w naturalnym, płynnym stylu (NIE jako lista punktów)
+- Możesz wspomnieć 2-3 kluczowe momenty, ale zintegruj je w narrację
+- Hashtagi (max {constraints.get('hashtags_max', 10)}): używaj TYLKO rzeczywistych tematów, NIE pojedynczych słów
+- Zachowaj autentyczny ton streamera
 
 JĘZYK: Polski
 FORMAT: Zwróć opis w formacie:
-[Krótki wstęp 1-2 zdania]
+[Wciągający wstęp 2-3 zdania opisujący główny temat]
 
-[Opis kluczowych momentów]
+[Naturalna narracja o tym co się dzieje w wideo - max 3-4 zdania]
 
-[Hashtagi]"""
+[5-10 tematycznych hashtagów na końcu]"""
         else:
             return f"""You are an expert at creating video descriptions for streaming platforms.
 
 RULES:
 - Maximum length: {constraints.get('description_max', 5000)} characters
-- Use hashtags (max {constraints.get('hashtags_max', 15)})
-- Describe key moments from video
-- Add timestamps if available
-- Maintain natural, authentic tone
+- Write in natural, flowing style (NOT as bullet points)
+- You can mention 2-3 key moments, but integrate them into narrative
+- Hashtags (max {constraints.get('hashtags_max', 10)}): use ONLY real topics, NOT single words
+- Maintain authentic streamer tone
 
 LANGUAGE: English
 FORMAT: Return description in format:
-[Short intro 1-2 sentences]
+[Engaging intro 2-3 sentences describing main topic]
 
-[Key moments description]
+[Natural narrative about what happens in video - max 3-4 sentences]
 
-[Hashtags]"""
+[5-10 topical hashtags at the end]"""
 
     def _build_title_user_prompt(
         self,
@@ -247,9 +247,9 @@ FORMAT: Return description in format:
 
         # Add final instruction
         final_instruction = (
-            f"\nWygeneruj JEDEN clickbaitowy tytuł (max {constraints.get('title_max', 100)} znaków):"
+            f"\nWygeneruj JEDEN angażujący i dokładny tytuł (max {constraints.get('title_max', 100)} znaków):"
             if self.language == "pl"
-            else f"\nGenerate ONE clickbait title (max {constraints.get('title_max', 100)} characters):"
+            else f"\nGenerate ONE engaging and accurate title (max {constraints.get('title_max', 100)} characters):"
         )
         prompt_parts.append(final_instruction)
 
@@ -302,36 +302,35 @@ FORMAT: Return description in format:
                 f"CONTENT TYPE: {brief.content_type}",
             ])
 
-        # Add key moments with timestamps
+        # Add key moments (for context, not for mechanical listing)
         if brief.key_moments:
-            moments_label = "\nKLUCZOWE MOMENTY (dodaj timestamps):" if self.language == "pl" else "\nKEY MOMENTS (add timestamps):"
+            moments_label = "\nKONTEKST - co się dzieje:" if self.language == "pl" else "\nCONTEXT - what happens:"
             prompt_parts.append(moments_label)
-            for moment in brief.key_moments[:5]:
-                time = moment.get('time', '?')
+            for moment in brief.key_moments[:3]:  # Only top 3
                 summary = moment.get('summary', 'N/A')
-                prompt_parts.append(f"- {time}s: {summary}")
+                prompt_parts.append(f"- {summary}")
 
-        # Add keywords for hashtags
+        # Add keywords for thematic hashtags
         if brief.keywords:
-            kw_label = "\nSŁOWA KLUCZOWE (użyj jako hashtagi):" if self.language == "pl" else "\nKEYWORDS (use as hashtags):"
-            prompt_parts.append(f"{kw_label} {', '.join(brief.keywords)}")
+            kw_label = "\nTEMATYKA (stwórz hashtagi tematyczne):" if self.language == "pl" else "\nTHEMES (create topical hashtags):"
+            prompt_parts.append(f"{kw_label} {', '.join(brief.keywords[:8])}")
 
         # Add final instruction
         max_length = constraints.get('description_max', 5000)
-        max_hashtags = constraints.get('hashtags_max', 15)
+        max_hashtags = constraints.get('hashtags_max', 10)
 
         if self.language == "pl":
             final_instruction = f"""
 Wygeneruj opis wideo (max {max_length} znaków):
-1. Krótki wstęp (1-2 zdania)
-2. Opis kluczowych momentów z timestamps
-3. Max {max_hashtags} hashtagów na końcu"""
+1. Wciągające intro (2-3 zdania) - opisz główny temat
+2. Płynna narracja (3-4 zdania) - co się dzieje, bez mechanicznych timestampów
+3. Hashtagi ({max_hashtags} max) - TYLKO tematyczne, NIE pojedyncze słowa (#EpsteinFiles, NOT #What)"""
         else:
             final_instruction = f"""
 Generate video description (max {max_length} characters):
-1. Short intro (1-2 sentences)
-2. Key moments with timestamps
-3. Max {max_hashtags} hashtags at the end"""
+1. Engaging intro (2-3 sentences) - describe main topic
+2. Flowing narrative (3-4 sentences) - what happens, NO mechanical timestamps
+3. Hashtags ({max_hashtags} max) - ONLY topical, NOT single words (#EpsteinFiles, NOT #What)"""
 
         prompt_parts.append(final_instruction)
 

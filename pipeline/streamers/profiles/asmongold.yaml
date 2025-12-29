@@ -35,6 +35,34 @@ shorts:
   template: "gaming"
   subtitle_lang: "en"
 
+# AI Generation Settings
+generation:
+  context_model: "gpt-4o-mini"
+  title_model: "gpt-4o"
+  description_model: "gpt-4o"
+  temperature: 0.7  # Slightly lower for more consistent quality
+  enable_research: false
+
+# Seed Examples (high-quality examples for few-shot learning)
+seed_examples:
+  - title: "Asmongold Reacts to Epstein Files Release"
+    description: "Asmongold reacts to the breaking news about the Epstein files being released. The stream covers his initial reactions to the documents, discussion about the implications, and chat's wild theories about what might be revealed. Things get intense as more details emerge throughout the stream.\n\n#Asmongold #EpsteinFiles #Breaking News #Politics #ChatReacts"
+    metadata:
+      content_type: "asmongold_irl"
+      emotional_tone: "shocked"
+
+  - title: "Chat Loses It When Asmongold Dies to Easy Boss"
+    description: "Another classic Asmongold moment where chat goes absolutely crazy watching him struggle with a boss that should be easy. The deaths keep piling up, excuses keep coming, and chat spam is out of control. Peak Asmongold content.\n\n#Asmongold #Gaming #BossFight #ChatReacts #EpicFail"
+    metadata:
+      content_type: "asmongold_gaming"
+      emotional_tone: "frustrated"
+
+  - title: "Asmongold's Hot Takes on Game Industry Drama"
+    description: "Asmongold shares his unfiltered opinions on the latest gaming industry controversy. The discussion covers developer decisions, community reactions, and what it means for gamers. Chat debates every point while Asmon goes on his classic rants about the state of modern gaming.\n\n#Asmongold #GamingNews #HotTakes #Controversy #GameIndustry"
+    metadata:
+      content_type: "asmongold_irl"
+      emotional_tone: "critical"
+
 # Content Detection (for auto-profile detection)
 detection:
   filename_patterns:
