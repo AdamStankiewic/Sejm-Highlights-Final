@@ -111,10 +111,11 @@ class FaceDetector:
                 # New API uses BaseOptions and vision.FaceDetector
                 logger.info("Using MediaPipe new API (0.10.30+)")
 
+                # Download model if needed
+                model_path = self._download_face_detector_model()
+
                 # Create FaceDetector with new API
-                base_options = python.BaseOptions(
-                    model_asset_path=None  # Use default model
-                )
+                base_options = python.BaseOptions(model_asset_path=model_path)
                 options = vision.FaceDetectorOptions(
                     base_options=base_options,
                     min_detection_confidence=self.confidence_threshold
@@ -144,6 +145,34 @@ class FaceDetector:
             )
             self.face_detector = None
             self._use_new_api = False
+
+    def _download_face_detector_model(self) -> str:
+        """Download MediaPipe face detector model if not cached"""
+        import urllib.request
+        from pathlib import Path
+
+        # Cache directory
+        cache_dir = Path.home() / ".cache" / "mediapipe"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        model_filename = "blaze_face_short_range.tflite"
+        model_path = cache_dir / model_filename
+
+        # Download if not exists
+        if not model_path.exists():
+            logger.info("Downloading MediaPipe face detector model...")
+            model_url = "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite"
+
+            try:
+                urllib.request.urlretrieve(model_url, model_path)
+                logger.info(f"Model downloaded to {model_path}")
+            except Exception as e:
+                logger.error(f"Failed to download model: {e}")
+                raise
+        else:
+            logger.info(f"Using cached model from {model_path}")
+
+        return str(model_path)
 
     def detect(
         self,
