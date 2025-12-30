@@ -175,8 +175,13 @@ class GamingTemplate(TemplateBase):
             clip = ensure_fps(
                 ColorClip(size=(1080, 1920), color=(0, 0, 0), duration=segment_duration)
             )
+        else:
+            # ✅ FIX: Only set_duration if clip has the method (ColorClip doesn't)
+            if hasattr(clip, 'set_duration') and callable(getattr(clip, 'set_duration')):
+                clip = ensure_fps(clip.set_duration(segment_duration))
+            else:
+                clip = ensure_fps(clip)
 
-        clip = ensure_fps(clip.set_duration(segment_duration))
         logger.debug("Clip FPS after load and duration set: %s", clip.fps)
 
         subtitles_data = list(subtitles or [])
