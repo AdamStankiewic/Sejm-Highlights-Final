@@ -313,15 +313,32 @@ def _probe_video_height(input_video: str) -> Optional[int]:
 
 
 def load_subclip(video_path: Path, start: float, end: float) -> VideoFileClip | None:
-    """Load a subclip with basic sanity checks, returning None if unusable."""
+    """Load a subclip with basic sanity checks, returning None if unusable.
+
+    Falls back to FFmpeg extraction if MoviePy fails (e.g., on videos with chapters metadata).
+    """
 
     try:
         clip = VideoFileClip(str(video_path)).subclip(start, end)
         clip = ensure_fps(clip)
         logger.debug("Clip FPS after load_subclip: %s", clip.fps)
-    except Exception:
-        logger.exception("[Shorts] Failed to load subclip %s %.2f-%.2f", video_path, start, end)
-        return None
+    except Exception as e:
+        logger.warning(
+            "[Shorts] MoviePy failed to load subclip %s %.2f-%.2f: %s",
+            video_path, start, end, str(e)
+        )
+
+        # ✅ FIX: Fallback to FFmpeg direct extraction (handles videos with chapters)
+        logger.info("[Shorts] Attempting FFmpeg fallback for subclip extraction...")
+        try:
+            clip = _extract_subclip_with_ffmpeg(video_path, start, end)
+            if clip:
+                logger.info("[Shorts] ✓ FFmpeg fallback successful")
+            else:
+                return None
+        except Exception as ffmpeg_error:
+            logger.exception("[Shorts] FFmpeg fallback also failed: %s", ffmpeg_error)
+            return None
 
     if clip.duration is None or clip.duration <= 0:
         logger.warning(f"[Shorts] Skipping invalid clip: duration={clip.duration}, segment {start}-{end}")
@@ -334,3 +351,73 @@ def load_subclip(video_path: Path, start: float, end: float) -> VideoFileClip | 
     logger.debug("Clip FPS after load_subclip validation: %s", clip.fps)
 
     return clip
+
+
+def _extract_subclip_with_ffmpeg(video_path: Path, start: float, end: float) -> VideoFileClip | None:
+    """Extract subclip using FFmpeg directly (bypasses MoviePy metadata parsing issues).
+
+    Creates a temporary file with the extracted segment, then loads it with MoviePy.
+    The temporary file won't have problematic metadata like chapters.
+    """
+    import tempfile
+    import subprocess
+
+    duration = end - start
+
+    # Create temporary file for extracted segment
+    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp_file:
+        tmp_path = tmp_file.name
+
+    try:
+        # Extract segment with FFmpeg (fast seek + re-encode to avoid keyframe issues)
+        cmd = [
+            'ffmpeg',
+            '-y',  # Overwrite output
+            '-ss', str(start),  # Start time
+            '-i', str(video_path),  # Input file
+            '-t', str(duration),  # Duration
+            '-c:v', 'libx264',  # Re-encode video (ensures clean keyframes)
+            '-preset', 'ultrafast',  # Fast encoding
+            '-crf', '23',  # Good quality
+            '-c:a', 'aac',  # Re-encode audio
+            '-b:a', '192k',  # Good audio quality
+            '-avoid_negative_ts', 'make_zero',  # Fix timestamp issues
+            tmp_path
+        ]
+
+        logger.debug("[Shorts] FFmpeg command: %s", ' '.join(cmd))
+
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=60,  # 1 minute timeout
+            check=True
+        )
+
+        # Load extracted file with MoviePy (should work since it has no chapters)
+        clip = VideoFileClip(tmp_path)
+        clip = ensure_fps(clip)
+
+        # Store temp file path so it can be cleaned up later
+        clip._temp_file_path = tmp_path
+
+        logger.debug("[Shorts] FFmpeg extracted subclip duration: %.2fs", clip.duration)
+
+        return clip
+
+    except subprocess.TimeoutExpired:
+        logger.error("[Shorts] FFmpeg extraction timed out")
+        try:
+            Path(tmp_path).unlink(missing_ok=True)
+        except:
+            pass
+        return None
+
+    except Exception as e:
+        logger.error("[Shorts] FFmpeg extraction failed: %s", e)
+        try:
+            Path(tmp_path).unlink(missing_ok=True)
+        except:
+            pass
+        return None
