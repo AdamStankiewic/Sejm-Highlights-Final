@@ -14,7 +14,7 @@ platforms:
     username: "ohnepixel"
     channel_url: "https://www.twitch.tv/ohnepixel"
   youtube:
-    channel_id: "UCrMwNAL071AO4b8YH7xIz6g"  # Highlights channel (optional)
+    channel_id: "UCWX7tzz1JJVc2Usx0BRn1Cg"  # ohnepixel YouTube channel
     channel_name: "ohnePixel"
 
 # Content metadata
@@ -80,5 +80,5 @@ detection:
     - "ohnePixel"
   channel_indicators:
     - "ohnepixel"  # Twitch username
-    - "UCrMwNAL071AO4b8YH7xIz6g"  # YouTube channel (if uploading there)
+    - "UCWX7tzz1JJVc2Usx0BRn1Cg"  # YouTube channel
   language_hint: "en"
