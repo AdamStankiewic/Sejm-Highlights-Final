@@ -17,6 +17,7 @@ class StreamerProfile:
         self.data = self._load_yaml(profile_path)
 
         # Basic info
+        self.streamer_id = self.data.get('streamer_id', profile_path.stem)  # ✅ FIX: Add streamer_id
         self.name = self.data.get('name', 'Unknown')
         self.display_name = self.data.get('display_name', self.name)
         self.language = self.data.get('language', 'pl')
