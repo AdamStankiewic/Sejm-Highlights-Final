@@ -1,0 +1,84 @@
+# ohnepixel Profile - English CS:GO/CS2 Twitch Streamer
+# Main platform: Twitch (twitch.tv/ohnepixel)
+# Content: CS2 gameplay, skin trading, case openings, reactions
+
+streamer_id: "ohnepixel"
+name: "ohnepixel"
+display_name: "ohnePixel"
+language: "en"
+content_type: "gaming"
+
+# Platform accounts
+platforms:
+  twitch:
+    username: "ohnepixel"
+    channel_url: "https://www.twitch.tv/ohnepixel"
+  youtube:
+    channel_id: "UCrMwNAL071AO4b8YH7xIz6g"  # Highlights channel (optional)
+    channel_name: "ohnePixel"
+
+# Content metadata
+content:
+  primary_platform: "twitch"
+  channel_type: "gaming"
+  primary_language: "en"
+  categories: ["cs2", "csgo", "fps", "gambling"]
+
+# Language & Keywords
+features:
+  keywords_file: "models/keywords_en.csv"
+  spacy_model: "en_core_web_sm"
+
+# ASR Configuration
+asr:
+  language: "en"
+  model: "medium"
+
+# Thumbnail Configuration
+thumbnail:
+  language: "en"
+  hot_moments_text: "INSANE MOMENT!"
+
+# Shorts Configuration
+shorts:
+  template: "gaming"
+  subtitle_lang: "en"
+
+# AI Generation Settings
+generation:
+  context_model: "gpt-4o-mini"
+  title_model: "gpt-4o"
+  description_model: "gpt-4o"
+  temperature: 0.7
+  enable_research: false
+
+# Seed Examples (high-quality examples for few-shot learning)
+seed_examples:
+  - title: "ohnepixel Unboxes $50,000 CS2 Knife"
+    description: "ohnepixel goes absolutely insane after unboxing one of the rarest CS2 knives. The reaction is priceless as chat spams and the entire stream loses their minds. This is peak CS2 gambling content.\n\n#ohnepixel #CS2 #CaseOpening #Knife #Gaming"
+    metadata:
+      content_type: "ohnepixel_gambling"
+      emotional_tone: "excited"
+
+  - title: "ohnepixel Reacts to Scammer Getting Caught"
+    description: "ohnepixel watches a CS2 skin scammer get exposed and caught red-handed. The commentary is hilarious as he breaks down exactly how the scam worked and why people fall for it. Chat goes wild.\n\n#ohnepixel #CS2 #Scammer #Drama #Skins"
+    metadata:
+      content_type: "ohnepixel_reaction"
+      emotional_tone: "critical"
+
+  - title: "Chat Trolls ohnepixel With Fake Trade Offers"
+    description: "Another classic stream moment where chat manages to troll ohnepixel with ridiculous fake CS2 skin trade offers. His reactions and the back-and-forth with chat make for peak entertainment.\n\n#ohnepixel #CS2 #ChatTrolls #Trading #Twitch"
+    metadata:
+      content_type: "ohnepixel_gaming"
+      emotional_tone: "amused"
+
+# Content Detection (for auto-profile detection)
+detection:
+  filename_patterns:
+    - "ohnepixel"
+    - "ohne"
+    - "ohnePixel"
+  channel_indicators:
+    - "ohnepixel"  # Twitch username
+    - "UCrMwNAL071AO4b8YH7xIz6g"  # YouTube channel (if uploading there)
+  language_hint: "en"
