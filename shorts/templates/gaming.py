@@ -315,8 +315,8 @@ class GamingTemplate(TemplateBase):
         """Build split layout with gameplay on top and detected facecam bar at bottom.
 
         Layout:
-        - Top 70%: Gameplay (centered, zoomed out)
-        - Bottom 30%: Facecam (full width bar from detected region)
+        - Top 80%: Gameplay (centered, zoomed out more) ✅ User requested
+        - Bottom 20%: Facecam (full width bar from detected region) ✅ User requested
 
         Args:
             source_clip: Original video clip (full frame)
@@ -328,12 +328,12 @@ class GamingTemplate(TemplateBase):
         """
         target_w, target_h = 1080, 1920
 
-        # Split layout: 70% gameplay top, 30% facecam bottom
-        gameplay_h = int(target_h * 0.70)
-        facecam_h = int(target_h * 0.30)
+        # Split layout: 80% gameplay top, 20% facecam bottom (user requested)
+        gameplay_h = int(target_h * 0.80)  # ✅ Changed from 70% to 80%
+        facecam_h = int(target_h * 0.20)   # ✅ Changed from 30% to 20%
 
-        # Prepare gameplay for top section (centered, zoomed out)
-        gameplay_full = center_crop_9_16(gameplay_clip, scale=0.85)
+        # Prepare gameplay for top section (centered, zoomed out more)
+        gameplay_full = center_crop_9_16(gameplay_clip, scale=0.80)  # ✅ More zoom out (was 0.85)
         gameplay_full = ensure_fps(gameplay_full.resize((target_w, gameplay_h)).set_duration(source_clip.duration))
         gameplay_full = gameplay_full.set_position((0, 0))  # Top
         logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
@@ -348,12 +348,12 @@ class GamingTemplate(TemplateBase):
         face_center_x = face_x + face_w // 2
         face_center_y = face_y + face_h // 2
 
-        # Create rectangular crop (wider than tall) for natural widescreen aspect ratio
-        # Bottom bar is 1080×576 (1.875:1 ratio), so crop should be similar
+        # Create rectangular crop (tighter zoom on face for better fit in smaller bar)
+        # Bottom bar is now 1080×384 (2.8:1 ratio), so crop wider
         face_size = max(face_w, face_h)
-        crop_width = int(face_size * 5.5)   # Wide horizontal view
-        crop_height = int(face_size * 3.0)  # Less vertical space
-        # Aspect ratio: ~1.83 (close to bottom bar's 1.875)
+        crop_width = int(face_size * 4.0)   # ✅ Tighter zoom (was 5.5) - closer face
+        crop_height = int(face_size * 2.2)  # ✅ Tighter zoom (was 3.0) - closer face
+        # Aspect ratio: ~1.82 (fits better in narrower bottom bar)
 
         # Create rectangular crop centered on face
         x1 = face_center_x - crop_width // 2
@@ -437,7 +437,7 @@ class GamingTemplate(TemplateBase):
             fps=30,
         ).set_duration(source_clip.duration)
         logger.debug("Clip FPS after composite (split layout): %s", final.fps)
-        logger.info("[GamingTemplate] Using split layout with detected face: gameplay top (70%), facecam bar bottom (30%)")
+        logger.info("[GamingTemplate] Using split layout with detected face: gameplay top (80%), facecam bar bottom (20%)")  # ✅ Updated percentages
         return final
 
     def _build_layout_with_fixed_facecam(
@@ -451,8 +451,8 @@ class GamingTemplate(TemplateBase):
         Falls back to left bottom if no face found anywhere.
 
         Layout:
-        - Top 70%: Gameplay (centered, zoomed out)
-        - Bottom 30%: Facecam (full width bar)
+        - Top 80%: Gameplay (centered, zoomed out more) ✅ User requested
+        - Bottom 20%: Facecam (full width bar) ✅ User requested
 
         Args:
             source_clip: Original video clip (full frame)
@@ -463,12 +463,12 @@ class GamingTemplate(TemplateBase):
         """
         target_w, target_h = 1080, 1920
 
-        # Split layout: 70% gameplay top, 30% facecam bottom
-        gameplay_h = int(target_h * 0.70)
-        facecam_h = int(target_h * 0.30)
+        # Split layout: 80% gameplay top, 20% facecam bottom (user requested)
+        gameplay_h = int(target_h * 0.80)  # ✅ Changed from 70% to 80%
+        facecam_h = int(target_h * 0.20)   # ✅ Changed from 30% to 20%
 
-        # Prepare gameplay for top section (centered, zoomed out)
-        gameplay_full = center_crop_9_16(gameplay_clip, scale=0.85)
+        # Prepare gameplay for top section (centered, zoomed out more)
+        gameplay_full = center_crop_9_16(gameplay_clip, scale=0.80)  # ✅ More zoom out (was 0.85)
         gameplay_full = ensure_fps(gameplay_full.resize((target_w, gameplay_h)).set_duration(source_clip.duration))
         gameplay_full = gameplay_full.set_position((0, 0))  # Top
         logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
@@ -556,13 +556,13 @@ class GamingTemplate(TemplateBase):
             fps=30,
         ).set_duration(source_clip.duration)
         logger.debug("Clip FPS after composite (split layout): %s", final.fps)
-        logger.info("[GamingTemplate] Using split layout: gameplay top (70%), facecam bar bottom (30%)")
+        logger.info("[GamingTemplate] Using split layout: gameplay top (80%), facecam bar bottom (20%)")  # ✅ Updated percentages
         return final
 
     def _build_layout_gameplay_only(self, gameplay_clip: VideoFileClip) -> VideoClip:
         """Build gameplay-only layout (no facecam) - zoomed out to see more."""
         target_w, target_h = 1080, 1920
-        gameplay_full = center_crop_9_16(gameplay_clip, scale=0.85)  # Zoom out
+        gameplay_full = center_crop_9_16(gameplay_clip, scale=0.80)  # ✅ More zoom out for consistency (was 0.85)
         gameplay_full = ensure_fps(gameplay_full.resize((target_w, target_h)).set_duration(gameplay_clip.duration))
         logger.debug("Clip FPS after gameplay-only layout: %s", gameplay_full.fps)
         return gameplay_full
