@@ -120,7 +120,16 @@ def ensure_fps(clip: VideoFileClip, fallback: int = 30) -> VideoFileClip:
 
 
 def center_crop_9_16(clip: VideoFileClip, scale: float = 1.0) -> VideoFileClip:
-    """Crop clip to 9:16 keeping center, optional scale (zoom out)."""
+    """Crop clip to 9:16 keeping center, optional scale (zoom out).
+
+    ✅ FIX: Handle ColorClip which doesn't have fx() method
+    """
+    # ✅ FIX: Check if clip is ColorClip (has no fx method)
+    if not hasattr(clip, 'fx') or not callable(getattr(clip, 'fx')):
+        # ColorClip - just return as is (already 9:16 from template)
+        logger.debug("center_crop_9_16: Skipping fx for ColorClip")
+        return ensure_fps(clip)
+
     target_ratio = 9 / 16
     if MOVIEPY_V2:
         clip = ensure_fps(clip.fx(Resize, new_size=scale))

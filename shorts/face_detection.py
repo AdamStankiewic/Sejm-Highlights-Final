@@ -361,6 +361,9 @@ class FaceDetector:
                 if self._use_new_api:
                     # New MediaPipe API (0.10.30+)
                     import mediapipe as mp
+                    import numpy as np
+                    # ✅ FIX: Make array contiguous for MediaPipe (it requires C-contiguous arrays)
+                    region_frame = np.ascontiguousarray(region_frame)
                     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=region_frame)
                     detection_result = self.face_detector.detect(mp_image)
                     detections_list = detection_result.detections if detection_result else []
