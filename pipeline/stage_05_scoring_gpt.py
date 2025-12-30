@@ -41,6 +41,7 @@ class ScoringStage:
         self.chat_data: Dict[int, int] = {}
         self.chat_present: bool = False
         self._load_gpt()
+        self._load_chat()  # ✅ FIX: Load chat data from config
 
     def _get_system_prompt(self) -> str:
         """Get language-aware system prompt"""
@@ -101,18 +102,41 @@ Array must have {batch_size} elements - one score for each [N]."""
     def _load_gpt(self):
         """Załaduj GPT API"""
         api_key = os.getenv("OPENAI_API_KEY")
-        
+
         if not api_key:
             print("⚠️ OPENAI_API_KEY nie znaleziony w .env")
             print("   Używam fallback (bez GPT scoring)")
             return
-        
+
         try:
             self.openai_client = OpenAI(api_key=api_key)
             print("✓ GPT-4o-mini API załadowane")
         except Exception as e:
             print(f"⚠️ Błąd ładowania GPT: {e}")
             self.openai_client = None
+
+    def _load_chat(self):
+        """✅ FIX: Załaduj chat data z config.chat_json_path"""
+        if self.config.mode.lower() != "stream":
+            return
+
+        chat_path = getattr(self.config, 'chat_json_path', None)
+        if not chat_path or not Path(chat_path).exists():
+            logger.info("No chat.json file configured or found")
+            return
+
+        try:
+            self.chat_data = parse_chat_json(str(chat_path))
+            if self.chat_data:
+                self.chat_present = True
+                total_msgs = sum(self.chat_data.values())
+                print(f"✓ Chat załadowany: {total_msgs} wiadomości w {len(self.chat_data)} sekundach")
+            else:
+                print("⚠️ Chat.json pusty lub nieprawidłowy format")
+        except Exception as e:
+            logger.warning(f"Failed to load chat data: {e}")
+            self.chat_data = {}
+            self.chat_present = False
     
     def process(
         self,

@@ -1733,6 +1733,10 @@ class SejmHighlightsApp(QMainWindow):
                     self.config.youtube.channel_id = profile.channel_id
                     self.log(f"  Updated config.youtube.channel_id to: {profile.channel_id}", "INFO")
 
+                # ✅ FIX: Store streamer_id in config for Stage 7 AI metadata generation
+                self.config.streamer_id = profile.streamer_id
+                self.log(f"  Updated config.streamer_id to: {profile.streamer_id}", "INFO")
+
                 lang_idx = 0 if profile.language == "pl" else 1
                 self.language_combo.setCurrentIndex(lang_idx)
                 self.log(f"  Updated GUI language to: {profile.language.upper()}", "INFO")

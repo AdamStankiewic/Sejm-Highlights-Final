@@ -92,8 +92,12 @@ def ensure_fps(clip: VideoFileClip, fallback: int = 30) -> VideoFileClip:
         target_fps = current_fps
         logger.debug("ensure_fps: Current fps=%s is valid", current_fps)
 
-    # Set fps using MoviePy API
-    clip = clip.set_fps(target_fps)
+    # ✅ FIX: Check if clip has set_fps method (ColorClip doesn't have it)
+    if hasattr(clip, 'set_fps') and callable(getattr(clip, 'set_fps')):
+        # Set fps using MoviePy API
+        clip = clip.set_fps(target_fps)
+    else:
+        logger.debug("ensure_fps: Clip type %s has no set_fps method, using direct assignment only", type(clip).__name__)
 
     # Force attribute assignment (MoviePy workaround for some clip types)
     try:

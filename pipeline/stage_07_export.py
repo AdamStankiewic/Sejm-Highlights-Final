@@ -219,8 +219,13 @@ class ExportStage:
         try:
             # Use provided profile or try to detect
             if not streamer_profile:
-                # Try to detect from config
-                if hasattr(self.config, 'youtube') and hasattr(self.config.youtube, 'channel_id'):
+                # ✅ FIX: Try to get profile from config.streamer_id first
+                if hasattr(self.config, 'streamer_id') and self.config.streamer_id:
+                    streamer_profile = self.streamer_manager.get_profile(self.config.streamer_id)
+                    logger.info(f"Loaded streamer profile from config: {self.config.streamer_id}")
+
+                # Fallback: Try to detect from YouTube channel ID
+                elif hasattr(self.config, 'youtube') and hasattr(self.config.youtube, 'channel_id'):
                     channel_id = self.config.youtube.channel_id
                     streamer_profile = self.streamer_manager.detect_from_youtube(channel_id)
 
