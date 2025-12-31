@@ -12,14 +12,14 @@ try:
     # MoviePy 2.x
     from moviepy import ColorClip, VideoClip, VideoFileClip
     from moviepy.video.fx import MultiplySpeed
-    from moviepy.video.fx.Crop import Crop
+    from moviepy.video.fx.crop import crop  # lowercase function, not Crop class
     MOVIEPY_V2 = True
 except ImportError:
     # MoviePy 1.x
     from moviepy.editor import ColorClip, VideoClip, VideoFileClip
     from moviepy.video.fx.all import speedx as vfx_speedx, crop as vfx_crop
     MultiplySpeed = None
-    Crop = None
+    crop = None
     MOVIEPY_V2 = False
 
 from shorts.face_detection import FaceDetector, FaceRegion
@@ -408,10 +408,10 @@ class GamingTemplate(TemplateBase):
             face_w, face_h, face_x, face_y
         )
 
-        # Crop facecam region (MoviePy crop via fx)
+        # Crop facecam region (MoviePy crop)
         if MOVIEPY_V2:
-            # MoviePy 2.x: Use fx API with Crop effect
-            face_clip = source_clip.fx(Crop, x1=x1, y1=y1, x2=x2, y2=y2)
+            # MoviePy 2.x: crop is a function (no .fx() method exists in v2)
+            face_clip = crop(source_clip, x1=x1, y1=y1, x2=x2, y2=y2)
         else:
             # MoviePy 1.x: Use fx API
             face_clip = source_clip.fx(vfx_crop, x1=x1, y1=y1, x2=x2, y2=y2)
@@ -537,10 +537,10 @@ class GamingTemplate(TemplateBase):
             best_region, x2-x1, y2-y1, x1, y1
         )
 
-        # Crop facecam region (MoviePy crop via fx)
+        # Crop facecam region (MoviePy crop)
         if MOVIEPY_V2:
-            # MoviePy 2.x: Use fx API with Crop effect
-            face_clip = source_clip.fx(Crop, x1=x1, y1=y1, x2=x2, y2=y2)
+            # MoviePy 2.x: crop is a function (no .fx() method exists in v2)
+            face_clip = crop(source_clip, x1=x1, y1=y1, x2=x2, y2=y2)
         else:
             # MoviePy 1.x: Use fx API
             face_clip = source_clip.fx(vfx_crop, x1=x1, y1=y1, x2=x2, y2=y2)
