@@ -410,8 +410,8 @@ class GamingTemplate(TemplateBase):
 
         # Crop facecam region (MoviePy crop via fx)
         if MOVIEPY_V2:
-            # MoviePy 2.x: Crop is a transform function - Crop(x1, y1, x2, y2)(clip)
-            face_clip = Crop(x1, y1, x2, y2)(source_clip)
+            # MoviePy 2.x: Use fx API with Crop effect
+            face_clip = source_clip.fx(Crop, x1=x1, y1=y1, x2=x2, y2=y2)
         else:
             # MoviePy 1.x: Use fx API
             face_clip = source_clip.fx(vfx_crop, x1=x1, y1=y1, x2=x2, y2=y2)
@@ -539,8 +539,8 @@ class GamingTemplate(TemplateBase):
 
         # Crop facecam region (MoviePy crop via fx)
         if MOVIEPY_V2:
-            # MoviePy 2.x: Crop is a transform function - Crop(x1, y1, x2, y2)(clip)
-            face_clip = Crop(x1, y1, x2, y2)(source_clip)
+            # MoviePy 2.x: Use fx API with Crop effect
+            face_clip = source_clip.fx(Crop, x1=x1, y1=y1, x2=x2, y2=y2)
         else:
             # MoviePy 1.x: Use fx API
             face_clip = source_clip.fx(vfx_crop, x1=x1, y1=y1, x2=x2, y2=y2)
