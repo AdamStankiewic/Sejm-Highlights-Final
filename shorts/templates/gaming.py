@@ -12,12 +12,14 @@ try:
     # MoviePy 2.x
     from moviepy import ColorClip, VideoClip, VideoFileClip
     from moviepy.video.fx import MultiplySpeed
+    from moviepy.video.fx.Crop import Crop
     MOVIEPY_V2 = True
 except ImportError:
     # MoviePy 1.x
     from moviepy.editor import ColorClip, VideoClip, VideoFileClip
-    from moviepy.video.fx.all import speedx as vfx_speedx
+    from moviepy.video.fx.all import speedx as vfx_speedx, crop as vfx_crop
     MultiplySpeed = None
+    Crop = None
     MOVIEPY_V2 = False
 
 from shorts.face_detection import FaceDetector, FaceRegion
@@ -280,10 +282,8 @@ class GamingTemplate(TemplateBase):
                 )
                 fallback_clip = ensure_fps(fallback_clip, fallback=30)
 
-                if clip and getattr(clip, "audio", None):
-                    fallback_clip = fallback_clip.set_audio(clip.audio)
-                    # set_audio returns a new clip, restore fps
-                    fallback_clip = ensure_fps(fallback_clip, fallback=30)
+                # ✅ FIX: ColorClip doesn't support set_audio, skip audio in fallback
+                # (Fallback is black screen anyway, audio not critical)
 
                 # BYPASS MoviePy's broken write_videofile() - use direct ffmpeg
                 render_target = output_path
@@ -408,8 +408,11 @@ class GamingTemplate(TemplateBase):
             face_w, face_h, face_x, face_y
         )
 
-        # Crop facecam region
-        face_clip = source_clip.crop(x1=x1, y1=y1, x2=x2, y2=y2)
+        # Crop facecam region (MoviePy crop via fx)
+        if MOVIEPY_V2:
+            face_clip = Crop(source_clip, x1=x1, y1=y1, x2=x2, y2=y2)
+        else:
+            face_clip = source_clip.fx(vfx_crop, x1=x1, y1=y1, x2=x2, y2=y2)
         face_clip = ensure_fps(face_clip.set_duration(source_clip.duration))
 
         # Scale to fill bottom bar height while preserving aspect ratio
