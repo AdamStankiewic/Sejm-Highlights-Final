@@ -342,13 +342,14 @@ class GamingTemplate(TemplateBase):
         # ✅ FIX: Check if ColorClip (no resize/set_duration methods)
         if hasattr(gameplay_full, 'resize') and hasattr(gameplay_full, 'set_duration'):
             gameplay_full = ensure_fps(gameplay_full.resize((target_w, gameplay_h)).set_duration(source_clip.duration))
+            gameplay_full = gameplay_full.set_position((0, 0))  # Top
         else:
-            # ColorClip fallback - recreate with correct size
+            # ColorClip fallback - recreate with correct size and position
             from moviepy.video.VideoClip import ColorClip
             gameplay_full = ColorClip(size=(target_w, gameplay_h), color=(0, 0, 0), duration=source_clip.duration)
             gameplay_full = ensure_fps(gameplay_full)
+            # ColorClip needs set_position via composition - will be applied in CompositeVideoClip
 
-        gameplay_full = gameplay_full.set_position((0, 0))  # Top
         logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
 
         # Use actual detected face bbox with padding for tight, centered framing
@@ -486,13 +487,14 @@ class GamingTemplate(TemplateBase):
         # ✅ FIX: Check if ColorClip (no resize/set_duration methods)
         if hasattr(gameplay_full, 'resize') and hasattr(gameplay_full, 'set_duration'):
             gameplay_full = ensure_fps(gameplay_full.resize((target_w, gameplay_h)).set_duration(source_clip.duration))
+            gameplay_full = gameplay_full.set_position((0, 0))  # Top
         else:
-            # ColorClip fallback - recreate with correct size
+            # ColorClip fallback - recreate with correct size and position
             from moviepy.video.VideoClip import ColorClip
             gameplay_full = ColorClip(size=(target_w, gameplay_h), color=(0, 0, 0), duration=source_clip.duration)
             gameplay_full = ensure_fps(gameplay_full)
+            # ColorClip needs set_position via composition - will be applied in CompositeVideoClip
 
-        gameplay_full = gameplay_full.set_position((0, 0))  # Top
         logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
 
         # Try to find facecam in multiple regions (smaller regions to match actual facecam size)

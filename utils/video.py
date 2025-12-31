@@ -407,6 +407,49 @@ def _extract_subclip_with_ffmpeg(video_path: Path, start: float, end: float) -> 
             check=True
         )
 
+        # ✅ FIX: Second pass to FORCE remove chapters metadata (FFmpeg keeps adding them)
+        # Create second temp file for cleaned output
+        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp_file2:
+            tmp_path_clean = tmp_file2.name
+
+        try:
+            # Second pass: copy with explicit metadata/chapter removal
+            cmd_clean = [
+                'ffmpeg',
+                '-y',
+                '-i', tmp_path,  # Input: first pass output
+                '-c', 'copy',  # Stream copy (no re-encoding)
+                '-map', '0:v:0',  # Map only video
+                '-map', '0:a:0',  # Map only audio
+                '-map_metadata', '-1',  # Strip all metadata
+                '-map_chapters', '-1',  # Strip chapters
+                '-fflags', '+bitexact',  # Bitexact mode (no metadata)
+                tmp_path_clean
+            ]
+
+            logger.debug("[Shorts] FFmpeg cleanup command: %s", ' '.join(cmd_clean))
+
+            result_clean = subprocess.run(
+                cmd_clean,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=30,
+                check=True
+            )
+
+            # Remove first temp file, keep only cleaned one
+            Path(tmp_path).unlink(missing_ok=True)
+            tmp_path = tmp_path_clean
+
+        except Exception as e:
+            logger.warning("[Shorts] Second-pass cleanup failed, using first-pass output: %s", e)
+            # Cleanup failed temp file
+            try:
+                Path(tmp_path_clean).unlink(missing_ok=True)
+            except:
+                pass
+            # Continue with first-pass output (tmp_path)
+
         # Load extracted file with MoviePy (should work since it has no chapters)
         clip = VideoFileClip(tmp_path)
         clip = ensure_fps(clip)
