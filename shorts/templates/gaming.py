@@ -348,7 +348,7 @@ class GamingTemplate(TemplateBase):
             from moviepy.video.VideoClip import ColorClip
             gameplay_full = ColorClip(size=(target_w, gameplay_h), color=(0, 0, 0), duration=source_clip.duration)
             gameplay_full = ensure_fps(gameplay_full)
-            # ColorClip needs set_position via composition - will be applied in CompositeVideoClip
+            gameplay_full = gameplay_full.set_position((0, 0))  # ✅ FIX: ColorClip also needs explicit position
 
         logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
 
@@ -498,7 +498,7 @@ class GamingTemplate(TemplateBase):
             from moviepy.video.VideoClip import ColorClip
             gameplay_full = ColorClip(size=(target_w, gameplay_h), color=(0, 0, 0), duration=source_clip.duration)
             gameplay_full = ensure_fps(gameplay_full)
-            # ColorClip needs set_position via composition - will be applied in CompositeVideoClip
+            gameplay_full = gameplay_full.set_position((0, 0))  # ✅ FIX: ColorClip also needs explicit position
 
         logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
 
