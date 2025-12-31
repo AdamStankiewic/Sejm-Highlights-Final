@@ -338,7 +338,16 @@ class GamingTemplate(TemplateBase):
 
         # Prepare gameplay for top section (centered, zoomed out more)
         gameplay_full = center_crop_9_16(gameplay_clip, scale=0.80)  # ✅ More zoom out (was 0.85)
-        gameplay_full = ensure_fps(gameplay_full.resize((target_w, gameplay_h)).set_duration(source_clip.duration))
+
+        # ✅ FIX: Check if ColorClip (no resize/set_duration methods)
+        if hasattr(gameplay_full, 'resize') and hasattr(gameplay_full, 'set_duration'):
+            gameplay_full = ensure_fps(gameplay_full.resize((target_w, gameplay_h)).set_duration(source_clip.duration))
+        else:
+            # ColorClip fallback - recreate with correct size
+            from moviepy.video.VideoClip import ColorClip
+            gameplay_full = ColorClip(size=(target_w, gameplay_h), color=(0, 0, 0), duration=source_clip.duration)
+            gameplay_full = ensure_fps(gameplay_full)
+
         gameplay_full = gameplay_full.set_position((0, 0))  # Top
         logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
 
@@ -473,7 +482,16 @@ class GamingTemplate(TemplateBase):
 
         # Prepare gameplay for top section (centered, zoomed out more)
         gameplay_full = center_crop_9_16(gameplay_clip, scale=0.80)  # ✅ More zoom out (was 0.85)
-        gameplay_full = ensure_fps(gameplay_full.resize((target_w, gameplay_h)).set_duration(source_clip.duration))
+
+        # ✅ FIX: Check if ColorClip (no resize/set_duration methods)
+        if hasattr(gameplay_full, 'resize') and hasattr(gameplay_full, 'set_duration'):
+            gameplay_full = ensure_fps(gameplay_full.resize((target_w, gameplay_h)).set_duration(source_clip.duration))
+        else:
+            # ColorClip fallback - recreate with correct size
+            from moviepy.video.VideoClip import ColorClip
+            gameplay_full = ColorClip(size=(target_w, gameplay_h), color=(0, 0, 0), duration=source_clip.duration)
+            gameplay_full = ensure_fps(gameplay_full)
+
         gameplay_full = gameplay_full.set_position((0, 0))  # Top
         logger.debug("Clip FPS after gameplay resize: %s", gameplay_full.fps)
 
@@ -567,7 +585,16 @@ class GamingTemplate(TemplateBase):
         """Build gameplay-only layout (no facecam) - zoomed out to see more."""
         target_w, target_h = 1080, 1920
         gameplay_full = center_crop_9_16(gameplay_clip, scale=0.80)  # ✅ More zoom out for consistency (was 0.85)
-        gameplay_full = ensure_fps(gameplay_full.resize((target_w, target_h)).set_duration(gameplay_clip.duration))
+
+        # ✅ FIX: Check if ColorClip (no resize/set_duration methods)
+        if hasattr(gameplay_full, 'resize') and hasattr(gameplay_full, 'set_duration'):
+            gameplay_full = ensure_fps(gameplay_full.resize((target_w, target_h)).set_duration(gameplay_clip.duration))
+        else:
+            # ColorClip fallback - recreate with correct size
+            from moviepy.video.VideoClip import ColorClip
+            gameplay_full = ColorClip(size=(target_w, target_h), color=(0, 0, 0), duration=gameplay_clip.duration)
+            gameplay_full = ensure_fps(gameplay_full)
+
         logger.debug("Clip FPS after gameplay-only layout: %s", gameplay_full.fps)
         return gameplay_full
 

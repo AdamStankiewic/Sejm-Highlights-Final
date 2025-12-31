@@ -385,6 +385,8 @@ def _extract_subclip_with_ffmpeg(video_path: Path, start: float, end: float) -> 
             '-ss', str(start),  # Start time
             '-i', str(video_path),  # Input file
             '-t', str(duration),  # Duration
+            '-map', '0:v:0',  # ✅ FIX: Map only first video stream (exclude data/chapter tracks)
+            '-map', '0:a:0',  # ✅ FIX: Map only first audio stream
             '-c:v', 'libx264',  # Re-encode video (ensures clean keyframes)
             '-preset', 'ultrafast',  # Fast encoding
             '-crf', '23',  # Good quality
