@@ -390,6 +390,7 @@ def _extract_subclip_with_ffmpeg(video_path: Path, start: float, end: float) -> 
             '-crf', '23',  # Good quality
             '-c:a', 'aac',  # Re-encode audio
             '-b:a', '192k',  # Good audio quality
+            '-map_metadata', '-1',  # ✅ FIX: Strip ALL metadata (including chapters)
             '-avoid_negative_ts', 'make_zero',  # Fix timestamp issues
             tmp_path
         ]

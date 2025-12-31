@@ -218,7 +218,11 @@ class GamingTemplate(TemplateBase):
                     gameplay_clip, video_path, start, end, output_path.stem
                 )
 
-            gameplay_clip = ensure_fps(gameplay_clip.set_duration(segment_duration))
+            # ✅ FIX: Only set_duration if clip has the method (ColorClip doesn't)
+            if hasattr(gameplay_clip, 'set_duration') and callable(getattr(gameplay_clip, 'set_duration')):
+                gameplay_clip = ensure_fps(gameplay_clip.set_duration(segment_duration))
+            else:
+                gameplay_clip = ensure_fps(gameplay_clip)
             logger.debug("Clip FPS before layout: %s", gameplay_clip.fps)
 
             if face_region:
