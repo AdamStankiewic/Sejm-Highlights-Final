@@ -11,8 +11,17 @@ from pathlib import Path
 from typing import Dict, Optional, Type
 
 from .base import TemplateBase
-from .gaming import GamingTemplate
-from .universal import UniversalTemplate
+
+# Try to import templates, fail gracefully if MoviePy not available
+try:
+    from .gaming import GamingTemplate
+except (ImportError, ModuleNotFoundError):
+    GamingTemplate = None
+
+try:
+    from .universal import UniversalTemplate
+except (ImportError, ModuleNotFoundError):
+    UniversalTemplate = None
 
 
 @dataclass
@@ -116,24 +125,26 @@ def get_template_metadata(name: str) -> Optional[TemplateMetadata]:
     return _REGISTRY.get(name)
 
 
-# Register built-in templates
-register_template(
-    name="gaming",
-    display_name="Gaming Facecam",
-    description="Auto-detect facecam and create PIP layout. Best for gaming streams.",
-    template_class=GamingTemplate,
-    requires_face_detection=True,
-    recommended_for="Gaming streams with visible facecam"
-)
+# Register built-in templates (only if import succeeded)
+if GamingTemplate is not None:
+    register_template(
+        name="gaming",
+        display_name="Gaming Facecam",
+        description="Auto-detect facecam and create PIP layout. Best for gaming streams.",
+        template_class=GamingTemplate,
+        requires_face_detection=True,
+        recommended_for="Gaming streams with visible facecam"
+    )
 
-register_template(
-    name="universal",
-    display_name="Universal Crop",
-    description="Simple 9:16 center crop. Works with any content.",
-    template_class=UniversalTemplate,
-    requires_face_detection=False,
-    recommended_for="General content, talks, IRL streams without facecam"
-)
+if UniversalTemplate is not None:
+    register_template(
+        name="universal",
+        display_name="Universal Crop",
+        description="Simple 9:16 center crop. Works with any content.",
+        template_class=UniversalTemplate,
+        requires_face_detection=False,
+        recommended_for="General content, talks, IRL streams without facecam"
+    )
 
 
 # Expose commonly used items

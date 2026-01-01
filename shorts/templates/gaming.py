@@ -9,10 +9,22 @@ from typing import Iterable, Tuple, Optional
 
 # Support both MoviePy 1.x and 2.x
 try:
-    # MoviePy 2.x
+    # MoviePy 2.x - try different import paths
     from moviepy import ColorClip, VideoClip, VideoFileClip
     from moviepy.video.fx import MultiplySpeed
-    from moviepy.video.fx.crop import crop  # lowercase function, not Crop class
+
+    # Try lowercase crop function first
+    try:
+        from moviepy.video.fx.crop import crop
+    except (ImportError, ModuleNotFoundError):
+        # Try uppercase Crop class
+        try:
+            from moviepy.video.fx.Crop import Crop as crop
+        except (ImportError, ModuleNotFoundError):
+            # Try vfx module
+            from moviepy import vfx
+            crop = vfx.crop
+
     MOVIEPY_V2 = True
 except ImportError:
     # MoviePy 1.x
