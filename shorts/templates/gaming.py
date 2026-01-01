@@ -98,10 +98,10 @@ def render_with_ffmpeg(clip: VideoClip, output_path: Path, fps: int = 30) -> Non
             clip.size,
             fps,  # EXPLICIT FPS - not from clip.fps!
             codec='libx264',
-            preset='medium',
-            bitrate=None,
+            preset='ultrafast',  # Changed from 'medium' for faster encoding
+            bitrate='5000k',  # Set explicit bitrate for consistent quality
             audiofile=None,  # No audio yet
-            threads=2,
+            threads=4,  # Increased from 2 for better parallelization
             ffmpeg_params=None
         )
 
@@ -405,11 +405,11 @@ class GamingTemplate(TemplateBase):
         face_center_y = face_y + face_h // 2
 
         # Create rectangular crop (tighter zoom on face for better fit in smaller bar)
-        # Bottom bar is now 1080×384 (2.8:1 ratio), so crop wider
+        # Bottom bar is 1080×384 (AR 2.81), so crop to match this aspect ratio
         face_size = max(face_w, face_h)
-        crop_width = int(face_size * 4.0)   # ✅ Tighter zoom (was 5.5) - closer face
-        crop_height = int(face_size * 2.2)  # ✅ Tighter zoom (was 3.0) - closer face
-        # Aspect ratio: ~1.82 (fits better in narrower bottom bar)
+        crop_width = int(face_size * 6.2)   # ✅ Wider crop to fill full width (1080px)
+        crop_height = int(face_size * 2.2)  # ✅ Height maintains zoom level
+        # Aspect ratio: ~2.82 (matches bottom bar 2.81 - fills full width, no gaps)
 
         # Create rectangular crop centered on face
         x1 = face_center_x - crop_width // 2
@@ -446,7 +446,7 @@ class GamingTemplate(TemplateBase):
             face_region.zone, facecam_w_actual, facecam_h_actual, aspect_ratio, x1, y1
         )
         logger.info(
-            "[GamingTemplate] Original face bbox: %dx%d at (%d,%d), crop: 5.5x wide × 3.0x tall",
+            "[GamingTemplate] Original face bbox: %dx%d at (%d,%d), crop: 6.2x wide × 2.2x tall",
             face_w, face_h, face_x, face_y
         )
 
