@@ -221,7 +221,9 @@ def burn_subtitles_ffmpeg(
 
     # Dynamically scale subtitle styling based on video height (Shorts vs 16:9)
     video_height = _probe_video_height(input_video)
-    default_font, default_margin = (30, 140) if video_height and video_height >= 1600 else (46, 84)
+    # For Shorts (1920px height): smaller font (24) and positioned above facecam area (420px margin)
+    # Facecam is bottom 20% (~384px), so 420px margin places subtitles just above it
+    default_font, default_margin = (24, 420) if video_height and video_height >= 1600 else (46, 84)
     font_size = font_size or default_font
     margin_v = margin_v or default_margin
 
