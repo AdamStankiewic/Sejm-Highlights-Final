@@ -134,8 +134,10 @@ def center_crop_9_16(clip: VideoFileClip, scale: float = 1.0) -> VideoFileClip:
 
     # Resize with scale factor
     if MOVIEPY_V2:
-        # MoviePy 2.x: use .resized() method with scale float
-        clip = ensure_fps(clip.resized(scale))
+        # MoviePy 2.x: use Resize class - calculate new size from scale
+        w, h = clip.size
+        new_w, new_h = int(w * scale), int(h * scale)
+        clip = ensure_fps(Resize(width=new_w, height=new_h).apply(clip))
     else:
         # MoviePy 1.x: use .fx(resize, scale)
         clip = ensure_fps(clip.fx(resize.resize, scale))

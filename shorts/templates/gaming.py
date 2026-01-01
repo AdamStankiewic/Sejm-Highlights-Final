@@ -380,8 +380,10 @@ class GamingTemplate(TemplateBase):
         # Prepare gameplay for top section (centered, zoomed out more)
         gameplay_full = center_crop_9_16(gameplay_clip, scale=0.80)  # ✅ More zoom out (was 0.85)
 
-        # ✅ FIX: Check if ColorClip (no resize/set_duration methods)
-        if hasattr(gameplay_full, 'resize') and hasattr(gameplay_full, 'set_duration'):
+        # ✅ FIX: Check if ColorClip (no resize methods)
+        # In MoviePy 2.x: 'resized', 'with_duration'; in 1.x: 'resize', 'set_duration'
+        is_color_clip = not (hasattr(gameplay_full, 'resize') or hasattr(gameplay_full, 'resized'))
+        if not is_color_clip:
             gameplay_full = ensure_fps(clip_set_duration(clip_resize(gameplay_full, (target_w, gameplay_h)), source_clip.duration))
             gameplay_full = clip_set_position(gameplay_full, (0, 0))  # Top
         else:
@@ -533,8 +535,10 @@ class GamingTemplate(TemplateBase):
         # Prepare gameplay for top section (centered, zoomed out more)
         gameplay_full = center_crop_9_16(gameplay_clip, scale=0.80)  # ✅ More zoom out (was 0.85)
 
-        # ✅ FIX: Check if ColorClip (no resize/set_duration methods)
-        if hasattr(gameplay_full, 'resize') and hasattr(gameplay_full, 'set_duration'):
+        # ✅ FIX: Check if ColorClip (no resize methods)
+        # In MoviePy 2.x: 'resized', 'with_duration'; in 1.x: 'resize', 'set_duration'
+        is_color_clip = not (hasattr(gameplay_full, 'resize') or hasattr(gameplay_full, 'resized'))
+        if not is_color_clip:
             gameplay_full = ensure_fps(clip_set_duration(clip_resize(gameplay_full, (target_w, gameplay_h)), source_clip.duration))
             gameplay_full = clip_set_position(gameplay_full, (0, 0))  # Top
         else:
