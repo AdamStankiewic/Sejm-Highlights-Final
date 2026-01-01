@@ -125,15 +125,19 @@ def center_crop_9_16(clip: VideoFileClip, scale: float = 1.0) -> VideoFileClip:
     ✅ FIX: Handle ColorClip which doesn't have fx() method
     """
     # ✅ FIX: Check if clip is ColorClip (has no fx method)
-    if not hasattr(clip, 'fx') or not callable(getattr(clip, 'fx')):
+    if not hasattr(clip, 'fx') and not hasattr(clip, 'resized'):
         # ColorClip - just return as is (already 9:16 from template)
-        logger.debug("center_crop_9_16: Skipping fx for ColorClip")
+        logger.debug("center_crop_9_16: Skipping resize for ColorClip")
         return ensure_fps(clip)
 
     target_ratio = 9 / 16
+
+    # Resize with scale factor
     if MOVIEPY_V2:
-        clip = ensure_fps(clip.fx(Resize, new_size=scale))
+        # MoviePy 2.x: use .resized() method directly
+        clip = ensure_fps(clip.resized(scale))
     else:
+        # MoviePy 1.x: use .fx(resize, scale)
         clip = ensure_fps(clip.fx(resize.resize, scale))
     logger.debug("Clip FPS after resize: %s", clip.fps)
     w, h = clip.size
@@ -144,7 +148,8 @@ def center_crop_9_16(clip: VideoFileClip, scale: float = 1.0) -> VideoFileClip:
         new_w = int(h * target_ratio)
         x1 = int((w - new_w) / 2)
         if MOVIEPY_V2:
-            cropped = clip.fx(Crop, x1=x1, y1=0, width=new_w, height=h)
+            # MoviePy 2.x: Use Crop class with .apply() method
+            cropped = Crop(x1=x1, y1=0, x2=x1+new_w, y2=h).apply(clip)
         else:
             cropped = crop.crop(clip, x1=x1, y1=0, width=new_w, height=h)
         cropped = ensure_fps(cropped)
@@ -153,7 +158,8 @@ def center_crop_9_16(clip: VideoFileClip, scale: float = 1.0) -> VideoFileClip:
     new_h = int(w / target_ratio)
     y1 = int((h - new_h) / 2)
     if MOVIEPY_V2:
-        cropped = clip.fx(Crop, x1=0, y1=y1, width=w, height=new_h)
+        # MoviePy 2.x: Use Crop class with .apply() method
+        cropped = Crop(x1=0, y1=y1, x2=w, y2=y1+new_h).apply(clip)
     else:
         cropped = crop.crop(clip, x1=0, y1=y1, width=w, height=new_h)
     cropped = ensure_fps(cropped)
