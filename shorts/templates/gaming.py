@@ -9,29 +9,17 @@ from typing import Iterable, Tuple, Optional
 
 # Support both MoviePy 1.x and 2.x
 try:
-    # MoviePy 2.x - try different import paths
+    # MoviePy 2.x
     from moviepy import ColorClip, VideoClip, VideoFileClip
     from moviepy.video.fx import MultiplySpeed
-
-    # Try lowercase crop function first
-    try:
-        from moviepy.video.fx.crop import crop
-    except (ImportError, ModuleNotFoundError):
-        # Try uppercase Crop class
-        try:
-            from moviepy.video.fx.Crop import Crop as crop
-        except (ImportError, ModuleNotFoundError):
-            # Try vfx module
-            from moviepy import vfx
-            crop = vfx.crop
-
+    from moviepy.video.fx.Crop import Crop
     MOVIEPY_V2 = True
 except ImportError:
     # MoviePy 1.x
     from moviepy.editor import ColorClip, VideoClip, VideoFileClip
     from moviepy.video.fx.all import speedx as vfx_speedx, crop as vfx_crop
     MultiplySpeed = None
-    crop = None
+    Crop = None
     MOVIEPY_V2 = False
 
 from shorts.face_detection import FaceDetector, FaceRegion
@@ -422,8 +410,8 @@ class GamingTemplate(TemplateBase):
 
         # Crop facecam region (MoviePy crop)
         if MOVIEPY_V2:
-            # MoviePy 2.x: crop is a function (no .fx() method exists in v2)
-            face_clip = crop(source_clip, x1=x1, y1=y1, x2=x2, y2=y2)
+            # MoviePy 2.x: Use Crop class with .apply() method
+            face_clip = Crop(x1=x1, y1=y1, x2=x2, y2=y2).apply(source_clip)
         else:
             # MoviePy 1.x: Use fx API
             face_clip = source_clip.fx(vfx_crop, x1=x1, y1=y1, x2=x2, y2=y2)
@@ -551,8 +539,8 @@ class GamingTemplate(TemplateBase):
 
         # Crop facecam region (MoviePy crop)
         if MOVIEPY_V2:
-            # MoviePy 2.x: crop is a function (no .fx() method exists in v2)
-            face_clip = crop(source_clip, x1=x1, y1=y1, x2=x2, y2=y2)
+            # MoviePy 2.x: Use Crop class with .apply() method
+            face_clip = Crop(x1=x1, y1=y1, x2=x2, y2=y2).apply(source_clip)
         else:
             # MoviePy 1.x: Use fx API
             face_clip = source_clip.fx(vfx_crop, x1=x1, y1=y1, x2=x2, y2=y2)
