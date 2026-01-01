@@ -117,13 +117,21 @@ def render_with_ffmpeg(clip: VideoClip, output_path: Path, fps: int = 30) -> Non
         # Write audio if present
         if clip.audio is not None:
             logger.debug("Writing audio to %s", temp_audio_path)
-            clip.audio.write_audiofile(
-                temp_audio_path,
-                codec='mp3',
-                bitrate='192k',
-                verbose=False,
-                logger=None
-            )
+            # MoviePy 2.x removed verbose/logger parameters
+            if MOVIEPY_V2:
+                clip.audio.write_audiofile(
+                    temp_audio_path,
+                    codec='mp3',
+                    bitrate='192k'
+                )
+            else:
+                clip.audio.write_audiofile(
+                    temp_audio_path,
+                    codec='mp3',
+                    bitrate='192k',
+                    verbose=False,
+                    logger=None
+                )
 
             # Combine video and audio using ffmpeg subprocess
             logger.debug("Combining video and audio with ffmpeg")
