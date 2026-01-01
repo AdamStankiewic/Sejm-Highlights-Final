@@ -39,6 +39,39 @@ from .base import TemplateBase
 logger = logging.getLogger(__name__)
 
 
+# MoviePy version compatibility helpers
+def clip_set_duration(clip, duration):
+    """Set clip duration - compatible with MoviePy 1.x and 2.x"""
+    if MOVIEPY_V2:
+        return clip.with_duration(duration)
+    else:
+        return clip.set_duration(duration)
+
+
+def clip_set_audio(clip, audio):
+    """Set clip audio - compatible with MoviePy 1.x and 2.x"""
+    if MOVIEPY_V2:
+        return clip.with_audio(audio)
+    else:
+        return clip.set_audio(audio)
+
+
+def clip_set_position(clip, position):
+    """Set clip position - compatible with MoviePy 1.x and 2.x"""
+    if MOVIEPY_V2:
+        return clip.with_position(position)
+    else:
+        return clip.set_position(position)
+
+
+def clip_resize(clip, size):
+    """Resize clip - compatible with MoviePy 1.x and 2.x"""
+    if MOVIEPY_V2:
+        return clip.resized(size)
+    else:
+        return clip.resize(size)
+
+
 def render_with_ffmpeg(clip: VideoClip, output_path: Path, fps: int = 30) -> None:
     """Bypass MoviePy's broken write_videofile() and call ffmpeg directly.
 
@@ -180,7 +213,7 @@ class GamingTemplate(TemplateBase):
         else:
             # ✅ FIX: Only set_duration if clip has the method (ColorClip doesn't)
             if hasattr(clip, 'set_duration') and callable(getattr(clip, 'set_duration')):
-                clip = ensure_fps(clip.set_duration(segment_duration))
+                clip = ensure_fps(clip_set_duration(clip, segment_duration))
             else:
                 clip = ensure_fps(clip)
 
@@ -211,7 +244,7 @@ class GamingTemplate(TemplateBase):
                     logger.debug("Clip FPS after video speedup: %s", gameplay_clip.fps)
                     if gameplay_clip.audio:
                         new_audio = apply_speedup(gameplay_clip.audio, speedup)
-                        gameplay_clip = gameplay_clip.set_audio(new_audio)
+                        gameplay_clip = clip_set_audio(gameplay_clip, new_audio)
                 except Exception:
                     logger.exception("[GamingTemplate] Speedup failed — using original speed")
 
@@ -222,7 +255,7 @@ class GamingTemplate(TemplateBase):
 
             # ✅ FIX: Only set_duration if clip has the method (ColorClip doesn't)
             if hasattr(gameplay_clip, 'set_duration') and callable(getattr(gameplay_clip, 'set_duration')):
-                gameplay_clip = ensure_fps(gameplay_clip.set_duration(segment_duration))
+                gameplay_clip = ensure_fps(clip_set_duration(gameplay_clip, segment_duration))
             else:
                 gameplay_clip = ensure_fps(gameplay_clip)
             logger.debug("Clip FPS before layout: %s", gameplay_clip.fps)
@@ -243,12 +276,12 @@ class GamingTemplate(TemplateBase):
             logger.debug("Clip FPS from layout: %s", target_fps)
 
             # set_duration returns a NEW clip, restore fps
-            final = final.set_duration(segment_duration)
+            final = clip_set_duration(final, segment_duration)
             final = ensure_fps(final, fallback=target_fps)
 
             # Set audio from gameplay clip
             if gameplay_clip.audio is not None:
-                final = final.set_audio(gameplay_clip.audio)
+                final = clip_set_audio(final, gameplay_clip.audio)
                 # set_audio also returns a new clip, restore fps again
                 final = ensure_fps(final, fallback=target_fps)
 
@@ -341,8 +374,8 @@ class GamingTemplate(TemplateBase):
 
         # ✅ FIX: Check if ColorClip (no resize/set_duration methods)
         if hasattr(gameplay_full, 'resize') and hasattr(gameplay_full, 'set_duration'):
-            gameplay_full = ensure_fps(gameplay_full.resize((target_w, gameplay_h)).set_duration(source_clip.duration))
-            gameplay_full = gameplay_full.set_position((0, 0))  # Top
+            gameplay_full = ensure_fps(clip_set_duration(clip_resize(gameplay_full, (target_w, gameplay_h)), source_clip.duration))
+            gameplay_full = clip_set_position(gameplay_full, (0, 0))  # Top
         else:
             # ColorClip fallback - recreate with correct size
             # Position will be set automatically by CompositeVideoClip (defaults to 0,0)
@@ -415,7 +448,7 @@ class GamingTemplate(TemplateBase):
         else:
             # MoviePy 1.x: Use fx API
             face_clip = source_clip.fx(vfx_crop, x1=x1, y1=y1, x2=x2, y2=y2)
-        face_clip = ensure_fps(face_clip.set_duration(source_clip.duration))
+        face_clip = ensure_fps(clip_set_duration(face_clip, source_clip.duration))
 
         # Scale to fill bottom bar height while preserving aspect ratio
         # With wider crop (1.83:1), this should fill most of the width naturally
@@ -427,13 +460,13 @@ class GamingTemplate(TemplateBase):
             new_facecam_w = target_w
             new_facecam_h = int(new_facecam_w / aspect_ratio)
 
-        face_clip = face_clip.resize((new_facecam_w, new_facecam_h))
+        face_clip = clip_resize(face_clip, (new_facecam_w, new_facecam_h))
 
         # Center horizontally in bottom bar, align to top
         facecam_x = (target_w - new_facecam_w) // 2  # Center horizontally
         facecam_y = gameplay_h  # Align to top of bottom section (no padding)
 
-        face_clip = face_clip.set_position((facecam_x, facecam_y))
+        face_clip = clip_set_position(face_clip, (facecam_x, facecam_y))
         logger.debug("Clip FPS after facecam crop: %s", face_clip.fps)
         logger.info(
             "[GamingTemplate] Facecam positioned: %dx%d at (%d, %d) - natural aspect ratio %.2f",
@@ -447,14 +480,17 @@ class GamingTemplate(TemplateBase):
             duration=source_clip.duration
         )
         black_bg = ensure_fps(black_bg)
-        black_bg = black_bg.set_position((0, gameplay_h))  # Bottom bar
+        black_bg = clip_set_position(black_bg, (0, gameplay_h))  # Bottom bar
 
         # Composite: gameplay (top) + black background (bottom) + facecam (centered on black)
-        final = FpsFixedCompositeVideoClip(
-            [gameplay_full, black_bg, face_clip],
-            size=(target_w, target_h),
-            fps=30,
-        ).set_duration(source_clip.duration)
+        final = clip_set_duration(
+            FpsFixedCompositeVideoClip(
+                [gameplay_full, black_bg, face_clip],
+                size=(target_w, target_h),
+                fps=30,
+            ),
+            source_clip.duration
+        )
         logger.debug("Clip FPS after composite (split layout): %s", final.fps)
         logger.info("[GamingTemplate] Using split layout with detected face: gameplay top (80%), facecam bar bottom (20%)")  # ✅ Updated percentages
         return final
@@ -491,8 +527,8 @@ class GamingTemplate(TemplateBase):
 
         # ✅ FIX: Check if ColorClip (no resize/set_duration methods)
         if hasattr(gameplay_full, 'resize') and hasattr(gameplay_full, 'set_duration'):
-            gameplay_full = ensure_fps(gameplay_full.resize((target_w, gameplay_h)).set_duration(source_clip.duration))
-            gameplay_full = gameplay_full.set_position((0, 0))  # Top
+            gameplay_full = ensure_fps(clip_set_duration(clip_resize(gameplay_full, (target_w, gameplay_h)), source_clip.duration))
+            gameplay_full = clip_set_position(gameplay_full, (0, 0))  # Top
         else:
             # ColorClip fallback - recreate with correct size
             # Position will be set automatically by CompositeVideoClip (defaults to 0,0)
@@ -544,7 +580,7 @@ class GamingTemplate(TemplateBase):
         else:
             # MoviePy 1.x: Use fx API
             face_clip = source_clip.fx(vfx_crop, x1=x1, y1=y1, x2=x2, y2=y2)
-        face_clip = ensure_fps(face_clip.set_duration(source_clip.duration))
+        face_clip = ensure_fps(clip_set_duration(face_clip, source_clip.duration))
 
         # Calculate aspect ratio and resize preserving it
         facecam_w_actual = x2 - x1
@@ -561,13 +597,13 @@ class GamingTemplate(TemplateBase):
             new_facecam_h = facecam_h
             new_facecam_w = int(facecam_h * aspect_ratio)
 
-        face_clip = face_clip.resize((new_facecam_w, new_facecam_h))
+        face_clip = clip_resize(face_clip, (new_facecam_w, new_facecam_h))
 
         # Center facecam horizontally in the bottom bar
         facecam_x = (target_w - new_facecam_w) // 2
         facecam_y = gameplay_h + (facecam_h - new_facecam_h) // 2  # Center vertically too
 
-        face_clip = face_clip.set_position((facecam_x, facecam_y))
+        face_clip = clip_set_position(face_clip, (facecam_x, facecam_y))
         logger.debug("Clip FPS after fixed facecam crop: %s", face_clip.fps)
         logger.info(
             "[GamingTemplate] Fixed facecam positioned: %dx%d at (%d, %d) - aspect ratio preserved!",
@@ -581,14 +617,17 @@ class GamingTemplate(TemplateBase):
             duration=source_clip.duration
         )
         black_bg = ensure_fps(black_bg)
-        black_bg = black_bg.set_position((0, gameplay_h))  # Bottom bar
+        black_bg = clip_set_position(black_bg, (0, gameplay_h))  # Bottom bar
 
         # Composite: gameplay (top) + black background (bottom) + facecam (centered on black)
-        final = FpsFixedCompositeVideoClip(
-            [gameplay_full, black_bg, face_clip],
-            size=(target_w, target_h),
-            fps=30,
-        ).set_duration(source_clip.duration)
+        final = clip_set_duration(
+            FpsFixedCompositeVideoClip(
+                [gameplay_full, black_bg, face_clip],
+                size=(target_w, target_h),
+                fps=30,
+            ),
+            source_clip.duration
+        )
         logger.debug("Clip FPS after composite (split layout): %s", final.fps)
         logger.info("[GamingTemplate] Using split layout: gameplay top (80%), facecam bar bottom (20%)")  # ✅ Updated percentages
         return final
@@ -600,7 +639,7 @@ class GamingTemplate(TemplateBase):
 
         # ✅ FIX: Check if ColorClip (no resize/set_duration methods)
         if hasattr(gameplay_full, 'resize') and hasattr(gameplay_full, 'set_duration'):
-            gameplay_full = ensure_fps(gameplay_full.resize((target_w, target_h)).set_duration(gameplay_clip.duration))
+            gameplay_full = ensure_fps(clip_set_duration(clip_resize(gameplay_full, (target_w, target_h)), gameplay_clip.duration))
         else:
             # ColorClip fallback - recreate with correct size
             from moviepy.video.VideoClip import ColorClip
