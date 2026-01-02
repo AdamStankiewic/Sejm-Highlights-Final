@@ -32,7 +32,7 @@ features:
 # ASR Configuration
 asr:
   language: "en"
-  model: "medium"
+  model: "small"  # Optimized for speed: 3x faster than medium, 90% accuracy (vs 95%)
 
 # Thumbnail Configuration
 thumbnail:
