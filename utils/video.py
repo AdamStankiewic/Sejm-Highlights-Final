@@ -221,6 +221,12 @@ def burn_subtitles_ffmpeg(
         shutil.copyfile(input_video, output_video)
         return
 
+    # Log SRT file size to verify it has content
+    srt_size = Path(srt_path).stat().st_size
+    logger.info("Subtitles file: %s (size: %d bytes)", srt_path, srt_size)
+    if srt_size == 0:
+        logger.warning("Subtitles file is EMPTY - no subtitles will be rendered")
+
     # Dynamically scale subtitle styling based on video height (Shorts vs 16:9)
     video_height = _probe_video_height(input_video)
     # For Shorts (1920px height): readable font (30) and positioned above facecam area (420px margin)
@@ -244,6 +250,10 @@ def burn_subtitles_ffmpeg(
         ]
     )
     vf_filter = f"subtitles='{escaped}':force_style='{force_style}'"
+
+    logger.info("Subtitle parameters: font_size=%d, margin_v=%d, video_height=%s",
+                font_size, margin_v, video_height)
+    logger.debug("FFmpeg subtitle filter: %s", vf_filter)
 
     ensure_output_path(Path(output_video))
 
