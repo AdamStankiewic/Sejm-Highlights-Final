@@ -92,18 +92,34 @@ def render_with_ffmpeg(clip: VideoClip, output_path: Path, fps: int = 30) -> Non
     temp_audio.close()
 
     try:
-        # Write video with explicit fps using FFMPEG_VideoWriter directly
-        writer = FFMPEG_VideoWriter(
-            temp_video_path,
-            clip.size,
-            fps,  # EXPLICIT FPS - not from clip.fps!
-            codec='libx264',
-            preset='ultrafast',  # Changed from 'medium' for faster encoding
-            bitrate='5000k',  # Set explicit bitrate for consistent quality
-            audiofile=None,  # No audio yet
-            threads=4,  # Increased from 2 for better parallelization
-            ffmpeg_params=None
-        )
+        # Try GPU encoding first (NVENC - 5-10x faster), fallback to CPU if unavailable
+        try:
+            # NVENC GPU encoding for NVIDIA cards
+            writer = FFMPEG_VideoWriter(
+                temp_video_path,
+                clip.size,
+                fps,
+                codec='h264_nvenc',
+                preset='p4',  # NVENC preset (p1=fastest, p7=slowest/best quality)
+                bitrate='5000k',
+                audiofile=None,
+                ffmpeg_params=['-rc', 'vbr', '-cq', '23', '-b:v', '5000k', '-gpu', '0']
+            )
+            logger.debug("Using NVENC GPU encoding (h264_nvenc)")
+        except Exception as nvenc_error:
+            # Fallback to CPU encoding if NVENC unavailable
+            logger.debug("NVENC unavailable, falling back to CPU: %s", nvenc_error)
+            writer = FFMPEG_VideoWriter(
+                temp_video_path,
+                clip.size,
+                fps,
+                codec='libx264',
+                preset='ultrafast',
+                bitrate='5000k',
+                audiofile=None,
+                threads=4,
+                ffmpeg_params=None
+            )
 
         # Write frames
         logger.debug("Writing %d frames at %d fps", int(clip.duration * fps), fps)

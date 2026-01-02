@@ -131,9 +131,9 @@ class ShortsStage:
 
         # Generate each Short - PARALLEL RENDERING for 2-3x speedup!
         generated_shorts = []
-        max_workers = min(3, len(shorts_clips))  # Max 3 parallel renders
+        max_workers = min(5, len(shorts_clips))  # Max 5 parallel renders (optimized for Ryzen 5 3600: 6-core/12-thread)
 
-        print(f"   ⚡ Parallel rendering: {max_workers} workers")
+        print(f"   ⚡ Parallel rendering: {max_workers} workers (CPU: 12 threads)")
 
         # Prepare tasks for parallel execution
         with ThreadPoolExecutor(max_workers=max_workers) as executor:

@@ -257,21 +257,53 @@ def burn_subtitles_ffmpeg(
 
     ensure_output_path(Path(output_video))
 
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(input_video),
-        "-vf",
-        vf_filter,
-        "-c:v",
-        "libx264",
-        "-c:a",
-        "copy",
-        str(output_video),
-    ]
+    # Try NVENC first for 5-10x faster subtitle rendering, fallback to CPU
+    try:
+        # Test if NVENC is available
+        test_cmd = ["ffmpeg", "-hide_banner", "-encoders"]
+        result = subprocess.run(test_cmd, capture_output=True, text=True, timeout=5)
+        has_nvenc = "h264_nvenc" in result.stdout
+    except:
+        has_nvenc = False
 
-    logger.info("Burning subtitles with ffmpeg → %s", output_video)
+    if has_nvenc:
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-hwaccel", "cuda",  # GPU hardware acceleration
+            "-i",
+            str(input_video),
+            "-vf",
+            vf_filter,
+            "-c:v",
+            "h264_nvenc",  # NVENC GPU encoding
+            "-preset", "p4",  # NVENC preset
+            "-rc", "vbr",
+            "-cq", "23",
+            "-b:v", "5000k",
+            "-c:a",
+            "copy",
+            str(output_video),
+        ]
+        logger.info("Burning subtitles with NVENC GPU encoding → %s", output_video)
+    else:
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(input_video),
+            "-vf",
+            vf_filter,
+            "-c:v",
+            "libx264",
+            "-preset", "ultrafast",  # Faster CPU encoding
+            "-threads", "4",
+            "-c:a",
+            "copy",
+            str(output_video),
+        ]
+        logger.info("Burning subtitles with CPU encoding (NVENC unavailable) → %s", output_video)
+
     subprocess.run(cmd, check=True, capture_output=True)
 
 
