@@ -59,18 +59,58 @@ seed_examples:
     metadata:
       content_type: "ohnepixel_gambling"
       emotional_tone: "excited"
+      video_type: "long"
 
   - title: "ohnepixel Reacts to Scammer Getting Caught"
     description: "ohnepixel watches a CS2 skin scammer get exposed and caught red-handed. The commentary is hilarious as he breaks down exactly how the scam worked and why people fall for it. Chat goes wild.\n\n#ohnepixel #CS2 #Scammer #Drama #Skins"
     metadata:
       content_type: "ohnepixel_reaction"
       emotional_tone: "critical"
+      video_type: "long"
 
   - title: "Chat Trolls ohnepixel With Fake Trade Offers"
     description: "Another classic stream moment where chat manages to troll ohnepixel with ridiculous fake CS2 skin trade offers. His reactions and the back-and-forth with chat make for peak entertainment.\n\n#ohnepixel #CS2 #ChatTrolls #Trading #Twitch"
     metadata:
       content_type: "ohnepixel_gaming"
       emotional_tone: "amused"
+      video_type: "long"
+
+# Shorts Seed Examples (YouTube Shorts format - short, punchy, emoji-heavy)
+shorts_seed_examples:
+  - title: "CS2 DYING? Case Farmers STILL RICH in 2026! 💰 OhnePixel Live React"
+    description: "OhnePixel checks if CS2 case farmers are still making bank in 2026. The stats are INSANE! 📊💸\n\n#OhnePixel #CS2 #CaseOpening #Shorts"
+    metadata:
+      content_type: "ohnepixel_reaction"
+      emotional_tone: "curious"
+      video_type: "shorts"
+
+  - title: "\"WHAT THE HELL IS THIS SH!T?!\" OhnePixel RAGES at Fury X Souvenir 😂💀"
+    description: "OhnePixel's reaction to this Monster Energy Fury X souvenir is PRICELESS! Chat is dying! 🤣\n\n#OhnePixel #CS2 #FuryX #Rage #Shorts"
+    metadata:
+      content_type: "ohnepixel_reaction"
+      emotional_tone: "angry_funny"
+      video_type: "shorts"
+
+  - title: "ZORA AI BANNED?! OhnePixel on Valorant Drama + CS2 RANT! 🔥"
+    description: "OhnePixel is SO HAPPY the Zora AI drama is over! Then gets hit with Valorant accusations?! WILD! 💥\n\n#OhnePixel #ZoraAI #Valorant #Drama #Shorts"
+    metadata:
+      content_type: "ohnepixel_drama"
+      emotional_tone: "relieved_confused"
+      video_type: "shorts"
+
+  - title: "\"DON'T PULL THE BIKE!\" OhnePixel's SKILL ISSUE RANT Goes VIRAL 😤"
+    description: "OhnePixel gets PISSED when chat tells him to pull the bike! The rant is legendary! 🚴‍♂️💢\n\n#OhnePixel #Rant #SkillIssue #Viral #Shorts"
+    metadata:
+      content_type: "ohnepixel_rant"
+      emotional_tone: "frustrated_funny"
+      video_type: "shorts"
+
+  - title: "\"ANYTHING BUT CS2?!\" OhnePixel HATES His Own Stream 😂 Zekiro/Minecraft BEGS"
+    description: "Chat is BEGGING OhnePixel to play anything except CS2! His reaction is GOLD! 🎮\n\n#OhnePixel #CS2 #Minecraft #ChatTrolls #Shorts"
+    metadata:
+      content_type: "ohnepixel_gaming"
+      emotional_tone: "amused_sarcastic"
+      video_type: "shorts"
 
 # Content Detection (for auto-profile detection)
 detection:
