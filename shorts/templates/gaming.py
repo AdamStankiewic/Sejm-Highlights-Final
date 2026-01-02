@@ -399,11 +399,13 @@ class GamingTemplate(TemplateBase):
         logger.info("[GamingTemplate] 🔍 Applying gameplay zoom: scale=1.3 (zoom OUT to show 30%% MORE content)")
         gameplay_full = center_crop_9_16(gameplay_clip, scale=1.3)  # ✅ Zoom OUT (show more) - was 0.80
 
-        # ✅ FIX: Don't force resize to (1080,1536) - this destroys scale=1.3 zoom!
-        # Keep the scaled crop from center_crop_9_16, only adjust height if needed
+        # ✅ FIX: Resize to target dimensions to fill frame (no black bars)
+        # center_crop_9_16 with scale=1.3 preserves 30% MORE content, but returns smaller dimensions (~789x1404)
+        # We resize to (1080, 1536) to fill the final Shorts frame while keeping the scale=1.3 content visible
         is_color_clip = not (hasattr(gameplay_full, 'resize') or hasattr(gameplay_full, 'resized'))
         if not is_color_clip:
-            # Just set duration and position - DON'T resize (preserves scale=1.3)
+            # Resize to fill target width while maintaining scaled content
+            gameplay_full = clip_resize(gameplay_full, (target_w, gameplay_h))
             gameplay_full = ensure_fps(clip_set_duration(gameplay_full, source_clip.duration))
             gameplay_full = clip_set_position(gameplay_full, (0, 0))  # Top
         else:
@@ -424,12 +426,12 @@ class GamingTemplate(TemplateBase):
         face_center_x = face_x + face_w // 2
         face_center_y = face_y + face_h // 2
 
-        # Create rectangular crop (tighter zoom on face for better fit in smaller bar)
-        # Bottom bar is 1080×384 (AR 2.81), so crop to match this aspect ratio
+        # Create rectangular crop (tight zoom on face for better visibility in bottom bar)
+        # Bottom bar is 1080×384 (AR 2.81), but we want TIGHT crop on face for clarity
         face_size = max(face_w, face_h)
-        crop_width = int(face_size * 6.2)   # ✅ Wider crop to fill full width (1080px)
-        crop_height = int(face_size * 2.2)  # ✅ Height maintains zoom level
-        # Aspect ratio: ~2.82 (matches bottom bar 2.81 - fills full width, no gaps)
+        crop_width = int(face_size * 3.0)   # ✅ Tighter crop - 3x face size (was 6.2x - too wide!)
+        crop_height = int(face_size * 2.0)  # ✅ Height for good framing (was 2.2x)
+        # Aspect ratio: ~1.5:1 (tighter crop, will be letterboxed/scaled to fill bottom bar)
 
         # Create rectangular crop centered on face
         x1 = face_center_x - crop_width // 2
@@ -466,7 +468,7 @@ class GamingTemplate(TemplateBase):
             face_region.zone, facecam_w_actual, facecam_h_actual, aspect_ratio, x1, y1
         )
         logger.info(
-            "[GamingTemplate] Original face bbox: %dx%d at (%d,%d), crop: 6.2x wide × 2.2x tall",
+            "[GamingTemplate] Original face bbox: %dx%d at (%d,%d), crop: 3.0x wide × 2.0x tall (tight zoom on face!)",
             face_w, face_h, face_x, face_y
         )
 
@@ -555,11 +557,13 @@ class GamingTemplate(TemplateBase):
         logger.info("[GamingTemplate] 🔍 Applying gameplay zoom: scale=1.3 (zoom OUT to show 30%% MORE content)")
         gameplay_full = center_crop_9_16(gameplay_clip, scale=1.3)  # ✅ Zoom OUT (show more) - was 0.80
 
-        # ✅ FIX: Don't force resize to (1080,1536) - this destroys scale=1.3 zoom!
-        # Keep the scaled crop from center_crop_9_16, only adjust height if needed
+        # ✅ FIX: Resize to target dimensions to fill frame (no black bars)
+        # center_crop_9_16 with scale=1.3 preserves 30% MORE content, but returns smaller dimensions (~789x1404)
+        # We resize to (1080, 1536) to fill the final Shorts frame while keeping the scale=1.3 content visible
         is_color_clip = not (hasattr(gameplay_full, 'resize') or hasattr(gameplay_full, 'resized'))
         if not is_color_clip:
-            # Just set duration and position - DON'T resize (preserves scale=1.3)
+            # Resize to fill target width while maintaining scaled content
+            gameplay_full = clip_resize(gameplay_full, (target_w, gameplay_h))
             gameplay_full = ensure_fps(clip_set_duration(gameplay_full, source_clip.duration))
             gameplay_full = clip_set_position(gameplay_full, (0, 0))  # Top
         else:
