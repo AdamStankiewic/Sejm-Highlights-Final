@@ -399,11 +399,12 @@ class GamingTemplate(TemplateBase):
         logger.info("[GamingTemplate] 🔍 Applying gameplay zoom: scale=1.3 (zoom OUT to show 30%% MORE content)")
         gameplay_full = center_crop_9_16(gameplay_clip, scale=1.3)  # ✅ Zoom OUT (show more) - was 0.80
 
-        # ✅ FIX: Check if ColorClip (no resize methods)
-        # In MoviePy 2.x: 'resized', 'with_duration'; in 1.x: 'resize', 'set_duration'
+        # ✅ FIX: Don't force resize to (1080,1536) - this destroys scale=1.3 zoom!
+        # Keep the scaled crop from center_crop_9_16, only adjust height if needed
         is_color_clip = not (hasattr(gameplay_full, 'resize') or hasattr(gameplay_full, 'resized'))
         if not is_color_clip:
-            gameplay_full = ensure_fps(clip_set_duration(clip_resize(gameplay_full, (target_w, gameplay_h)), source_clip.duration))
+            # Just set duration and position - DON'T resize (preserves scale=1.3)
+            gameplay_full = ensure_fps(clip_set_duration(gameplay_full, source_clip.duration))
             gameplay_full = clip_set_position(gameplay_full, (0, 0))  # Top
         else:
             # ColorClip fallback - recreate with correct size
@@ -554,11 +555,12 @@ class GamingTemplate(TemplateBase):
         logger.info("[GamingTemplate] 🔍 Applying gameplay zoom: scale=1.3 (zoom OUT to show 30%% MORE content)")
         gameplay_full = center_crop_9_16(gameplay_clip, scale=1.3)  # ✅ Zoom OUT (show more) - was 0.80
 
-        # ✅ FIX: Check if ColorClip (no resize methods)
-        # In MoviePy 2.x: 'resized', 'with_duration'; in 1.x: 'resize', 'set_duration'
+        # ✅ FIX: Don't force resize to (1080,1536) - this destroys scale=1.3 zoom!
+        # Keep the scaled crop from center_crop_9_16, only adjust height if needed
         is_color_clip = not (hasattr(gameplay_full, 'resize') or hasattr(gameplay_full, 'resized'))
         if not is_color_clip:
-            gameplay_full = ensure_fps(clip_set_duration(clip_resize(gameplay_full, (target_w, gameplay_h)), source_clip.duration))
+            # Just set duration and position - DON'T resize (preserves scale=1.3)
+            gameplay_full = ensure_fps(clip_set_duration(gameplay_full, source_clip.duration))
             gameplay_full = clip_set_position(gameplay_full, (0, 0))  # Top
         else:
             # ColorClip fallback - recreate with correct size
