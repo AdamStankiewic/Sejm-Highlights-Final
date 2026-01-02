@@ -7,19 +7,63 @@ Stage 6: Intelligent Clip Selection v1.1
 """
 
 import json
+import logging
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import numpy as np
 from collections import defaultdict
 
 from .config import Config
 
+logger = logging.getLogger(__name__)
+
 
 class SelectionStage:
     """Stage 6: Clip Selection v1.1"""
-    
+
     def __init__(self, config: Config):
         self.config = config
+        self.ai_generator = None
+
+        # Initialize AI metadata generator if enabled
+        if getattr(config, 'ai_metadata_enabled', False):
+            try:
+                from .ai_metadata.generator import MetadataGenerator
+                from .streamers.manager import StreamerManager
+                import yaml
+
+                # Load platform config
+                platforms_file = Path(__file__).parent / "config" / "platforms.yaml"
+                if platforms_file.exists():
+                    with open(platforms_file, 'r', encoding='utf-8') as f:
+                        platform_config = yaml.safe_load(f)
+                else:
+                    platform_config = {}
+
+                # Initialize streamer manager and AI generator
+                streamer_manager = StreamerManager()
+
+                # Initialize OpenAI client if needed
+                if hasattr(config, 'openai_client'):
+                    openai_client = config.openai_client
+                else:
+                    import os
+                    from openai import OpenAI
+                    api_key = os.getenv('OPENAI_API_KEY')
+                    if api_key:
+                        openai_client = OpenAI(api_key=api_key)
+                        self.ai_generator = MetadataGenerator(
+                            openai_client=openai_client,
+                            streamer_manager=streamer_manager,
+                            platform_config=platform_config
+                        )
+                        logger.info("✅ AI metadata generator enabled for Shorts")
+                    else:
+                        logger.warning("OPENAI_API_KEY not set, AI metadata disabled")
+
+            except Exception as e:
+                logger.warning(f"Failed to initialize AI metadata generator: {e}")
+                self.ai_generator = None
     
     def process(
         self,
@@ -656,6 +700,7 @@ class SelectionStage:
         for i, clip in enumerate(selected_shorts, 1):
             clip['shorts_id'] = f"short_{i:02d}"
             clip['shorts_title'] = self._generate_shorts_title(clip)
+            clip['shorts_description'] = self._generate_shorts_description(clip)
             clip['is_shorts_candidate'] = True
 
             # Log score for debugging
@@ -666,27 +711,46 @@ class SelectionStage:
     
     def _generate_shorts_title(self, clip: Dict) -> str:
         """
-        Generuj tytuł dla Short (krótki, bez emoji - encoding issues)
-        
+        Generuj tytuł dla Short - używa AI jeśli dostępne
+
         Max 100 znaków dla YouTube Shorts
         """
-        # Try to get existing title, or generate from transcript
+        # Try AI generation first (much better quality)
+        if self.ai_generator and hasattr(self.config, 'streamer_id'):
+            try:
+                metadata = self.ai_generator.generate_metadata(
+                    clips=[clip],
+                    streamer_id=self.config.streamer_id,
+                    platform="youtube",
+                    video_type="shorts",
+                    content_type=f"{self.config.streamer_id}_shorts"
+                )
+
+                title = metadata.get('title', '')
+                if title and len(title) <= 100:
+                    logger.info(f"   🤖 AI-generated Shorts title: {title}")
+                    return title
+
+            except Exception as e:
+                logger.warning(f"AI title generation failed: {e}, using fallback")
+
+        # FALLBACK: Simple keyword concatenation (old method)
         if 'title' in clip and clip['title']:
             base = clip['title']
         else:
-            # Generate from transcript (dla segments bez title)
+            # Generate from transcript
             transcript = clip.get('transcript', '')
             words = transcript.split()[:10]  # First 10 words
             base = ' '.join(words)
-            
+
             # Clean up
             if len(base) > 50:
                 base = base[:47] + "..."
-            
+
             if not base:
                 base = "Goracy moment"
-        
-        # Prefix na podstawie score (bez emoji - problemy z encoding)
+
+        # Prefix based on score
         score = clip.get('final_score', 0)
         if score >= 0.9:
             prefix = "[TOP]"
@@ -696,18 +760,50 @@ class SelectionStage:
             prefix = "[NEW]"
         else:
             prefix = ""
-        
+
         # Format: [PREFIX] Krótki tytuł
         if prefix:
             title = f"{prefix} {base}"
         else:
             title = base
-        
+
         # Trim to 100 chars
         if len(title) > 100:
             title = title[:97] + "..."
-        
+
         return title
+
+    def _generate_shorts_description(self, clip: Dict) -> str:
+        """
+        Generuj opis dla Short - używa AI jeśli dostępne
+
+        Max 5000 znaków dla YouTube Shorts (praktycznie: 200-300)
+        """
+        # Try AI generation first
+        if self.ai_generator and hasattr(self.config, 'streamer_id'):
+            try:
+                metadata = self.ai_generator.generate_metadata(
+                    clips=[clip],
+                    streamer_id=self.config.streamer_id,
+                    platform="youtube",
+                    video_type="shorts",
+                    content_type=f"{self.config.streamer_id}_shorts"
+                )
+
+                description = metadata.get('description', '')
+                if description:
+                    logger.info(f"   🤖 AI-generated Shorts description ({len(description)} chars)")
+                    return description
+
+            except Exception as e:
+                logger.warning(f"AI description generation failed: {e}, using fallback")
+
+        # FALLBACK: Simple description
+        transcript_preview = clip.get('transcript', '')[:150]
+        if transcript_preview:
+            return f"{transcript_preview}...\n\n#Shorts #Highlights"
+        else:
+            return "Epic moment from the stream!\n\n#Shorts #Highlights"
     
     def _save_clips(self, clips: List[Dict], output_file: Path, is_shorts: bool = False):
         """Zapisz selected clips"""
@@ -738,6 +834,7 @@ class SelectionStage:
             if is_shorts:
                 clip_copy['shorts_id'] = clip.get('shorts_id', '')
                 clip_copy['shorts_title'] = clip.get('shorts_title', '')
+                clip_copy['shorts_description'] = clip.get('shorts_description', '')
                 clip_copy['is_shorts_candidate'] = True
 
             serializable.append(clip_copy)

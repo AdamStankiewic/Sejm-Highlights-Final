@@ -44,6 +44,14 @@ class StreamerProfile:
         config.language = self.language
         config.asr.language = self.language
 
+        # Streamer ID (for AI metadata generation)
+        config.streamer_id = self.streamer_id
+
+        # AI Metadata Generation
+        ai_metadata_enabled = self.data.get('ai_metadata_enabled', False)
+        if ai_metadata_enabled:
+            config.ai_metadata_enabled = True
+
         # Keywords file
         keywords_file = self.data.get('features', {}).get('keywords_file')
         if keywords_file:
@@ -66,6 +74,11 @@ class StreamerProfile:
             config.shorts.template = shorts_config['template']
         if 'subtitle_lang' in shorts_config:
             config.shorts.subtitle_lang = shorts_config['subtitle_lang']
+
+        # ASR model override (e.g., "small" for ohnepixel)
+        asr_config = self.data.get('asr', {})
+        if 'model' in asr_config:
+            config.asr.model = asr_config['model']
 
     def matches_filename(self, filename: str) -> bool:
         """Check if this profile matches the given filename"""

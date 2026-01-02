@@ -393,6 +393,10 @@ class Config:
     prompt_text: Optional[str] = None
     override_weights: bool = False
     custom_weights: Optional[CompositeWeights] = None
+
+    # AI Metadata Generation
+    ai_metadata_enabled: bool = False  # Enable AI-generated titles/descriptions
+    streamer_id: Optional[str] = None  # Streamer ID for AI metadata (e.g., "ohnepixel", "sejm")
     
     def __post_init__(self):
         # Initialize sub-configs if None

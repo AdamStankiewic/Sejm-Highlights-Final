@@ -245,9 +245,18 @@ class ShortsStage:
         output_file = paths[0]
         duration = max(0, clip.get('t1', 0) - clip.get('t0', 0))
 
-        # Basic metadata (kept close to the previous structure for downstream usage)
-        title = clip.get('title') or f"Short {index:02d}"
-        description = clip.get('description') or getattr(self.config.shorts, 'default_description', '')
+        # Basic metadata - prefer AI-generated metadata from Stage 6
+        # Stage 6 generates 'shorts_title' and 'shorts_description' using AI if enabled
+        title = (
+            clip.get('shorts_title') or  # AI-generated title from Stage 6
+            clip.get('title') or          # Fallback to regular title
+            f"Short {index:02d}"          # Last resort
+        )
+        description = (
+            clip.get('shorts_description') or  # AI-generated description from Stage 6
+            clip.get('description') or         # Fallback to regular description
+            getattr(self.config.shorts, 'default_description', '')  # Last resort
+        )
         tags = clip.get('tags') or getattr(self.config.shorts, 'default_tags', [])
 
         return {

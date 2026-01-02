@@ -52,6 +52,9 @@ generation:
   temperature: 0.7
   enable_research: false
 
+# AI Metadata Configuration
+ai_metadata_enabled: true  # Enable AI-generated titles/descriptions for Shorts
+
 # Seed Examples (high-quality examples for few-shot learning)
 seed_examples:
   - title: "ohnepixel Unboxes $50,000 CS2 Knife"
