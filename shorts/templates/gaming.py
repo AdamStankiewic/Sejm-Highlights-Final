@@ -257,8 +257,10 @@ class GamingTemplate(TemplateBase):
             logger.info("[GamingTemplate] No facecam detected, using gameplay-only layout")
 
         try:
-            gameplay_clip = center_crop_9_16(clip)
-            logger.debug("Clip FPS after gameplay crop: %s", gameplay_clip.fps)
+            # ✅ FIX: Don't crop here! Will be cropped with scale=1.3 in layout building
+            # Using original clip for speedup/copyright processing
+            gameplay_clip = clip
+            logger.debug("Clip FPS before processing: %s", gameplay_clip.fps)
             if speedup and speedup > 1.0:
                 try:
                     if MOVIEPY_V2:
@@ -394,6 +396,7 @@ class GamingTemplate(TemplateBase):
         facecam_h = int(target_h * 0.20)   # ✅ Changed from 30% to 20%
 
         # Prepare gameplay for top section (zoomed out to show more game content)
+        logger.info("[GamingTemplate] 🔍 Applying gameplay zoom: scale=1.3 (zoom OUT to show 30%% MORE content)")
         gameplay_full = center_crop_9_16(gameplay_clip, scale=1.3)  # ✅ Zoom OUT (show more) - was 0.80
 
         # ✅ FIX: Check if ColorClip (no resize methods)
@@ -548,6 +551,7 @@ class GamingTemplate(TemplateBase):
         facecam_h = int(target_h * 0.20)   # ✅ Changed from 30% to 20%
 
         # Prepare gameplay for top section (zoomed out to show more game content)
+        logger.info("[GamingTemplate] 🔍 Applying gameplay zoom: scale=1.3 (zoom OUT to show 30%% MORE content)")
         gameplay_full = center_crop_9_16(gameplay_clip, scale=1.3)  # ✅ Zoom OUT (show more) - was 0.80
 
         # ✅ FIX: Check if ColorClip (no resize methods)

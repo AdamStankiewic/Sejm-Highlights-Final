@@ -132,11 +132,15 @@ def center_crop_9_16(clip: VideoFileClip, scale: float = 1.0) -> VideoFileClip:
 
     target_ratio = 9 / 16
 
+    # ✅ DEBUG: Log scale parameter to verify it's being used
+    logger.info("🔍 center_crop_9_16: scale=%.2f (1.0=normal, >1.0=zoom OUT to show MORE content)", scale)
+
     # Resize with scale factor
     if MOVIEPY_V2:
         # MoviePy 2.x: use Resize class - calculate new size from scale
         w, h = clip.size
         new_w, new_h = int(w * scale), int(h * scale)
+        logger.info("   Resizing: %dx%d → %dx%d (scale=%.2f)", w, h, new_w, new_h, scale)
         clip = ensure_fps(Resize(width=new_w, height=new_h).apply(clip))
     else:
         # MoviePy 1.x: use .fx(resize, scale)
