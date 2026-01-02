@@ -377,8 +377,8 @@ class GamingTemplate(TemplateBase):
         gameplay_h = int(target_h * 0.80)  # ✅ Changed from 70% to 80%
         facecam_h = int(target_h * 0.20)   # ✅ Changed from 30% to 20%
 
-        # Prepare gameplay for top section (centered, zoomed out more)
-        gameplay_full = center_crop_9_16(gameplay_clip, scale=0.80)  # ✅ More zoom out (was 0.85)
+        # Prepare gameplay for top section (zoomed out to show more game content)
+        gameplay_full = center_crop_9_16(gameplay_clip, scale=1.3)  # ✅ Zoom OUT (show more) - was 0.80
 
         # ✅ FIX: Check if ColorClip (no resize methods)
         # In MoviePy 2.x: 'resized', 'with_duration'; in 1.x: 'resize', 'set_duration'
@@ -531,8 +531,8 @@ class GamingTemplate(TemplateBase):
         gameplay_h = int(target_h * 0.80)  # ✅ Changed from 70% to 80%
         facecam_h = int(target_h * 0.20)   # ✅ Changed from 30% to 20%
 
-        # Prepare gameplay for top section (centered, zoomed out more)
-        gameplay_full = center_crop_9_16(gameplay_clip, scale=0.80)  # ✅ More zoom out (was 0.85)
+        # Prepare gameplay for top section (zoomed out to show more game content)
+        gameplay_full = center_crop_9_16(gameplay_clip, scale=1.3)  # ✅ Zoom OUT (show more) - was 0.80
 
         # ✅ FIX: Check if ColorClip (no resize methods)
         # In MoviePy 2.x: 'resized', 'with_duration'; in 1.x: 'resize', 'set_duration'
@@ -645,7 +645,7 @@ class GamingTemplate(TemplateBase):
     def _build_layout_gameplay_only(self, gameplay_clip: VideoFileClip) -> VideoClip:
         """Build gameplay-only layout (no facecam) - zoomed out to see more."""
         target_w, target_h = 1080, 1920
-        gameplay_full = center_crop_9_16(gameplay_clip, scale=0.80)  # ✅ More zoom out for consistency (was 0.85)
+        gameplay_full = center_crop_9_16(gameplay_clip, scale=1.3)  # ✅ Zoom OUT (show more) - was 0.80
 
         # ✅ FIX: Check if ColorClip (no resize methods)
         # In MoviePy 2.x: 'resized', 'with_duration'; in 1.x: 'resize', 'set_duration'
