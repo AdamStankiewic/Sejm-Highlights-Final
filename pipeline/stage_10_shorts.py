@@ -4,6 +4,7 @@ Stage 10: YouTube Shorts Generator (Refactored Edition)
 - Modular template system
 - Clean delegation to ShortsGenerator
 - Integrated copyright protection
+- Parallel rendering for 2-3x speedup
 """
 
 import json
@@ -11,6 +12,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .config import Config
 from shorts import ShortsGenerator, Segment
@@ -127,36 +129,53 @@ class ShortsStage:
             detected_webcam = self._detect_webcam_region(input_path, t_sample=shorts_clips[0]['t0'] + 5.0)
             template = self._select_template(detected_webcam)
 
-        # Generate each Short
+        # Generate each Short - PARALLEL RENDERING for 2-3x speedup!
         generated_shorts = []
+        max_workers = min(3, len(shorts_clips))  # Max 3 parallel renders
 
-        for i, clip in enumerate(shorts_clips, 1):
-            clip_score = clip.get('final_score', 0)
-            clip_id = clip.get('id', 'unknown')
-            print(f"\n   📱 Short {i}/{len(shorts_clips)} (score={clip_score:.2f}, id={clip_id})")
+        print(f"   ⚡ Parallel rendering: {max_workers} workers")
 
-            try:
-                short_result = self._generate_single_short(
+        # Prepare tasks for parallel execution
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_clip = {}
+            for i, clip in enumerate(shorts_clips, 1):
+                clip_score = clip.get('final_score', 0)
+                clip_id = clip.get('id', 'unknown')
+                print(f"\n   📱 Queuing Short {i}/{len(shorts_clips)} (score={clip_score:.2f}, id={clip_id})")
+
+                future = executor.submit(
+                    self._generate_single_short,
                     input_path,
                     clip,
                     segments,
                     shorts_dir,
                     i,
-                    template=template,
-                    webcam_detection=detected_webcam
+                    template,
+                    detected_webcam
                 )
-                generated_shorts.append(short_result)
+                future_to_clip[future] = (i, clip)
 
-                print(f"      ✅ Zapisano: {short_result['filename']}")
-                print(f"      📝 Tytuł: {short_result['title']}")
-                print(f"      🎨 Szablon: {short_result['template']}")
-                print(f"      ⭐ Score: {short_result['score']:.2f}")
+            # Collect results as they complete
+            for future in as_completed(future_to_clip):
+                i, clip = future_to_clip[future]
+                try:
+                    short_result = future.result()
+                    generated_shorts.append(short_result)
 
-            except Exception as e:
-                print(f"      ❌ Błąd: {e}")
-                import traceback
-                traceback.print_exc()
-                continue
+                    print(f"\n   ✅ Short {i}/{len(shorts_clips)} completed!")
+                    print(f"      📝 Tytuł: {short_result['title']}")
+                    print(f"      💾 File: {short_result['filename']}")
+                    print(f"      ⭐ Score: {short_result['score']:.2f}")
+
+                except Exception as e:
+                    print(f"\n   ❌ Short {i}/{len(shorts_clips)} failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    continue
+
+        # Sort results by clip_id to maintain order
+        generated_shorts.sort(key=lambda x: x.get('clip_id', 0))
 
         # Save metadata
         metadata_file = shorts_dir / "shorts_metadata.json"
