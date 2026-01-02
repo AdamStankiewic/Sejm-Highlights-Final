@@ -122,7 +122,7 @@ class ExportStage:
         """
         if self.nvenc_available:
             # GPU encoding (NVENC)
-            preset = "p2" if fast_mode else self.config.export.nvenc_preset
+            preset = "p1" if fast_mode else self.config.export.nvenc_preset  # p1 = fastest NVENC preset
             return {
                 'codec': 'h264_nvenc',
                 'preset': preset,
