@@ -282,11 +282,11 @@ def burn_subtitles_ffmpeg(
 
     # Dynamically scale subtitle styling based on video height (Shorts vs 16:9)
     video_height = _probe_video_height(input_video)
-    # For Shorts (1920px height): Position subtitles in upper-middle of gameplay area
+    # For Shorts (1920px height): Position subtitles just above facecam bar
     # Gameplay area: 0-1536px (top 80%)
     # Facecam bar: 1536-1920px (bottom 20%, 384px)
-    # With Alignment=8 (top-center), MarginV=350 → subtitles at Y=350px (clearly visible in gameplay!)
-    default_font, default_margin = (80, 350) if video_height and video_height >= 1600 else (46, 84)
+    # With Alignment=8 (top-center), MarginV=1450 → subtitles at Y=1450px (just above facecam!)
+    default_font, default_margin = (55, 1450) if video_height and video_height >= 1600 else (46, 84)
     font_size = font_size or default_font
     margin_v = margin_v or default_margin
 
@@ -294,20 +294,21 @@ def burn_subtitles_ffmpeg(
     escaped = Path(srt_path).as_posix().replace(":", r"\:").replace("'", r"\'")
     force_style = ",".join(
         [
+            "Fontname=Impact",  # Friendly, bold font perfect for YouTube Shorts
             f"Fontsize={font_size}",
             "Bold=1",
-            "PrimaryColour=&HFFFFFF&",  # White text
+            "PrimaryColour=&H00FFFF&",  # Yellow text (BGR format: 0, 255, 255)
             "OutlineColour=&H000000&",  # Black outline
             "BorderStyle=1",  # Outline + shadow (more visible than opaque box)
             "Outline=3",  # Thick outline for visibility
             "Shadow=2",  # Strong shadow for depth
-            "Alignment=8",  # ✅ FIX: Top-center alignment (positions from TOP edge!)
+            "Alignment=8",  # Top-center alignment (positions from TOP edge)
             f"MarginV={margin_v}",  # Distance from top edge (with Alignment=8)
         ]
     )
     vf_filter = f"subtitles='{escaped}':force_style='{force_style}'"
 
-    logger.info("Subtitle parameters: font_size=%d, margin_v=%d (from top), video_height=%s, Alignment=8 (top-center)",
+    logger.info("Subtitle parameters: font=Impact, size=%d, color=yellow, margin_v=%d (from top), video_height=%s",
                 font_size, margin_v, video_height)
     logger.debug("FFmpeg subtitle filter: %s", vf_filter)
 
@@ -389,8 +390,12 @@ def _format_ts(value: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
 
 
-def _wrap_subtitle_line(text: str, width: int = 38) -> str:
-    """Wrap long subtitle sentences for better readability in Shorts."""
+def _wrap_subtitle_line(text: str, width: int = 50) -> str:
+    """Wrap long subtitle sentences for better readability in Shorts.
+
+    Default width=50 chars allows single-line subtitles to fit across Shorts width (1080px)
+    with font size 55.
+    """
 
     if not text:
         return ""
