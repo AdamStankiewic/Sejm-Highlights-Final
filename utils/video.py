@@ -246,17 +246,17 @@ def burn_subtitles_ffmpeg(
         [
             f"Fontsize={font_size}",
             "Bold=1",
-            "PrimaryColour=&HFFFFFF&",
-            "OutlineColour=&H000000&",
-            "BorderStyle=3",
-            "Outline=2",
-            "Shadow=1",
+            "PrimaryColour=&HFFFFFF&",  # White text
+            "OutlineColour=&H000000&",  # Black outline
+            "BorderStyle=1",  # ✅ Changed from 3 (opaque box) to 1 (outline + shadow) - more visible!
+            "Outline=3",  # ✅ Changed from 2 to 3 - thicker outline for better visibility
+            "Shadow=2",  # ✅ Changed from 1 to 2 - stronger shadow
             f"MarginV={margin_v}",
         ]
     )
     vf_filter = f"subtitles='{escaped}':force_style='{force_style}'"
 
-    logger.info("Subtitle parameters: font_size=%d, margin_v=%d, video_height=%s",
+    logger.info("Subtitle parameters: font_size=%d, margin_v=%d, video_height=%s, BorderStyle=1, Outline=3",
                 font_size, margin_v, video_height)
     logger.debug("FFmpeg subtitle filter: %s", vf_filter)
 

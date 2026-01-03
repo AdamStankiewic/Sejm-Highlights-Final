@@ -395,16 +395,15 @@ class GamingTemplate(TemplateBase):
         gameplay_h = int(target_h * 0.80)  # ✅ Changed from 70% to 80%
         facecam_h = int(target_h * 0.20)   # ✅ Changed from 30% to 20%
 
-        # Prepare gameplay for top section (zoomed out to show more game content)
-        logger.info("[GamingTemplate] 🔍 Applying gameplay zoom: scale=1.3 (zoom OUT to show 30%% MORE content)")
-        gameplay_full = center_crop_9_16(gameplay_clip, scale=1.3)  # ✅ Zoom OUT (show more) - was 0.80
+        # Prepare gameplay for top section (normal zoom - no distortion)
+        logger.info("[GamingTemplate] 🔍 Applying gameplay crop: scale=1.0 (normal view)")
+        gameplay_full = center_crop_9_16(gameplay_clip, scale=1.0)  # ✅ Normal zoom (was 1.3 - caused distortion on resize)
 
-        # ✅ FIX: Resize to target dimensions to fill frame (no black bars)
-        # center_crop_9_16 with scale=1.3 preserves 30% MORE content, but returns smaller dimensions (~789x1404)
-        # We resize to (1080, 1536) to fill the final Shorts frame while keeping the scale=1.3 content visible
+        # ✅ FIX: Resize proportionally to target dimensions (no distortion!)
+        # center_crop_9_16 with scale=1.0 returns 9:16 AR → resize to (1080, 1536) fills frame
         is_color_clip = not (hasattr(gameplay_full, 'resize') or hasattr(gameplay_full, 'resized'))
         if not is_color_clip:
-            # Resize to fill target width while maintaining scaled content
+            # Resize to fill target dimensions (proportional because source is already 9:16)
             gameplay_full = clip_resize(gameplay_full, (target_w, gameplay_h))
             gameplay_full = ensure_fps(clip_set_duration(gameplay_full, source_clip.duration))
             gameplay_full = clip_set_position(gameplay_full, (0, 0))  # Top
@@ -553,16 +552,15 @@ class GamingTemplate(TemplateBase):
         gameplay_h = int(target_h * 0.80)  # ✅ Changed from 70% to 80%
         facecam_h = int(target_h * 0.20)   # ✅ Changed from 30% to 20%
 
-        # Prepare gameplay for top section (zoomed out to show more game content)
-        logger.info("[GamingTemplate] 🔍 Applying gameplay zoom: scale=1.3 (zoom OUT to show 30%% MORE content)")
-        gameplay_full = center_crop_9_16(gameplay_clip, scale=1.3)  # ✅ Zoom OUT (show more) - was 0.80
+        # Prepare gameplay for top section (normal zoom - no distortion)
+        logger.info("[GamingTemplate] 🔍 Applying gameplay crop: scale=1.0 (normal view)")
+        gameplay_full = center_crop_9_16(gameplay_clip, scale=1.0)  # ✅ Normal zoom (was 1.3 - caused distortion on resize)
 
-        # ✅ FIX: Resize to target dimensions to fill frame (no black bars)
-        # center_crop_9_16 with scale=1.3 preserves 30% MORE content, but returns smaller dimensions (~789x1404)
-        # We resize to (1080, 1536) to fill the final Shorts frame while keeping the scale=1.3 content visible
+        # ✅ FIX: Resize proportionally to target dimensions (no distortion!)
+        # center_crop_9_16 with scale=1.0 returns 9:16 AR → resize to (1080, 1536) fills frame
         is_color_clip = not (hasattr(gameplay_full, 'resize') or hasattr(gameplay_full, 'resized'))
         if not is_color_clip:
-            # Resize to fill target width while maintaining scaled content
+            # Resize to fill target dimensions (proportional because source is already 9:16)
             gameplay_full = clip_resize(gameplay_full, (target_w, gameplay_h))
             gameplay_full = ensure_fps(clip_set_duration(gameplay_full, source_clip.duration))
             gameplay_full = clip_set_position(gameplay_full, (0, 0))  # Top
