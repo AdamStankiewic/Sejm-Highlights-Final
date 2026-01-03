@@ -28,6 +28,7 @@ from utils.video import (
     apply_speedup,
     burn_subtitles_ffmpeg,
     center_crop_9_16,
+    center_crop_to_ratio,
     ensure_fps,
     ensure_output_path,
     load_subclip,
@@ -395,15 +396,17 @@ class GamingTemplate(TemplateBase):
         gameplay_h = int(target_h * 0.80)  # ✅ Changed from 70% to 80%
         facecam_h = int(target_h * 0.20)   # ✅ Changed from 30% to 20%
 
-        # Prepare gameplay for top section (normal zoom - no distortion)
-        logger.info("[GamingTemplate] 🔍 Applying gameplay crop: scale=1.0 (normal view)")
-        gameplay_full = center_crop_9_16(gameplay_clip, scale=1.0)  # ✅ Normal zoom (was 1.3 - caused distortion on resize)
+        # Prepare gameplay for top section (no distortion!)
+        logger.info("[GamingTemplate] 🔍 Cropping gameplay to exact aspect ratio for proportional resize")
+        # ✅ FIX: Crop to EXACT target aspect ratio (1080:1536 = 0.7031) for zero distortion!
+        # This crops 1920x1080 → 759x1080 (ratio 0.7031), then resize to 1080x1536 is proportional
+        gameplay_full = center_crop_to_ratio(gameplay_clip, target_w, gameplay_h)
 
         # ✅ FIX: Resize proportionally to target dimensions (no distortion!)
-        # center_crop_9_16 with scale=1.0 returns 9:16 AR → resize to (1080, 1536) fills frame
+        # center_crop_to_ratio returns matching aspect ratio → resize is proportional (same scale for W & H)
         is_color_clip = not (hasattr(gameplay_full, 'resize') or hasattr(gameplay_full, 'resized'))
         if not is_color_clip:
-            # Resize to fill target dimensions (proportional because source is already 9:16)
+            # Resize to fill target dimensions (proportional because source matches target aspect ratio!)
             gameplay_full = clip_resize(gameplay_full, (target_w, gameplay_h))
             gameplay_full = ensure_fps(clip_set_duration(gameplay_full, source_clip.duration))
             gameplay_full = clip_set_position(gameplay_full, (0, 0))  # Top
@@ -552,15 +555,17 @@ class GamingTemplate(TemplateBase):
         gameplay_h = int(target_h * 0.80)  # ✅ Changed from 70% to 80%
         facecam_h = int(target_h * 0.20)   # ✅ Changed from 30% to 20%
 
-        # Prepare gameplay for top section (normal zoom - no distortion)
-        logger.info("[GamingTemplate] 🔍 Applying gameplay crop: scale=1.0 (normal view)")
-        gameplay_full = center_crop_9_16(gameplay_clip, scale=1.0)  # ✅ Normal zoom (was 1.3 - caused distortion on resize)
+        # Prepare gameplay for top section (no distortion!)
+        logger.info("[GamingTemplate] 🔍 Cropping gameplay to exact aspect ratio for proportional resize")
+        # ✅ FIX: Crop to EXACT target aspect ratio (1080:1536 = 0.7031) for zero distortion!
+        # This crops 1920x1080 → 759x1080 (ratio 0.7031), then resize to 1080x1536 is proportional
+        gameplay_full = center_crop_to_ratio(gameplay_clip, target_w, gameplay_h)
 
         # ✅ FIX: Resize proportionally to target dimensions (no distortion!)
-        # center_crop_9_16 with scale=1.0 returns 9:16 AR → resize to (1080, 1536) fills frame
+        # center_crop_to_ratio returns matching aspect ratio → resize is proportional (same scale for W & H)
         is_color_clip = not (hasattr(gameplay_full, 'resize') or hasattr(gameplay_full, 'resized'))
         if not is_color_clip:
-            # Resize to fill target dimensions (proportional because source is already 9:16)
+            # Resize to fill target dimensions (proportional because source matches target aspect ratio!)
             gameplay_full = clip_resize(gameplay_full, (target_w, gameplay_h))
             gameplay_full = ensure_fps(clip_set_duration(gameplay_full, source_clip.duration))
             gameplay_full = clip_set_position(gameplay_full, (0, 0))  # Top

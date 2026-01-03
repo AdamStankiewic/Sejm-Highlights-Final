@@ -173,6 +173,55 @@ def center_crop_9_16(clip: VideoFileClip, scale: float = 1.0) -> VideoFileClip:
     return cropped
 
 
+def center_crop_to_ratio(clip: VideoFileClip, target_w: int, target_h: int) -> VideoFileClip:
+    """Crop clip to exact aspect ratio (no distortion on resize).
+
+    Unlike center_crop_9_16, this crops to the EXACT target aspect ratio,
+    so subsequent resize to (target_w, target_h) is proportional (no distortion).
+
+    Example: For gameplay section 1080x1536:
+        - Crop source to 1080:1536 ratio (0.7031)
+        - Then resize to 1080x1536 → NO DISTORTION!
+    """
+    # Handle ColorClip
+    if not hasattr(clip, 'fx') and not hasattr(clip, 'resized'):
+        logger.debug("center_crop_to_ratio: Skipping for ColorClip")
+        return ensure_fps(clip)
+
+    target_ratio = target_w / target_h
+    w, h = clip.size
+    current_ratio = w / h
+
+    logger.info(f"🔍 center_crop_to_ratio: target={target_w}x{target_h} (ratio={target_ratio:.4f}), source={w}x{h} (ratio={current_ratio:.4f})")
+
+    # Already correct ratio?
+    if abs(current_ratio - target_ratio) < 0.01:
+        logger.info("   ✓ Source already matches target ratio, no crop needed")
+        return ensure_fps(clip)
+
+    # Crop width (source is wider than target ratio)
+    if current_ratio > target_ratio:
+        new_w = int(h * target_ratio)
+        x1 = int((w - new_w) / 2)
+        logger.info(f"   Cropping width: {w}x{h} → {new_w}x{h} (center crop, x_offset={x1})")
+        if MOVIEPY_V2:
+            cropped = Crop(x1=x1, y1=0, x2=x1+new_w, y2=h).apply(clip)
+        else:
+            cropped = crop.crop(clip, x1=x1, y1=0, width=new_w, height=h)
+        return ensure_fps(cropped)
+
+    # Crop height (source is taller than target ratio)
+    else:
+        new_h = int(w / target_ratio)
+        y1 = int((h - new_h) / 2)
+        logger.info(f"   Cropping height: {w}x{h} → {w}x{new_h} (center crop, y_offset={y1})")
+        if MOVIEPY_V2:
+            cropped = Crop(x1=0, y1=y1, x2=w, y2=y1+new_h).apply(clip)
+        else:
+            cropped = crop.crop(clip, x1=0, y1=y1, width=w, height=new_h)
+        return ensure_fps(cropped)
+
+
 def apply_speedup(clip: AudioClip | None, factor: float | None) -> AudioClip | None:
     """Przyspiesz klip audio w sposób defensywny."""
 
@@ -233,10 +282,11 @@ def burn_subtitles_ffmpeg(
 
     # Dynamically scale subtitle styling based on video height (Shorts vs 16:9)
     video_height = _probe_video_height(input_video)
-    # For Shorts (1920px height): VERY LARGE readable font (80) positioned HIGH in gameplay area (1000px margin)
+    # For Shorts (1920px height): Position subtitles in upper-middle of gameplay area
+    # Gameplay area: 0-1536px (top 80%)
     # Facecam bar: 1536-1920px (bottom 20%, 384px)
-    # MarginV=1000 → subtitles at Y=920px (upper-middle of gameplay area, highly visible!)
-    default_font, default_margin = (80, 1000) if video_height and video_height >= 1600 else (46, 84)
+    # With Alignment=8 (top-center), MarginV=350 → subtitles at Y=350px (clearly visible in gameplay!)
+    default_font, default_margin = (80, 350) if video_height and video_height >= 1600 else (46, 84)
     font_size = font_size or default_font
     margin_v = margin_v or default_margin
 
@@ -248,15 +298,16 @@ def burn_subtitles_ffmpeg(
             "Bold=1",
             "PrimaryColour=&HFFFFFF&",  # White text
             "OutlineColour=&H000000&",  # Black outline
-            "BorderStyle=1",  # ✅ Changed from 3 (opaque box) to 1 (outline + shadow) - more visible!
-            "Outline=3",  # ✅ Changed from 2 to 3 - thicker outline for better visibility
-            "Shadow=2",  # ✅ Changed from 1 to 2 - stronger shadow
-            f"MarginV={margin_v}",
+            "BorderStyle=1",  # Outline + shadow (more visible than opaque box)
+            "Outline=3",  # Thick outline for visibility
+            "Shadow=2",  # Strong shadow for depth
+            "Alignment=8",  # ✅ FIX: Top-center alignment (positions from TOP edge!)
+            f"MarginV={margin_v}",  # Distance from top edge (with Alignment=8)
         ]
     )
     vf_filter = f"subtitles='{escaped}':force_style='{force_style}'"
 
-    logger.info("Subtitle parameters: font_size=%d, margin_v=%d, video_height=%s, BorderStyle=1, Outline=3",
+    logger.info("Subtitle parameters: font_size=%d, margin_v=%d (from top), video_height=%s, Alignment=8 (top-center)",
                 font_size, margin_v, video_height)
     logger.debug("FFmpeg subtitle filter: %s", vf_filter)
 
