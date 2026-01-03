@@ -173,15 +173,22 @@ def center_crop_9_16(clip: VideoFileClip, scale: float = 1.0) -> VideoFileClip:
     return cropped
 
 
-def center_crop_to_ratio(clip: VideoFileClip, target_w: int, target_h: int) -> VideoFileClip:
+def center_crop_to_ratio(clip: VideoFileClip, target_w: int, target_h: int, scale: float = 1.0) -> VideoFileClip:
     """Crop clip to exact aspect ratio (no distortion on resize).
 
     Unlike center_crop_9_16, this crops to the EXACT target aspect ratio,
     so subsequent resize to (target_w, target_h) is proportional (no distortion).
 
-    Example: For gameplay section 1080x1536:
-        - Crop source to 1080:1536 ratio (0.7031)
-        - Then resize to 1080x1536 → NO DISTORTION!
+    Args:
+        clip: Source video clip
+        target_w: Target width
+        target_h: Target height
+        scale: Zoom factor (1.0=normal, >1.0=zoom OUT to show more content)
+
+    Example: For gameplay section 1080x1536 with scale=1.3:
+        - Resize source: 1920x1080 → 2496x1404 (30% zoom out)
+        - Crop to 1080:1536 ratio (0.7031) → 987x1404
+        - Then resize to 1080x1536 → NO DISTORTION, shows 30% more content!
     """
     # Handle ColorClip
     if not hasattr(clip, 'fx') and not hasattr(clip, 'resized'):
@@ -190,9 +197,21 @@ def center_crop_to_ratio(clip: VideoFileClip, target_w: int, target_h: int) -> V
 
     target_ratio = target_w / target_h
     w, h = clip.size
-    current_ratio = w / h
 
-    logger.info(f"🔍 center_crop_to_ratio: target={target_w}x{target_h} (ratio={target_ratio:.4f}), source={w}x{h} (ratio={current_ratio:.4f})")
+    logger.info(f"🔍 center_crop_to_ratio: target={target_w}x{target_h} (ratio={target_ratio:.4f}), source={w}x{h}, scale={scale:.2f}")
+
+    # Apply scale (zoom out) BEFORE cropping
+    if scale != 1.0:
+        new_w, new_h = int(w * scale), int(h * scale)
+        logger.info(f"   Zoom out: {w}x{h} → {new_w}x{new_h} (scale={scale:.2f}, shows {(scale-1)*100:.0f}% more content)")
+        if MOVIEPY_V2:
+            clip = ensure_fps(Resize(width=new_w, height=new_h).apply(clip))
+        else:
+            clip = ensure_fps(clip.fx(resize.resize, scale))
+        w, h = clip.size
+
+    current_ratio = w / h
+    logger.info(f"   Current: {w}x{h} (ratio={current_ratio:.4f})")
 
     # Already correct ratio?
     if abs(current_ratio - target_ratio) < 0.01:
@@ -285,8 +304,8 @@ def burn_subtitles_ffmpeg(
     # For Shorts (1920px height): Position subtitles just above facecam bar
     # Gameplay area: 0-1536px (top 80%)
     # Facecam bar: 1536-1920px (bottom 20%, 384px)
-    # With Alignment=8 (top-center), MarginV=1450 → subtitles at Y=1450px (just above facecam!)
-    default_font, default_margin = (55, 1450) if video_height and video_height >= 1600 else (46, 84)
+    # With Alignment=2 (bottom-center), MarginV=420 → subtitles at Y=1500px (just above facecam!)
+    default_font, default_margin = (36, 420) if video_height and video_height >= 1600 else (46, 84)
     font_size = font_size or default_font
     margin_v = margin_v or default_margin
 
@@ -302,13 +321,13 @@ def burn_subtitles_ffmpeg(
             "BorderStyle=1",  # Outline + shadow (more visible than opaque box)
             "Outline=3",  # Thick outline for visibility
             "Shadow=2",  # Strong shadow for depth
-            "Alignment=8",  # Top-center alignment (positions from TOP edge)
-            f"MarginV={margin_v}",  # Distance from top edge (with Alignment=8)
+            "Alignment=2",  # Bottom-center alignment (positions from BOTTOM edge)
+            f"MarginV={margin_v}",  # Distance from bottom edge (420px = just above facecam at 384px)
         ]
     )
     vf_filter = f"subtitles='{escaped}':force_style='{force_style}'"
 
-    logger.info("Subtitle parameters: font=Impact, size=%d, color=yellow, margin_v=%d (from top), video_height=%s",
+    logger.info("Subtitle parameters: font=Impact, size=%d, color=yellow, margin_v=%d (from bottom), video_height=%s",
                 font_size, margin_v, video_height)
     logger.debug("FFmpeg subtitle filter: %s", vf_filter)
 

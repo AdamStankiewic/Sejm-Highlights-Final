@@ -396,11 +396,11 @@ class GamingTemplate(TemplateBase):
         gameplay_h = int(target_h * 0.80)  # ✅ Changed from 70% to 80%
         facecam_h = int(target_h * 0.20)   # ✅ Changed from 30% to 20%
 
-        # Prepare gameplay for top section (no distortion!)
-        logger.info("[GamingTemplate] 🔍 Cropping gameplay to exact aspect ratio for proportional resize")
-        # ✅ FIX: Crop to EXACT target aspect ratio (1080:1536 = 0.7031) for zero distortion!
-        # This crops 1920x1080 → 759x1080 (ratio 0.7031), then resize to 1080x1536 is proportional
-        gameplay_full = center_crop_to_ratio(gameplay_clip, target_w, gameplay_h)
+        # Prepare gameplay for top section (zoom out 30% to show more content!)
+        logger.info("[GamingTemplate] 🔍 Cropping gameplay with 30% zoom out for better perspective")
+        # ✅ scale=1.3 → zoom OUT 30% to show MORE content (user requested)
+        # Workflow: resize 1920x1080 → 2496x1404, crop to ratio 0.7031 → 987x1404, resize → 1080x1536
+        gameplay_full = center_crop_to_ratio(gameplay_clip, target_w, gameplay_h, scale=1.3)
 
         # ✅ FIX: Resize proportionally to target dimensions (no distortion!)
         # center_crop_to_ratio returns matching aspect ratio → resize is proportional (same scale for W & H)
@@ -555,11 +555,11 @@ class GamingTemplate(TemplateBase):
         gameplay_h = int(target_h * 0.80)  # ✅ Changed from 70% to 80%
         facecam_h = int(target_h * 0.20)   # ✅ Changed from 30% to 20%
 
-        # Prepare gameplay for top section (no distortion!)
-        logger.info("[GamingTemplate] 🔍 Cropping gameplay to exact aspect ratio for proportional resize")
-        # ✅ FIX: Crop to EXACT target aspect ratio (1080:1536 = 0.7031) for zero distortion!
-        # This crops 1920x1080 → 759x1080 (ratio 0.7031), then resize to 1080x1536 is proportional
-        gameplay_full = center_crop_to_ratio(gameplay_clip, target_w, gameplay_h)
+        # Prepare gameplay for top section (zoom out 30% to show more content!)
+        logger.info("[GamingTemplate] 🔍 Cropping gameplay with 30% zoom out for better perspective")
+        # ✅ scale=1.3 → zoom OUT 30% to show MORE content (user requested)
+        # Workflow: resize 1920x1080 → 2496x1404, crop to ratio 0.7031 → 987x1404, resize → 1080x1536
+        gameplay_full = center_crop_to_ratio(gameplay_clip, target_w, gameplay_h, scale=1.3)
 
         # ✅ FIX: Resize proportionally to target dimensions (no distortion!)
         # center_crop_to_ratio returns matching aspect ratio → resize is proportional (same scale for W & H)
